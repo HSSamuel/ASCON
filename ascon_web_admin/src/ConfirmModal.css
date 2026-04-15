@@ -1,0 +1,103 @@
+/* OVERLAY: Dark background that covers the whole screen */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
+  backdrop-filter: blur(4px); /* Adds a modern blur effect */
+  display: flex;
+  justify-content: center;
+  align-items: center; /* Centers the box perfectly */
+  z-index: 20000; /* ✅ UPDATED: High Z-Index ensures it sits above Toast/Navbar */
+  padding: 16px; /* Prevents box from touching edges on tiny phones */
+}
+
+/* BOX: The actual compact white card */
+.modal-content {
+  background: white;
+  width: 90%;          /* Responsive width */
+  max-width: 320px;    /* 🔒 LOCKED: Keeps it compact like the image */
+  padding: 24px;
+  border-radius: 20px; /* Rounder corners for mobile feel */
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  animation: popIn 0.2s ease-out;
+}
+
+/* ICON: The warning triangle */
+.modal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  margin: 0 auto 12px auto;
+  font-size: 24px;
+  background-color: #fff7ed; /* Light orange background */
+  border-radius: 50%;        /* Makes it a perfect circle */
+}
+
+/* TITLE: "Confirm Deletion" */
+.modal-title {
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+/* TEXT: "Are you sure?..." */
+.modal-text {
+  margin: 0 0 24px 0;
+  font-size: 0.9rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+/* ACTIONS: The button container */
+.modal-actions {
+  display: flex;
+  gap: 12px; /* Space between buttons */
+  justify-content: center;
+}
+
+/* BUTTONS: Shared styles */
+.modal-actions button {
+  flex: 1; /* Makes both buttons same width */
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
+}
+
+/* CANCEL BUTTON */
+.btn-cancel {
+  background-color: #fff;
+  border: 1px solid #d1d5db !important;
+  color: #374151;
+}
+
+.btn-cancel:hover {
+  background-color: #f3f4f6;
+}
+
+/* DELETE BUTTON */
+.btn-delete {
+  background-color: #dc2626; /* Red */
+  color: white;
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+}
+
+.btn-delete:hover {
+  background-color: #b91c1c;
+}
+
+/* ANIMATION: Small pop effect */
+@keyframes popIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}

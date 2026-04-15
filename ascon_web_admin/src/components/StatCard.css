@@ -1,0 +1,67 @@
+/* Base Desktop Styles */
+.stat-card {
+  padding: 12px 15px; /* Reduced padding */
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  transition: transform 0.2s;
+  flex: 1;
+  min-width: 200px;
+}
+
+.stat-content-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stat-icon {
+  font-size: 1.5rem;
+  background: rgba(255,255,255,0.3);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.stat-info h3 {
+  margin: 0;
+  font-size: 12px; /* Smaller label */
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #555;
+}
+
+.stat-info .stat-value {
+  margin: 0;
+  font-size: 20px; /* Stronger number */
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* ✅ MOBILE COMPACT VIEW (Max Width 768px) */
+@media (max-width: 768px) {
+  .stat-card {
+    padding: 10px;
+    min-width: 0; /* Allow 2-column grid to function */
+  }
+
+  .stat-content-wrapper {
+    gap: 8px;
+  }
+
+  .stat-icon {
+    font-size: 1.1rem;
+    width: 32px;
+    height: 32px;
+  }
+
+  .stat-info h3 {
+    font-size: 9px; /* Very compact title */
+  }
+
+  .stat-info .stat-value {
+    font-size: 16px;
+  }
+}

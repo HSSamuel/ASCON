@@ -1,0 +1,247 @@
+/* =========================================
+   1. BASE TOAST CONTAINER (Modern Card)
+   ========================================= */
+.toast-container {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000; /* Stays on top of everything */
+
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+
+  min-width: 320px;
+  max-width: 450px;
+  padding: 16px;
+  
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 
+    0 10px 15px -3px rgba(0, 0, 0, 0.1), 
+    0 4px 6px -2px rgba(0, 0, 0, 0.05),
+    0 0 0 1px rgba(0, 0, 0, 0.05); /* Subtle border ring */
+  
+  animation: slideInDown 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* =========================================
+   2. VARIANT THEMES (Colors)
+   ========================================= */
+/* Success */
+.toast-success .toast-icon-wrapper {
+  color: #166534; /* Green-800 */
+  background-color: #dcfce7; /* Green-100 */
+}
+
+/* Error */
+.toast-error .toast-icon-wrapper {
+  color: #991b1b; /* Red-800 */
+  background-color: #fee2e2; /* Red-100 */
+}
+
+/* Info */
+.toast-info .toast-icon-wrapper {
+  color: #1e40af; /* Blue-800 */
+  background-color: #dbeafe; /* Blue-100 */
+}
+
+/* Default/Warning */
+.toast-warning .toast-icon-wrapper,
+.toast-default .toast-icon-wrapper {
+  color: #854d0e; /* Yellow-800 */
+  background-color: #fef9c3; /* Yellow-100 */
+}
+
+/* =========================================
+   3. INNER ELEMENTS
+   ========================================= */
+/* Circular Icon Background */
+.toast-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+/* Message Text */
+.toast-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 32px; /* Align with icon */
+}
+
+.toast-message {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #1f2937; /* Dark Gray */
+  word-break: break-word;
+}
+
+/* Close Button */
+.toast-close-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 4px;
+  margin: -4px -4px 0 0;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+}
+
+.toast-close-btn:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+/* =========================================
+   4. ANIMATIONS
+   ========================================= */
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+/* =========================================
+   5. CONFIRMATION TOAST STYLES (New)
+   ========================================= */
+.toast-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.4); /* Dimmed background */
+  backdrop-filter: blur(2px);
+  z-index: 11000; /* Higher than regular toasts */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Specific overrides for the confirmation card */
+.confirmation-toast {
+  position: relative !important; /* Reset fixed positioning */
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+  
+  flex-direction: column; /* Stack header, body, actions */
+  align-items: stretch;
+  width: 90%;
+  max-width: 400px;
+  border-left: 5px solid #1B5E3A; /* Brand accent */
+  animation: scaleIn 0.2s ease-out;
+}
+
+.toast-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-weight: 700;
+  font-size: 16px;
+  color: #111827;
+}
+
+.toast-body {
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.toast-input {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box; /* Fixes padding overflow */
+}
+
+.toast-input:focus {
+  border-color: #1B5E3A;
+  box-shadow: 0 0 0 2px rgba(27, 94, 58, 0.1);
+}
+
+.toast-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.confirm-btn, .cancel-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.cancel-btn {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.confirm-btn:hover, .cancel-btn:hover {
+  opacity: 0.9;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* =========================================
+   6. MOBILE OPTIMIZATION
+   ========================================= */
+@media (max-width: 480px) {
+  .toast-container {
+    /* Full width strip at top */
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-width: none;
+    transform: none; /* Disable centering transform */
+    
+    border-radius: 12px;
+    animation: slideInMobile 0.3s ease-out;
+  }
+
+  /* Specific animation for mobile */
+  @keyframes slideInMobile {
+    from { transform: translateY(-20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+}

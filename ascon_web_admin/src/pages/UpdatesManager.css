@@ -1,0 +1,156 @@
+/* Container */
+.updates-container {
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  min-height: 80vh;
+}
+
+/* Header Section */
+.table-header {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 25px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #f4f4f4;
+}
+
+.table-header h2 {
+  margin: 0;
+  color: #1B5E3A;
+  font-size: 1.5rem;
+}
+
+/* Responsive Table Wrapper */
+.table-responsive {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #eee;
+}
+
+/* Table Styles */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px; /* Ensures table doesn't squash on small screens */
+}
+
+.admin-table thead {
+  background-color: #f8f9fa;
+}
+
+.admin-table th {
+  text-align: left;
+  padding: 15px;
+  font-size: 0.85rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #eee;
+}
+
+.admin-table td {
+  padding: 15px;
+  vertical-align: middle;
+  border-bottom: 1px solid #f4f4f4;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tr:hover {
+  background-color: #fafafa;
+}
+
+/* User Info in Table */
+.font-bold {
+  font-weight: 700;
+  color: #333;
+}
+
+/* Links (View Media) */
+.admin-table a {
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.admin-table a:hover {
+  text-decoration: underline;
+}
+
+/* Action Buttons */
+.delete-btn {
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  font-weight: 600;
+}
+
+.delete-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.compact-btn {
+  padding: 6px 12px;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+  font-style: italic;
+  background-color: #fcfcfc;
+}
+
+/* Dark Mode Support (Optional - matches your theme logic) */
+[data-theme='dark'] .updates-container {
+  background-color: #1e1e1e;
+  box-shadow: none;
+}
+
+[data-theme='dark'] .table-header {
+  border-bottom-color: #333;
+}
+
+[data-theme='dark'] .table-header h2 {
+  color: #fff;
+}
+
+[data-theme='dark'] .admin-table thead {
+  background-color: #2c2c2c;
+}
+
+[data-theme='dark'] .admin-table th {
+  color: #bbb;
+  border-bottom-color: #444;
+}
+
+[data-theme='dark'] .admin-table td {
+  color: #ddd;
+  border-bottom-color: #333;
+}
+
+[data-theme='dark'] .admin-table tr:hover {
+  background-color: #252525;
+}
+
+[data-theme='dark'] .font-bold {
+  color: #fff;
+}
+
+[data-theme='dark'] .empty-state {
+  background-color: #222;
+  color: #666;
+}

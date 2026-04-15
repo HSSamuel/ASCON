@@ -1,0 +1,7 @@
+node_modules/
+/backend/node_modules/
+/ascon_web_admin/node_modules/
+/ascon_mobile/build/
+.env
+.DS_Store
+serviceAccountKey.json
