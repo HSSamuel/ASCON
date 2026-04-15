@@ -366,7 +366,6 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   const isIdToken = token.split(".").length === 3;
   if (isIdToken) {
     const ticket = await authClient.verifyIdToken({
-      // ✅ Use authClient here
       idToken: token,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
@@ -385,49 +384,24 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   }
 
   let userAuth = await UserAuth.findOne({ email });
-  let userProfile, userSettings;
 
+  // 🛑 FIX: DO NOT AUTO-CREATE THE USER
   if (!userAuth) {
-    const randomPassword = crypto.randomBytes(16).toString("hex");
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(randomPassword, salt);
-
-    userAuth = new UserAuth({
-      email: email,
-      password: hashedPassword,
-      isVerified: true,
-      provider: "google",
-      fcmTokens: fcmToken ? [fcmToken] : [],
-      isOnline: true,
+    return res.status(404).json({
+      success: false,
+      statusCode: 404,
+      message: "Account not found. Please complete registration.",
+      googleData: {
+        email: email,
+        fullName: name,
+        profilePicture: picture
+      }
     });
-    await userAuth.save();
-
-    userProfile = new UserProfile({
-      userId: userAuth._id,
-      fullName: name,
-      profilePicture: picture,
-    });
-    await userProfile.save();
-
-    userSettings = new UserSettings({
-      userId: userAuth._id,
-      hasSeenWelcome: false,
-    });
-    await userSettings.save();
-
-    if (req.io) req.io.emit("admin_stats_update", { type: "NEW_USER" });
-
-    // Send Welcome via Gmail API
-    await sendEmailViaGmailAPI(
-      email,
-      name,
-      "Welcome to ASCON Alumni Connect! 🚀",
-      `<p>Welcome to the platform, ${name}!</p>`,
-    );
-  } else {
-    userProfile = await UserProfile.findOne({ userId: userAuth._id });
-    userSettings = await UserSettings.findOne({ userId: userAuth._id });
   }
+
+  // ✅ USER EXISTS - Proceed with normal login
+  let userProfile = await UserProfile.findOne({ userId: userAuth._id });
+  let userSettings = await UserSettings.findOne({ userId: userAuth._id });
 
   if (!userAuth.isVerified) {
     throw new AppError("Account pending approval.", 403);
