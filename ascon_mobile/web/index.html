@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base href="$FLUTTER_BASE_HREF" />
+
+    <meta charset="UTF-8" />
+    <meta content="IE=Edge" http-equiv="X-UA-Compatible" />
+    <meta name="description" content="ASCON Alumni" />
+
+    <meta
+      name="google-signin-client_id"
+      content="641176201184-3q7t2hp3kej2vvei41tpkivn7j206bf7.apps.googleusercontent.com"
+    />
+
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="ASCON Alumni" />
+
+    <link rel="apple-touch-icon" href="icons/Icon-192.png" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+
+    <title>ASCON Alumni</title>
+
+    <meta property="og:title" content="ASCON Alumni Network" />
+    <meta property="og:description" content="Connect, network, and grow with the official ASCON Alumni community." />
+    <meta property="og:image" content="https://asconmobile.netlify.app/social-logo.png" />
+    <meta property="og:url" content="https://asconmobile.netlify.app" />
+    <meta property="og:type" content="website" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ASCON Alumni Network" />
+    <meta name="twitter:description" content="Connect, network, and grow with the official ASCON Alumni community." />
+    <meta name="twitter:image" content="https://asconmobile.netlify.app/social-logo.png" />
+    <link rel="manifest" href="manifest.json" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+    <script src="https://download.agora.io/sdk/release/iris-web-rtc_n450_w4220_0.8.6.js"></script>
+
+    <style>
+      body {
+        font-family: "Roboto", sans-serif;
+        background-color: #FFFFFF;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  
+  <body>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
+
+    <script>
+      const origLog = console.log;
+      const origDebug = console.debug;
+      const origInfo = console.info;
+
+      function cleanConsole(origFn, ...args) {
+        if (args.length > 0 && typeof args[0] === 'string') {
+          const msg = args[0];
+          // If the log contains any of these spammy keywords, silently drop it
+          if (msg.includes('GSI_LOGGER') || 
+              msg.includes('[Iris') || 
+              msg.includes('%cAgora-SDK') || 
+              msg.includes('RtcEngine_')) {
+            return; 
+          }
+        }
+        origFn(...args);
+      }
+
+      console.log = (...args) => cleanConsole(origLog, ...args);
+      console.debug = (...args) => cleanConsole(origDebug, ...args);
+      console.info = (...args) => cleanConsole(origInfo, ...args);
+    </script>
+
+    <script src="flutter_bootstrap.js" async></script>
+  </body>
+</html>
