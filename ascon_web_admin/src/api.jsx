@@ -2,7 +2,7 @@ import axios from "axios";
 
 // 1. Create the Axios Instance
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "https://ascon.onrender.com",
+  baseURL: import.meta.env.VITE_API_URL || "https://ascon.onrender.com",
 });
 
 // 2. Request Interceptor: Auto-attach Token

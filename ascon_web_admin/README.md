@@ -48,10 +48,10 @@ Create a `.env` file in the root of the **ascon_web_admin** folder to connect th
 # ------------------------------
 
 # Option A: Local Development
-REACT_APP_API_URL=http://localhost:5000
+VITE_API_URL=http://localhost:5000
 
 # Option B: Live Production (Render)
-# REACT_APP_API_URL=https://ascon.onrender.com
+# VITE_API_URL=https://ascon.onrender.com
 ```
 
 > **Note:** React requires all environment variables to start with `REACT_APP_`.
@@ -169,7 +169,7 @@ This ensures that refreshing routes (e.g., `/users`) does not result in a 404 er
    ```plaintext
    build
    ```
-4. Add `REACT_APP_API_URL` under **Netlify → Environment Variables**
+4. Add `VITE_API_URL` under **Netlify → Environment Variables**
 
 ---
 

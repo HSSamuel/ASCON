@@ -8,7 +8,7 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
 // ✅ Correctly reading from .env
-const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+const clientId = import.meta.env.VITE_API_URL_GOOGLE_CLIENT_ID;
 
 root.render(
   <React.StrictMode>
