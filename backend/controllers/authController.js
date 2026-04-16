@@ -43,14 +43,12 @@ mailClient.setCredentials({
 const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
   if (!process.env.MAILER_REFRESH_TOKEN) {
     console.warn("⚠️ Email Skipped: MAILER_REFRESH_TOKEN is missing.");
-    return;
+    throw new Error("Email configuration missing on server."); // ✅ Throw error instead of silent return
   }
 
   try {
-    // 1. Refresh the Access Token automatically using the Refresh Token
     const { token: accessToken } = await mailClient.getAccessToken();
 
-    // 2. Build the Raw Email using Nodemailer (Stream Transport)
     const mailGenerator = nodemailer.createTransport({
       streamTransport: true,
       newline: "windows",
@@ -65,7 +63,6 @@ const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
 
     const info = await mailGenerator.sendMail(mailOptions);
 
-    // 3. Convert stream to a Base64URL string required by Gmail API
     const rawEmail = await new Promise((resolve, reject) => {
       let buffer = Buffer.alloc(0);
       info.message.on("data", (chunk) => {
@@ -77,12 +74,9 @@ const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
       info.message.on("error", reject);
     });
 
-    // 4. Send via Gmail HTTP API (Port 443)
     const response = await axios.post(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`,
-      {
-        raw: rawEmail,
-      },
+      { raw: rawEmail },
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -98,7 +92,7 @@ const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
       "❌ Gmail API Error:",
       error.response ? error.response.data : error.message,
     );
-    // Don't throw here to prevent crashing the auth flow
+    throw error; // ✅ THROW the error so forgotPassword knows it failed!
   }
 };
 

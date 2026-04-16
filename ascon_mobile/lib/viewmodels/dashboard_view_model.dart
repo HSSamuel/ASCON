@@ -126,8 +126,11 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
       String profileImage = "";
       String programme = "Member";
       String year = "....";
-      String firstName = "Alumni";
-      String fullName = "Alumni";
+      
+      // ✅ 1. Default to the cached name from Step 1, NOT "Alumni"
+      String fullName = cachedName; 
+      String firstName = fullName.split(" ")[0]; 
+      
       String alumniID = localAlumniID;
       double profileCompletionPercent = 0.0;
       bool isProfileComplete = false;
@@ -139,9 +142,15 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         if (programme.isEmpty) programme = "Member";
         year = profile['yearOfAttendance']?.toString() ?? "....";
         
-        String fullName = profile['fullName'] ?? "Alumni";
-        fullName = profile['fullName'] ?? "Alumni";
-        firstName = fullName.split(" ")[0];
+        // ✅ 2. Only overwrite the cache if the API actually sends a real name
+        if (profile['fullName'] != null && profile['fullName'].toString().trim().isNotEmpty) {
+          // Note: NO "String" keyword here! We update the outer variable.
+          fullName = profile['fullName'];
+          firstName = fullName.split(" ")[0];
+          
+          // Silently sync the fresh API name back to device storage
+          prefs.setString('user_name', fullName); 
+        }
 
         String? apiId = profile['alumniId'];
         if (apiId != null && apiId.isNotEmpty && apiId != "PENDING") {
