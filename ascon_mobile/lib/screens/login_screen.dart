@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:go_router/go_router.dart'; 
-import 'edit_profile_screen.dart'; // ✅ Add this import
+import 'edit_profile_screen.dart'; 
 
 import '../services/auth_service.dart';
 import '../services/notification_service.dart'; 
 import '../services/socket_service.dart'; 
-import '../services/biometric_service.dart'; // ✅ Added import
+import '../services/biometric_service.dart'; 
 import '../config.dart'; 
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
@@ -27,7 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
-  final BiometricService _biometricService = BiometricService(); // ✅ Instance
+  final BiometricService _biometricService = BiometricService(); 
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     clientId: kIsWeb ? AppConfig.googleWebClientId : null,
@@ -129,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return; 
     }
 
-    // ✅ NEW: Check if the profile is incomplete before routing
+    // ✅ Check if the profile is incomplete before routing
     var year = user['yearOfAttendance'];
     bool isProfileIncomplete = year == null || 
                                year == 0 || 
@@ -156,34 +156,41 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       // First time login: Show Welcome Dialogue first
       if (!mounted) return;
-      showDialog(
+      
+      // ✅ 1. AWAIT the dialog to finish and close completely
+      await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (dialogContext) => WelcomeDialog( // ✅ Rename to 'dialogContext'
+        builder: (dialogContext) => WelcomeDialog( 
           userName: safeName,
-          onGetStarted: () async {
-            // Note: If WelcomeDialog pops itself internally when clicked,
-            // we MUST check `if (!mounted)` before using the outer context.
-            await _markWelcomeAsSeen();
-            
-            if (!mounted) return; // ✅ Crucial crash prevention check
-            
-            if (isProfileIncomplete) {
-              Navigator.pushReplacement(
-                context, // ✅ Safely uses the Login Screen's context
-                MaterialPageRoute(
-                  builder: (_) => EditProfileScreen(
-                    userData: user,
-                    isFirstTime: true,
-                  ),
-                ),
-              );
-            } else {
-              _navigateToHome(safeName); 
+          onGetStarted: () {
+            // ✅ 2. ONLY pop the dialog layer here. NO async delays!
+            if (Navigator.canPop(dialogContext)) {
+              Navigator.pop(dialogContext);
             }
           }, 
         ),
       );
+
+      // ✅ 3. Fire the backend update in the background (Do NOT await it)
+      _markWelcomeAsSeen();
+            
+      // ✅ 4. Only route AFTER the dialog is completely gone
+      if (!mounted) return; 
+      
+      if (isProfileIncomplete) {
+        Navigator.pushReplacement(
+          context, 
+          MaterialPageRoute(
+            builder: (_) => EditProfileScreen(
+              userData: user,
+              isFirstTime: true,
+            ),
+          ),
+        );
+      } else {
+        _navigateToHome(safeName); 
+      }
     }
   }
 
@@ -256,24 +263,24 @@ class _LoginScreenState extends State<LoginScreen> {
         try { googleUser = await _googleSignIn.signInSilently(); } catch (e) {}
       }
       if (googleUser == null) {
-  try { 
-    googleUser = await _googleSignIn.signIn(); 
-  } catch (error) {
-    if (mounted) {
-      setState(() => _isGoogleLoading = false);
-      
-      // ✅ Expose the error to the user and console
-      debugPrint("🔴 Google Sign-In Error: $error");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Google Sign-In Failed: ${error.toString()}"), 
-          backgroundColor: Colors.red
-        ),
-      );
-    }
-    return; 
-  }
-}
+        try { 
+          googleUser = await _googleSignIn.signIn(); 
+        } catch (error) {
+          if (mounted) {
+            setState(() => _isGoogleLoading = false);
+            
+            // ✅ Expose the error to the user and console
+            debugPrint("🔴 Google Sign-In Error: $error");
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Google Sign-In Failed: ${error.toString()}"), 
+                backgroundColor: Colors.red
+              ),
+            );
+          }
+          return; 
+        }
+      }
       if (googleUser == null) {
         setState(() => _isGoogleLoading = false);
         return;
@@ -291,19 +298,30 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() => _isGoogleLoading = false);
 
+      // ✅ FIX 1: Pull the 404 check OUTSIDE the success block
+      if (result['statusCode'] == 404) {
+        // Safely extract the data whether the API client nests it or not
+        final responseData = result['data'] ?? result;
+        final googleData = responseData['googleData'] ?? {};
+
+        Navigator.push(context, MaterialPageRoute(builder: (_) => RegisterScreen(
+          prefilledName: googleData['fullName'], 
+          prefilledEmail: googleData['email'],
+          googleToken: tokenToSend, 
+        )));
+        return; // Stop execution here
+      }
+
+      // ✅ FIX 2: Normal Login Success
       if (result['success']) {
-        if (result['statusCode'] == 200) {
-          _handleLoginSuccess(result['data']['user']);
-        } else if (result['statusCode'] == 404) {
-          final googleData = result['data']['googleData'];
-          Navigator.push(context, MaterialPageRoute(builder: (_) => RegisterScreen(
-            prefilledName: googleData['fullName'], 
-            prefilledEmail: googleData['email'],
-            googleToken: googleAuth.idToken,
-          )));
-        }
+        _handleLoginSuccess(result['data']['user']);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? "Google Login Failed"), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? "Google Login Failed"), 
+            backgroundColor: Colors.red
+          )
+        );
       }
     } catch (e) {
       if (mounted) {

@@ -176,8 +176,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      await prefs.setString('user_name', fields['fullName']!);
+      // Update basic name preference
+      if (fields['fullName'] != null) {
+        await prefs.setString('user_name', fields['fullName']!);
+      }
       
+      // Fetch the old cache
       String? userJson = prefs.getString('cached_user');
       Map<String, dynamic> userMap = {};
       
@@ -187,14 +191,23 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         userMap = Map<String, dynamic>.from(widget.userData);
       }
 
-      userMap['fullName'] = fields['fullName'];
-      userMap['yearOfAttendance'] = int.tryParse(fields['yearOfAttendance'] ?? '') ?? fields['yearOfAttendance'];
-      userMap['programmeTitle'] = fields['programmeTitle'];
-      userMap['isBirthdayVisible'] = fields['isBirthdayVisible'] == 'true';
-      userMap['isLocationVisible'] = fields['isLocationVisible'] == 'true';
-      userMap['isOpenToMentorship'] = fields['isOpenToMentorship'] == 'true';
+      // ✅ FIX: Safely parse and inject all new fields into the map
+      if (fields['fullName'] != null) userMap['fullName'] = fields['fullName'];
+      if (fields['programmeTitle'] != null) userMap['programmeTitle'] = fields['programmeTitle'];
+      
+      // ✅ VITAL FIX: Ensure Year of Attendance is strictly saved as an integer
+      if (fields['yearOfAttendance'] != null && fields['yearOfAttendance']!.isNotEmpty) {
+        userMap['yearOfAttendance'] = int.tryParse(fields['yearOfAttendance']!) ?? fields['yearOfAttendance'];
+      }
 
+      // Update toggles
+      if (fields['isBirthdayVisible'] != null) userMap['isBirthdayVisible'] = fields['isBirthdayVisible'] == 'true';
+      if (fields['isLocationVisible'] != null) userMap['isLocationVisible'] = fields['isLocationVisible'] == 'true';
+      if (fields['isOpenToMentorship'] != null) userMap['isOpenToMentorship'] = fields['isOpenToMentorship'] == 'true';
+
+      // Save it back to the device
       await prefs.setString('cached_user', jsonEncode(userMap));
+      debugPrint("✅ Local Cache successfully updated with year: ${userMap['yearOfAttendance']}");
     } catch (e) {
       debugPrint("❌ Cache Update Failed: $e");
     }
@@ -244,14 +257,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
       if (!mounted) return;
 
-     if (success) {
+    if (success) {
         await _updateLocalCache(fields);
         ref.invalidate(profileProvider);
         ref.invalidate(dashboardProvider);
 
         if (!mounted) return;
 
-        // ✅ UNLOCK THE SCREEN FOR ROUTING
+        // ✅ 1. Unlock the PopScope
         setState(() {
           _isSuccess = true; 
         });
@@ -260,11 +273,18 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           const SnackBar(content: Text("Profile Updated Successfully!")),
         );
         
-        if (widget.isFirstTime) {
-          context.go('/home'); // This will now work perfectly
-        } else {
-          Navigator.pop(context, true);
-        }
+        // ✅ 2. Wait exactly one frame for the UI to unlock, then clear the screen
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          
+          if (widget.isFirstTime) {
+            context.go('/home');         // 1. Sets the underlying router to Home
+            Navigator.of(context).pop(); // 2. Removes this EditProfile screen sitting on top!
+          } else {
+            Navigator.pop(context, true);
+          }
+        });
+        
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

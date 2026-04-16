@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:go_router/go_router.dart'; // ✅ Import GoRouter
 
-class WelcomeDialog extends StatelessWidget {
+class WelcomeDialog extends StatefulWidget {
   final String userName;
   final VoidCallback? onGetStarted; 
 
@@ -13,20 +12,26 @@ class WelcomeDialog extends StatelessWidget {
   });
 
   @override
+  State<WelcomeDialog> createState() => _WelcomeDialogState();
+}
+
+class _WelcomeDialogState extends State<WelcomeDialog> {
+  // ✅ This lock prevents double-clicks!
+  bool _isProcessing = false;
+
+  @override
   Widget build(BuildContext context) {
-    // ✅ AUTO-DETECT THEME COLORS
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).primaryColor;
     final cardColor = Theme.of(context).cardColor;
     final textColor = Theme.of(context).textTheme.bodyLarge?.color;
     final subTextColor = Theme.of(context).textTheme.bodyMedium?.color;
     
-    // Dynamic Box Color: Light Grey in Day, Dark Grey in Night
     final containerColor = isDark ? Colors.grey[800] : const Color(0xFFF5F7F6);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: cardColor, // ✅ Dynamic Background
+      backgroundColor: cardColor, 
       insetPadding: const EdgeInsets.all(20), 
       child: SingleChildScrollView(
         child: Padding(
@@ -34,7 +39,6 @@ class WelcomeDialog extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // --- 1. TOP LOGO ---
               Container(
                 padding: const EdgeInsets.all(4), 
                 decoration: BoxDecoration(
@@ -44,28 +48,26 @@ class WelcomeDialog extends StatelessWidget {
                 child: CircleAvatar(
                   radius: 25,
                   backgroundImage: const AssetImage('assets/logo.png'), 
-                  backgroundColor: isDark ? Colors.grey[200] : Colors.transparent, // Ensure logo is visible
+                  backgroundColor: isDark ? Colors.grey[200] : Colors.transparent, 
                 ),
               ),
               const SizedBox(height: 15),
 
-              // --- 2. TITLE ---
               Text(
                 "Welcome to the ASCON Alumni Association!",
                 textAlign: TextAlign.center,
                 style: GoogleFonts.lato(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: textColor, // ✅ Dynamic Text
+                  color: textColor, 
                 ),
               ),
               const SizedBox(height: 20),
 
-              // --- 3. MESSAGE BODY (Dynamic Box) ---
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: containerColor, // ✅ Dynamic Box Color
+                  color: containerColor, 
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Column(
@@ -90,7 +92,7 @@ class WelcomeDialog extends StatelessWidget {
                       style: GoogleFonts.lato(
                         fontSize: 14,
                         height: 1.5, 
-                        color: subTextColor, // ✅ Dynamic Text
+                        color: subTextColor, 
                       ),
                     ),
                   ],
@@ -98,11 +100,10 @@ class WelcomeDialog extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // --- 4. SIGNATURE BLOCK ---
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
                 decoration: BoxDecoration(
-                  color: containerColor, // ✅ Dynamic Box Color
+                  color: containerColor, 
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -121,7 +122,7 @@ class WelcomeDialog extends StatelessWidget {
                             style: GoogleFonts.lato(
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              color: textColor, // ✅ Dynamic Text
+                              color: textColor, 
                             ),
                           ),
                           Text(
@@ -139,20 +140,20 @@ class WelcomeDialog extends StatelessWidget {
               ),
               const SizedBox(height: 25),
 
-              // --- 5. GET STARTED BUTTON ---
+              // --- 5. BULLETPROOF BUTTON ---
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // ✅ 1. Trigger Backend Update
-                    if (onGetStarted != null) onGetStarted!();
-
-                    // ✅ 2. CLOSE DIALOG
-                    Navigator.of(context).pop(); 
+                  // ✅ Disables the button completely if it's already processing
+                  onPressed: _isProcessing ? null : () {
+                    setState(() {
+                      _isProcessing = true; // Lock the button immediately
+                    });
                     
-                    // ✅ 3. NAVIGATE TO HOME SCREEN (Using GoRouter)
-                    context.go('/home');
+                    if (widget.onGetStarted != null) {
+                      widget.onGetStarted!(); 
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
@@ -161,10 +162,17 @@ class WelcomeDialog extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
-                    "Get Started",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
+                  // ✅ Shows a loading spinner so the user knows it worked
+                  child: _isProcessing 
+                    ? const SizedBox(
+                        height: 24, 
+                        width: 24, 
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                      )
+                    : const Text(
+                        "Get Started",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
                 ),
               ),
             ],

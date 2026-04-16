@@ -89,7 +89,7 @@ _Located in `/ascon_mobile`_
     ```
 
 4.  **Run the app:** - Development: `flutter run`
-    - Web (CORS Disabled): `flutter run -d chrome --web-browser-flag "--disable-web-security"`
+    - Web (CORS Disabled): `flutter run -d chrome --web-port=3000 --web-browser-flag "--disable-web-security""`
 5.  **Build Release (Android - Optimized Size):** `flutter build apk --split-per-abi` _(Distribute the `arm64-v8a` version to reduce APK size from ~278MB to ~120MB)_
 6.  **Build Release (iPhone):** `flutter build ios --release`
 7.  **Build Web Version:** `flutter build web`

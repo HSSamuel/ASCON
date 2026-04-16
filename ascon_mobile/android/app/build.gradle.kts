@@ -16,7 +16,7 @@ android {
         keystoreProperties.load(FileInputStream(keystorePropertiesFile))
     }
 
-    namespace = "com.example.ascon_mobile"
+    namespace = "com.ascon.alumni"
     compileSdk = 36
     ndkVersion = "27.0.12077973"
 
@@ -39,7 +39,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.ascon_mobile"
+        applicationId = "com.ascon.alumni"
         
         // ✅ CRITICAL FIX: Explicitly set to 26 for twilio_voice compatibility
         minSdk = 26
