@@ -344,14 +344,11 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
   }
 
   Future<void> _loadUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString('user_name');
     final isAdmin = await AuthService().isAdmin; 
     final userId = await AuthService().currentUserId; 
     
     if (mounted) {
       setState(() {
-        if (saved != null) _displayName = saved;
         _isAdmin = isAdmin;
         _currentUserId = userId; 
       });
