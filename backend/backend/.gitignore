@@ -5,7 +5,3 @@ node_modules/
 .env
 .DS_Store
 serviceAccountKey.json
-env.txt
-.DS_Store
-firebase-messaging-sw.js
-firebase.json

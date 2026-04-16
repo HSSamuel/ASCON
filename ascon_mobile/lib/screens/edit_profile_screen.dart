@@ -261,6 +261,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         await _updateLocalCache(fields);
         ref.invalidate(profileProvider);
         ref.invalidate(dashboardProvider);
+        ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
 
         if (!mounted) return;
 

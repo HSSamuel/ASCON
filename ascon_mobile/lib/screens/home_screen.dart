@@ -334,14 +334,12 @@ class DashboardView extends ConsumerStatefulWidget {
 }
 
 class _DashboardViewState extends ConsumerState<DashboardView> {
-  String _displayName = "Alumni";
   bool _isAdmin = false; 
   String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(dashboardProvider.notifier).loadData());
     _loadUser();
   }
 
@@ -445,7 +443,13 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
                     child: Text(dashboardState.errorMessage!, style: const TextStyle(color: Colors.white, fontSize: 12), textAlign: TextAlign.center),
                   ),
 
-                DigitalIDCard(userName: _displayName, programme: dashboardState.programme, year: dashboardState.year, alumniID: dashboardState.alumniID, imageUrl: dashboardState.profileImage),
+                DigitalIDCard(
+  userName: dashboardState.fullName, 
+  programme: dashboardState.programme, 
+  year: dashboardState.year, 
+  alumniID: dashboardState.alumniID, 
+  imageUrl: dashboardState.profileImage
+),
                 const ChapterCard(),
                 const CelebrationWidget(),
                 const SizedBox(height: 10),

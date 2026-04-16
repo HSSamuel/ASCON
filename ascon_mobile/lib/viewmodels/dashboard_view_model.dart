@@ -17,6 +17,7 @@ class DashboardState {
   final String year;
   final String alumniID;
   final String firstName;
+  final String fullName;
   final double profileCompletionPercent;
   final bool isProfileComplete;
 
@@ -32,6 +33,7 @@ class DashboardState {
     this.year = "....",
     this.alumniID = "PENDING",
     this.firstName = "Alumni",
+    this.fullName = "Alumni",
     this.profileCompletionPercent = 0.0,
     this.isProfileComplete = false,
   });
@@ -48,6 +50,7 @@ class DashboardState {
     String? year,
     String? alumniID,
     String? firstName,
+    String? fullName,
     double? profileCompletionPercent,
     bool? isProfileComplete,
   }) {
@@ -63,6 +66,7 @@ class DashboardState {
       year: year ?? this.year,
       alumniID: alumniID ?? this.alumniID,
       firstName: firstName ?? this.firstName,
+      fullName: fullName ?? this.fullName,
       profileCompletionPercent: profileCompletionPercent ?? this.profileCompletionPercent,
       isProfileComplete: isProfileComplete ?? this.isProfileComplete,
     );
@@ -73,15 +77,25 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
   final DataService _dataService = DataService();
   final AuthService _authService = AuthService();
 
-  DashboardNotifier() : super(const DashboardState());
+  // ✅ CHANGE THIS: Call loadData() automatically on initialization
+  DashboardNotifier() : super(const DashboardState()) {
+    loadData();
+  }
 
   Future<void> loadData({bool isRefresh = false}) async {
-    if (!isRefresh) state = state.copyWith(isLoading: true, errorMessage: null);
+    // ✅ 1. Instantly pull the cached name and ID so the UI updates at lightning speed
+    final prefs = await SharedPreferences.getInstance();
+    String localAlumniID = prefs.getString('alumni_id') ?? "PENDING";
+    String cachedName = prefs.getString('user_name') ?? state.fullName;
+
+    if (!isRefresh) {
+      state = state.copyWith(isLoading: true, errorMessage: null, fullName: cachedName, alumniID: localAlumniID);
+    } else {
+      // ✅ Instantly push the new cached name to the UI during a silent background refresh
+      state = state.copyWith(fullName: cachedName, errorMessage: null);
+    }
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      String localAlumniID = prefs.getString('alumni_id') ?? "PENDING";
-
       final String? myId = await _authService.currentUserId;
 
       final results = await Future.wait([
@@ -113,6 +127,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
       String programme = "Member";
       String year = "....";
       String firstName = "Alumni";
+      String fullName = "Alumni";
       String alumniID = localAlumniID;
       double profileCompletionPercent = 0.0;
       bool isProfileComplete = false;
@@ -125,6 +140,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         year = profile['yearOfAttendance']?.toString() ?? "....";
         
         String fullName = profile['fullName'] ?? "Alumni";
+        fullName = profile['fullName'] ?? "Alumni";
         firstName = fullName.split(" ")[0];
 
         String? apiId = profile['alumniId'];
@@ -176,6 +192,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
           year: year,
           alumniID: alumniID,
           firstName: firstName,
+          fullName: fullName,
           profileCompletionPercent: profileCompletionPercent,
           isProfileComplete: isProfileComplete,
         );
