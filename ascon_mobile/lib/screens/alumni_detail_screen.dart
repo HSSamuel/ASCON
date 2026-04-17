@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart'; // ✅ ADDED: Required for kIsWeb
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
@@ -6,18 +7,16 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart'; 
 import 'package:cached_network_image/cached_network_image.dart'; 
 
-// ✅ IMPORT RIVERPOD & PROFILE VIEW MODEL
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../viewmodels/profile_view_model.dart'; 
 
 import '../widgets/full_screen_image.dart'; 
 import 'chat_screen.dart'; 
-import 'call_screen.dart'; // ✅ Import Call Screen
+import 'call_screen.dart'; 
 import '../services/data_service.dart';
 import '../services/socket_service.dart';
 import '../utils/presence_formatter.dart'; 
 
-// ✅ CHANGE TO ConsumerStatefulWidget
 class AlumniDetailScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> alumniData;
 
@@ -27,7 +26,6 @@ class AlumniDetailScreen extends ConsumerStatefulWidget {
   ConsumerState<AlumniDetailScreen> createState() => _AlumniDetailScreenState();
 }
 
-// ✅ CHANGE TO ConsumerState
 class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
   final DataService _dataService = DataService();
   
@@ -224,7 +222,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     }
   }
 
-  // ✅ FIXED: Using ref.read to get current user data
   void _startVoiceCall() {
     final String targetId = _currentAlumniData['userId'] ?? _currentAlumniData['_id'];
     final String fullName = _currentAlumniData['fullName'] ?? 'Alumni Member';
@@ -232,7 +229,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
 
     String uniqueChannel = "call_${DateTime.now().millisecondsSinceEpoch}";
 
-    // ✅ Fetch current user details from profileProvider
     final userProfile = ref.read(profileProvider).userProfile;
     final String currentUserName = userProfile?['fullName'] ?? "Alumni User";
     final String? currentUserAvatar = userProfile?['profilePicture'];
@@ -245,8 +241,8 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
           channelName: uniqueChannel,
           remoteAvatar: profilePic,
           isIncoming: false,
-          currentUserName: currentUserName,      // ✅ Correctly defined now
-          currentUserAvatar: currentUserAvatar,  // ✅ Correctly defined now
+          currentUserName: currentUserName,      
+          currentUserAvatar: currentUserAvatar,  
         ),
       ),
     );
@@ -418,7 +414,10 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
-                              if (imageString.isNotEmpty && (imageString.startsWith('http') || imageString.length > 100)) {
+                              // ✅ Prevent tapping to zoom if it's a fake placeholder URL
+                              if (imageString.isNotEmpty && 
+                                  !imageString.contains('profile/picture/') && 
+                                  (imageString.startsWith('http') || imageString.length > 100)) {
                                 Navigator.of(context, rootNavigator: true).push(
                                   MaterialPageRoute(
                                     builder: (_) => FullScreenImage(
@@ -550,7 +549,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
 
                   const SizedBox(height: 10),
 
-                  // ✅ ACTION BUTTONS
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -571,7 +569,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                           );
                         }),
 
-                        // ✅ NEW CALL BUTTON
                         _buildCircleAction(context, Icons.call, "Voice Call", Colors.purple[700]!, _startVoiceCall),
 
                         if (linkedin.isNotEmpty)
@@ -580,7 +577,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                         if (email.isNotEmpty)
                           _buildCircleAction(context, Icons.email, "Email", Colors.red[400]!, () => _launchURL("mailto:$email")),
                         
-                        // Regular phone call (GSM)
                         if (showPhone && phone.isNotEmpty)
                           _buildCircleAction(context, Icons.phone_android, "Phone", Colors.green[600]!, () => _launchURL("tel:$phone")),
                       ],
@@ -589,12 +585,10 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
 
                   const SizedBox(height: 25),
 
-                  // --- 4. DETAILS CARDS ---
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
                       children: [
-                        // About Me Card
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(20),
@@ -678,7 +672,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                             ),
                           ),
 
-                        // Programme Card
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
@@ -784,27 +777,48 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     );
   }
 
+  // ✅ FIXED: Better handling for Web CORS and invalid URLs
   Widget _buildRobustAvatar(String imageString, bool isDark) {
-    if (imageString.isEmpty) {
+    if (imageString.isEmpty || imageString.contains('profile/picture/')) {
       return _buildPlaceholder(isDark);
     }
 
     if (imageString.startsWith('http')) {
-      return CachedNetworkImage(
-        imageUrl: imageString,
-        imageBuilder: (context, imageProvider) => CircleAvatar(
+      if (kIsWeb) {
+        return CircleAvatar(
           radius: 45,
-          backgroundImage: imageProvider,
-        ),
-        placeholder: (context, url) => _buildPlaceholder(isDark),
-        errorWidget: (context, url, error) => _buildPlaceholder(isDark),
-      );
+          backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
+          child: ClipOval(
+            child: Image.network(
+              imageString,
+              width: 90,
+              height: 90,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Icon(Icons.person, size: 45, color: isDark ? Colors.grey[500] : Colors.grey),
+            ),
+          ),
+        );
+      } else {
+        return CachedNetworkImage(
+          imageUrl: imageString,
+          imageBuilder: (context, imageProvider) => CircleAvatar(
+            radius: 45,
+            backgroundImage: imageProvider,
+          ),
+          placeholder: (context, url) => _buildPlaceholder(isDark),
+          errorWidget: (context, url, error) => _buildPlaceholder(isDark),
+        );
+      }
     }
 
     try {
+      String cleanBase64 = imageString;
+      if (cleanBase64.contains(',')) {
+        cleanBase64 = cleanBase64.split(',').last;
+      }
       return CircleAvatar(
         radius: 45,
-        backgroundImage: MemoryImage(base64Decode(imageString)),
+        backgroundImage: MemoryImage(base64Decode(cleanBase64)),
       );
     } catch (e) {
       return _buildPlaceholder(isDark);

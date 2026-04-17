@@ -198,30 +198,35 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                               ),
                             ),
 
-                          // B. CATEGORY CHIPS
+                          // B. CATEGORY CHIPS (✅ Modified for single-line horizontal scroll)
                           SliverToBoxAdapter(
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-                              child: Wrap(
-                                spacing: 8.0, 
-                                runSpacing: 10.0,
-                                children: _categories.map((cat) {
-                                  final isSelected = _selectedCategory == cat;
-                                  return ChoiceChip(
-                                    label: Text(cat),
-                                    selected: isSelected,
-                                    selectedColor: primaryColor.withOpacity(0.2),
-                                    labelStyle: TextStyle(
-                                      color: isSelected ? primaryColor : Colors.grey[600],
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
-                                    ),
-                                    onSelected: (val) {
-                                      setState(() {
-                                        _selectedCategory = cat;
-                                      });
-                                    },
-                                  );
-                                }).toList(),
+                              padding: const EdgeInsets.fromLTRB(0, 20, 0, 10),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                padding: const EdgeInsets.symmetric(horizontal: 16), // Adds padding to ends but allows edge scrolling
+                                child: Row(
+                                  children: _categories.map((cat) {
+                                    final isSelected = _selectedCategory == cat;
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 8.0),
+                                      child: ChoiceChip(
+                                        label: Text(cat),
+                                        selected: isSelected,
+                                        selectedColor: primaryColor.withOpacity(0.2),
+                                        labelStyle: TextStyle(
+                                          color: isSelected ? primaryColor : Colors.grey[600],
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+                                        ),
+                                        onSelected: (val) {
+                                          setState(() {
+                                            _selectedCategory = cat;
+                                          });
+                                        },
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
                               ),
                             ),
                           ),

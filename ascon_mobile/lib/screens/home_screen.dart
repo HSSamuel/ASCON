@@ -115,7 +115,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     GlobalKey<NavigatorState>? currentNavigatorKey;
     switch (currentIndex) {
       case 0: currentNavigatorKey = homeNavKey; break;
-      case 1: currentNavigatorKey = eventsNavKey; break;
+      case 1: currentNavigatorKey = chatNavKey; break; 
       case 2: currentNavigatorKey = updatesNavKey; break;
       case 3: currentNavigatorKey = directoryNavKey; break;
       case 4: currentNavigatorKey = profileNavKey; break;
@@ -169,6 +169,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final showAppBar = uiIndex == 0;
     
     final badgeState = ref.watch(badgeProvider);
+    final dashboardState = ref.watch(dashboardProvider);
 
     return PopScope(
       canPop: false, 
@@ -185,39 +186,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
               elevation: 0,
               automaticallyImplyLeading: false,
               actions: [
-                Stack(
-                  alignment: Alignment.topRight,
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.chat_bubble_outline_rounded, color: isDark ? Colors.white : primaryColor, size: 22),
-                      onPressed: () {
-                        ref.read(badgeProvider.notifier).clearMessageBadge(); 
-                        context.push('/chat').then((_) => ref.read(badgeProvider.notifier).refreshBadges());
-                      },
-                    ),
-                    if (badgeState.hasUnreadMessages || badgeState.missedCallsCount > 0)
-                      Positioned(
-                        right: 8, top: 8,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: Colors.red, 
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Theme.of(context).cardColor, width: 1.5)
-                          ),
-                          constraints: const BoxConstraints(minWidth: 10, minHeight: 10),
-                          child: badgeState.missedCallsCount > 0 
-                            ? Center(
-                                child: Text(
-                                  '${badgeState.missedCallsCount}',
-                                  style: const TextStyle(color: Colors.white, fontSize: 6, fontWeight: FontWeight.bold),
-                                  textAlign: TextAlign.center,
-                                ),
-                              )
-                            : null, 
-                        ),
-                      )
-                  ],
+                IconButton(
+                  icon: Icon(Icons.event_note_rounded, color: isDark ? Colors.white : primaryColor, size: 22),
+                  onPressed: () {
+                    context.push('/events');
+                  },
                 ),
                 IconButton(
                   icon: Icon(Icons.info_outline, color: isDark ? Colors.white : primaryColor, size: 22),
@@ -249,7 +222,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           child: widget.navigationShell,
         ),
 
-        // ✅ FIXED: Converted to a uniform 5-item Bottom Navigation Bar
         bottomNavigationBar: isKeyboardOpen 
           ? null 
           : AnimatedSlide(
@@ -269,11 +241,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
                       _buildNavItem(label: "Home", icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, index: 0, color: primaryColor, currentIndex: uiIndex),
-                      _buildNavItem(label: "Events", icon: Icons.event_outlined, activeIcon: Icons.event, index: 1, color: primaryColor, currentIndex: uiIndex),
-                      // ✅ Updates is now perfectly matched with the rest of the icons
+                      _buildNavItem(
+                        label: "Chat", 
+                        icon: Icons.chat_bubble_outline, 
+                        activeIcon: Icons.chat_bubble, 
+                        index: 1, 
+                        color: primaryColor, 
+                        currentIndex: uiIndex,
+                        showBadge: badgeState.hasUnreadMessages || badgeState.missedCallsCount > 0,
+                        badgeCount: (badgeState.unreadMessageCount ?? 0) + badgeState.missedCallsCount,
+                      ),
                       _buildNavItem(label: "Updates", icon: Icons.dynamic_feed, activeIcon: Icons.dynamic_feed, index: 2, color: primaryColor, currentIndex: uiIndex),
                       _buildNavItem(label: "Directory", icon: Icons.list_alt, activeIcon: Icons.list, index: 3, color: primaryColor, currentIndex: uiIndex),
-                      _buildNavItem(label: "Profile", icon: Icons.person_outline, activeIcon: Icons.person, index: 4, color: primaryColor, currentIndex: uiIndex),
+                      _buildNavItem(
+                        label: "Profile", 
+                        icon: Icons.person_outline, 
+                        activeIcon: Icons.person, 
+                        index: 4, 
+                        color: primaryColor, 
+                        currentIndex: uiIndex,
+                        imageUrl: dashboardState.profileImage,
+                      ),
                     ],
                   ),
                 ),
@@ -282,11 +270,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       ),
     );
   }
+
+  Widget _buildNavProfileIcon(String? imageUrl, bool isSelected, Color color, IconData icon, IconData activeIcon) {
+    if (imageUrl == null || imageUrl.isEmpty || imageUrl.contains('profile/picture/1')) {
+      return Icon(isSelected ? activeIcon : icon, color: isSelected ? color : Colors.grey[400], size: 20);
+    }
+
+    Widget imageWidget;
+    if (kIsWeb && imageUrl.startsWith('http')) {
+      imageWidget = Image.network(
+        imageUrl, 
+        fit: BoxFit.cover, 
+        errorBuilder: (c, e, s) => Icon(isSelected ? activeIcon : icon, size: 16, color: Colors.grey[400])
+      );
+    } else if (imageUrl.startsWith('http')) {
+      imageWidget = CachedNetworkImage(
+        imageUrl: imageUrl, 
+        fit: BoxFit.cover,
+        placeholder: (c, u) => Container(color: Colors.grey[200]),
+        errorWidget: (c, u, e) => Icon(isSelected ? activeIcon : icon, size: 16, color: Colors.grey[400]),
+      );
+    } else {
+      try {
+        String cleanBase64 = imageUrl;
+        if (cleanBase64.contains(',')) cleanBase64 = cleanBase64.split(',').last;
+        imageWidget = Image.memory(
+          base64Decode(cleanBase64), 
+          fit: BoxFit.cover, 
+          errorBuilder: (c, e, s) => Icon(isSelected ? activeIcon : icon, size: 16, color: Colors.grey[400])
+        );
+      } catch (e) {
+        imageWidget = Icon(isSelected ? activeIcon : icon, size: 16, color: Colors.grey[400]);
+      }
+    }
+
+    return Container(
+      width: 24, 
+      height: 24,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: isSelected ? color : Colors.transparent, width: 1.5),
+      ),
+      child: ClipOval(child: imageWidget),
+    );
+  }
   
-  Widget _buildNavItem({required String label, required IconData icon, required IconData activeIcon, required int index, required Color color, required int currentIndex}) {
+  Widget _buildNavItem({required String label, required IconData icon, required IconData activeIcon, required int index, required Color color, required int currentIndex, bool showBadge = false, int badgeCount = 0, String? imageUrl}) {
     final isSelected = currentIndex == index;
     return InkWell(
-      onTap: () => _goBranch(index),
+      onTap: () {
+        if (index == 1) { 
+          ref.read(badgeProvider.notifier).clearMessageBadge(); 
+        }
+        _goBranch(index);
+      },
       borderRadius: BorderRadius.circular(30),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
@@ -294,7 +331,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(isSelected ? activeIcon : icon, color: isSelected ? color : Colors.grey[400], size: 20),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                if (imageUrl != null)
+                  _buildNavProfileIcon(imageUrl, isSelected, color, icon, activeIcon)
+                else
+                  Icon(isSelected ? activeIcon : icon, color: isSelected ? color : Colors.grey[400], size: 20),
+                  
+                if (showBadge)
+                  Positioned(
+                    right: -2, top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.red, 
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Theme.of(context).cardColor, width: 1.0)
+                      ),
+                      constraints: const BoxConstraints(minWidth: 10, minHeight: 10),
+                      child: badgeCount > 0 
+                        ? Center(
+                            child: Text(
+                              '$badgeCount',
+                              style: const TextStyle(color: Colors.white, fontSize: 6, fontWeight: FontWeight.bold),
+                              textAlign: TextAlign.center,
+                            ),
+                          )
+                        : null, 
+                    ),
+                  )
+              ],
+            ),
             const SizedBox(height: 2),
             Text(label, style: GoogleFonts.lato(fontSize: 9, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? color : Colors.grey[400])),
           ],
@@ -352,6 +420,30 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
       if (success) {
         ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
         if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Programme deleted")));
+      }
+    }
+  }
+
+  Future<void> _deleteEvent(String id) async {
+    final confirm = await showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text("Delete Event?"),
+        content: const Text("Are you sure? This cannot be undone."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ref.read(eventsProvider.notifier).deleteEvent(id);
+        ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Event deleted")));
+      } catch (e) {
+        debugPrint("Failed to delete event: $e");
       }
     }
   }
@@ -487,10 +579,17 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text("Recent & Upcoming Events", style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.w900, color: textColor)),
-                      Row(children: [
-                        Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle)), const SizedBox(width: 4),
-                        Container(width: 6, height: 6, decoration: BoxDecoration(color: const Color(0xFF4CAF50).withOpacity(0.5), shape: BoxShape.circle)),
-                      ])
+                      if (_isAdmin)
+                        IconButton(
+                          icon: const Icon(Icons.add_circle, color: Colors.green), 
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddContentScreen(type: 'Event'))), 
+                          tooltip: "Add Event"
+                        )
+                      else
+                        Row(children: [
+                          Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle)), const SizedBox(width: 4),
+                          Container(width: 6, height: 6, decoration: BoxDecoration(color: const Color(0xFF4CAF50).withOpacity(0.5), shape: BoxShape.circle)),
+                        ])
                     ],
                   ),
                 ),
@@ -553,6 +652,7 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
     String location = data['location'] ?? "ASCON Complex";
     String day = "25"; String month = "OCT"; String time = "TBA"; 
     String type = (data['type'] ?? "Event").toString().toUpperCase();
+    final String id = data['_id'] ?? data['id'] ?? "";
 
     String rawDate = data['date']?.toString() ?? '';
     if (rawDate.isNotEmpty) {
@@ -564,61 +664,82 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
     }
     if (data['time'] != null && data['time'].toString().isNotEmpty) { time = data['time']; }
 
-    return Container(
-      height: 95, 
-      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(16), boxShadow: [if (!isDark) BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))]),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-             final String resolvedId = (data['_id'] ?? data['id'] ?? '').toString();
-             final safeData = {...data.map((key, value) => MapEntry(key, value.toString())), '_id': resolvedId};
-             Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (c) => EventDetailScreen(eventData: safeData)));
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0), 
-            child: Row(
-              children: [
-                Container(width: 48, height: 48, decoration: BoxDecoration(color: isDark ? Colors.white.withOpacity(0.1) : primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.location_on_rounded, color: isDark ? Colors.white : primaryColor, size: 24)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(location.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.lato(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5, color: Colors.grey[500])),
-                      const SizedBox(height: 2),
-                      Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w900, color: isDark ? Colors.white : primaryColor, height: 1.1)), 
-                      const SizedBox(height: 2),
-                      Row(children: [Icon(Icons.access_time_rounded, size: 12, color: Colors.blueGrey), const SizedBox(width: 4), Text(time, style: GoogleFonts.lato(fontSize: 11, color: Colors.blueGrey, fontWeight: FontWeight.w700))]),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, 
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          height: 95, 
+          decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(16), boxShadow: [if (!isDark) BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))]),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                 final String resolvedId = (data['_id'] ?? data['id'] ?? '').toString();
+                 final safeData = {...data.map((key, value) => MapEntry(key, value.toString())), '_id': resolvedId};
+                 Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (c) => EventDetailScreen(eventData: safeData)));
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0), 
+                child: Row(
                   children: [
-                    Container(margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3), decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(6)), child: Text(type, style: GoogleFonts.lato(fontSize: 8, fontWeight: FontWeight.w800, color: primaryColor, letterSpacing: 0.5))),
-                    Container(
-                      width: 48, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6, offset: const Offset(0, 2))]),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min, 
-                          children: [
-                            Container(height: 18, width: double.infinity, alignment: Alignment.center, color: primaryColor, child: Text(month, style: GoogleFonts.lato(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.0))),
-                            Container(height: 26, width: double.infinity, alignment: Alignment.center, color: isDark ? const Color(0xFF2C2C2C) : Colors.white, child: Text(day, style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.w900, color: isDark ? Colors.white : Colors.black87, height: 1.0))),
-                          ],
-                        ),
+                    Container(width: 48, height: 48, decoration: BoxDecoration(color: isDark ? Colors.white.withOpacity(0.1) : primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.location_on_rounded, color: isDark ? Colors.white : primaryColor, size: 24)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(location.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.lato(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5, color: Colors.grey[500])),
+                          const SizedBox(height: 2),
+                          Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.w900, color: isDark ? Colors.white : primaryColor, height: 1.1)), 
+                          const SizedBox(height: 2),
+                          Row(children: [Icon(Icons.access_time_rounded, size: 12, color: Colors.blueGrey), const SizedBox(width: 4), Text(time, style: GoogleFonts.lato(fontSize: 11, color: Colors.blueGrey, fontWeight: FontWeight.w700))]),
+                        ],
                       ),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, 
+                      children: [
+                        Container(margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3), decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(6)), child: Text(type, style: GoogleFonts.lato(fontSize: 8, fontWeight: FontWeight.w800, color: primaryColor, letterSpacing: 0.5))),
+                        Container(
+                          width: 48, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6, offset: const Offset(0, 2))]),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min, 
+                              children: [
+                                Container(height: 18, width: double.infinity, alignment: Alignment.center, color: primaryColor, child: Text(month, style: GoogleFonts.lato(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.0))),
+                                Container(height: 26, width: double.infinity, alignment: Alignment.center, color: isDark ? const Color(0xFF2C2C2C) : Colors.white, child: Text(day, style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.w900, color: isDark ? Colors.white : Colors.black87, height: 1.0))),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
+        // ✅ UPDATED: Shifted to the Left Side
+        if (_isAdmin) 
+          Positioned(
+            top: 4, 
+            left: 4, 
+            child: CircleAvatar(
+              backgroundColor: isDark ? Colors.grey[800]!.withOpacity(0.9) : Colors.white.withOpacity(0.9), 
+              radius: 14, 
+              child: IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red, size: 14), 
+                onPressed: () => _deleteEvent(id), 
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              )
+            )
+          )
+      ],
     );
   }
 

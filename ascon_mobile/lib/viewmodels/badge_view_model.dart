@@ -7,13 +7,23 @@ import '../services/auth_service.dart';
 
 class BadgeState {
   final bool hasUnreadMessages;
+  final int unreadMessageCount; 
   final int missedCallsCount;
 
-  BadgeState({this.hasUnreadMessages = false, this.missedCallsCount = 0});
+  BadgeState({
+    this.hasUnreadMessages = false, 
+    this.unreadMessageCount = 0, 
+    this.missedCallsCount = 0
+  });
 
-  BadgeState copyWith({bool? hasUnreadMessages, int? missedCallsCount}) {
+  BadgeState copyWith({
+    bool? hasUnreadMessages, 
+    int? unreadMessageCount, 
+    int? missedCallsCount
+  }) {
     return BadgeState(
       hasUnreadMessages: hasUnreadMessages ?? this.hasUnreadMessages,
+      unreadMessageCount: unreadMessageCount ?? this.unreadMessageCount, 
       missedCallsCount: missedCallsCount ?? this.missedCallsCount,
     );
   }
@@ -39,8 +49,16 @@ class BadgeViewModel extends StateNotifier<BadgeState> {
       // 1. Fetch unread messages
       final msgResult = await _api.get('/api/chat/unread-status');
       bool hasUnread = false;
+      int unreadCount = 0; 
+      
       if (msgResult['success'] == true) {
         hasUnread = msgResult['data']?['hasUnread'].toString().toLowerCase() == 'true';
+        if (msgResult['data']?['unreadCount'] != null) {
+          unreadCount = int.tryParse(msgResult['data']!['unreadCount'].toString()) ?? 0;
+        } else if (hasUnread) {
+          // Fallback just in case backend only sends 'hasUnread: true'
+          unreadCount = 1; 
+        }
       }
 
       // 2. Fetch missed calls
@@ -48,6 +66,7 @@ class BadgeViewModel extends StateNotifier<BadgeState> {
 
       state = state.copyWith(
         hasUnreadMessages: hasUnread,
+        unreadMessageCount: unreadCount, 
         missedCallsCount: missedCalls,
       );
     } catch (e) {
@@ -66,7 +85,11 @@ class BadgeViewModel extends StateNotifier<BadgeState> {
             : data['message']['sender'];
         if (senderId == _currentUserId) return; 
       }
-      state = state.copyWith(hasUnreadMessages: true);
+      
+      state = state.copyWith(
+        hasUnreadMessages: true,
+        unreadMessageCount: state.unreadMessageCount + 1 
+      );
     });
 
     socket.on('messages_read', (_) => refreshBadges());
@@ -74,7 +97,7 @@ class BadgeViewModel extends StateNotifier<BadgeState> {
   }
 
   void clearMessageBadge() {
-    state = state.copyWith(hasUnreadMessages: false);
+    state = state.copyWith(hasUnreadMessages: false, unreadMessageCount: 0); 
   }
 }
 

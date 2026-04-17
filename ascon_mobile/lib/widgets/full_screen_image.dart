@@ -49,12 +49,14 @@ class FullScreenImage extends StatelessWidget {
       }
     } catch (e) {
       debugPrint("Share Error: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Could not share image"), 
-          backgroundColor: Colors.red
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Could not share image"), 
+            backgroundColor: Colors.red
+          ),
+        );
+      }
     }
   }
 
@@ -62,9 +64,8 @@ class FullScreenImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true, // ✅ Image goes behind header for immersive feel
+      extendBodyBehindAppBar: true, 
       
-      // ✅ Pro AppBar: Transparent with Shadow
       appBar: AppBar(
         backgroundColor: Colors.black.withOpacity(0.4),
         elevation: 0,
@@ -83,15 +84,21 @@ class FullScreenImage extends StatelessWidget {
         ],
       ),
       
-      body: Center(
-        child: Hero(
-          tag: heroTag,
-          child: InteractiveViewer(
-            panEnabled: true,
-            boundaryMargin: const EdgeInsets.all(40), // More breathing room
-            minScale: 0.5,
-            maxScale: 4.0,
-            child: _buildSafeImage(),
+      // ✅ Wrap InteractiveViewer in a GestureDetector to easily dismiss on double tap
+      body: GestureDetector(
+        onDoubleTap: () => Navigator.pop(context),
+        child: Center(
+          child: Hero(
+            tag: heroTag,
+            child: InteractiveViewer(
+              panEnabled: true,
+              // ✅ FIX: Allow infinite panning beyond the image borders
+              boundaryMargin: const EdgeInsets.all(double.infinity), 
+              clipBehavior: Clip.none, // ✅ FIX: Don't cut off the image when zooming
+              minScale: 0.5,
+              maxScale: 6.0, // ✅ Increased max zoom level for better inspection
+              child: _buildSafeImage(),
+            ),
           ),
         ),
       ),
@@ -134,13 +141,20 @@ class FullScreenImage extends StatelessWidget {
   }
 
   Widget _buildFallbackIcon() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
-        Icon(Icons.broken_image, size: 80, color: Colors.white38),
-        SizedBox(height: 16),
-        Text("Image could not load", style: TextStyle(color: Colors.white38)),
-      ],
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min, // ✅ FIX: Prevents the column from expanding infinitely and crashing
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          Icon(Icons.broken_image, size: 60, color: Colors.white38), // Slightly smaller icon
+          SizedBox(height: 12),
+          Text(
+            "Image could not load", 
+            style: TextStyle(color: Colors.white38, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
   }
 }

@@ -163,11 +163,11 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        // A. ACTIVE NOW RAIL
+        // A. ONLINE RAIL
         if (chatState.onlineUsers.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-            child: Text("Active Now", style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey[600])),
+            child: Text("Online", style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey[600])), // ✅ Changed from Active Now
           ),
           SizedBox(
             height: 90,
@@ -235,7 +235,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
           children: [
             Stack(
               children: [
-                // ✅ FIXED: Using CachedNetworkImage with error fallback
                 CachedNetworkImage(
                   imageUrl: user['profilePicture'] ?? "",
                   imageBuilder: (context, imageProvider) => CircleAvatar(
@@ -340,7 +339,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
             children: [
               Stack(
                 children: [
-                  // ✅ FIXED: Using CachedNetworkImage with error fallback
                   CachedNetworkImage(
                     imageUrl: other['profilePicture'] ?? "",
                     imageBuilder: (context, imageProvider) => CircleAvatar(

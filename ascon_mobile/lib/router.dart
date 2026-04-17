@@ -24,7 +24,7 @@ import 'screens/mentorship_dashboard_screen.dart';
 // ✅ Global Keys used for Context-less Navigation
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> homeNavKey = GlobalKey<NavigatorState>();
-final GlobalKey<NavigatorState> eventsNavKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> chatNavKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> updatesNavKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> directoryNavKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> profileNavKey = GlobalKey<NavigatorState>();
@@ -73,11 +73,11 @@ final GoRouter appRouter = GoRouter(
           ],
         ),
         StatefulShellBranch(
-          navigatorKey: eventsNavKey, 
+          navigatorKey: chatNavKey,
           routes: [
             GoRoute(
-              path: '/events',
-              builder: (context, state) => const EventsScreen(),
+              path: '/chat',
+              builder: (context, state) => const ChatListScreen(), // <--- Changed screen
             ),
           ],
         ),
@@ -115,9 +115,9 @@ final GoRouter appRouter = GoRouter(
     ),
 
     GoRoute(
-      path: '/chat',
+      path: '/events',
       parentNavigatorKey: rootNavigatorKey, 
-      builder: (context, state) => const ChatListScreen(),
+      builder: (context, state) => const EventsScreen(),
     ),
     
     GoRoute(

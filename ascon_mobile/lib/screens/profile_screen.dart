@@ -22,7 +22,6 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  // ✅ NEW: Scroll Controller and State to track scroll position
   late ScrollController _scrollController;
   bool _isScrolled = false;
 
@@ -33,9 +32,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _scrollController.addListener(_onScroll);
   }
 
-  // ✅ NEW: Listener function to update UI when scrolled past header
   void _onScroll() {
-    // 120px is roughly where the green header ends behind the AppBar
     if (_scrollController.offset > 120 && !_isScrolled) {
       setState(() {
         _isScrolled = true;
@@ -121,7 +118,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final String email = userProfile?['email'] ?? 'No Email';
     final String phone = _formatPhoneNumber(userProfile?['phoneNumber']);
     final String bio = userProfile?['bio'] ?? '';
-    final String statusText = profileState.isOnline ? "Active Now" : _formatLastSeen(profileState.lastSeen);
+    
+    final String statusText = profileState.isOnline ? "Online" : _formatLastSeen(profileState.lastSeen);
     
     final String? profilePicString = userProfile?['profilePicture'];
 
@@ -129,21 +127,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       backgroundColor: scaffoldBg,
       extendBodyBehindAppBar: true, 
       appBar: AppBar(
-        // ✅ UPDATED: Fade in a background color for the AppBar to keep it clean when scrolled
         backgroundColor: _isScrolled ? scaffoldBg.withOpacity(0.95) : Colors.transparent,
         elevation: _isScrolled ? 1 : 0,
         actions: [
           IconButton(
-            // ✅ UPDATED: Dynamic Icon that turns Black (or White in Dark Mode) and gets bolder
             icon: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               child: Icon(
-                Icons.logout_rounded, // Rounded makes it naturally slightly bolder
+                Icons.logout_rounded, 
                 key: ValueKey<bool>(_isScrolled),
                 color: _isScrolled ? (isDark ? Colors.white : Colors.black87) : Colors.white,
-                size: _isScrolled ? 28 : 24, // Enlarge it slightly to make it pop more
+                size: _isScrolled ? 28 : 24, 
                 shadows: !_isScrolled 
-                    ? [const Shadow(color: Colors.black26, blurRadius: 4)] // Helps visibility on the green gradient
+                    ? [const Shadow(color: Colors.black26, blurRadius: 4)] 
                     : null, 
               ),
             ),
@@ -156,7 +152,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         onRefresh: () async => ref.read(profileProvider.notifier).loadProfile(), 
         color: primaryColor,
         child: SingleChildScrollView(
-          controller: _scrollController, // ✅ ADDED: Attached the scroll controller
+          controller: _scrollController, 
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
             children: [
@@ -199,8 +195,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         GestureDetector(
                           onTap: () {
                             if (profilePicString != null && profilePicString.isNotEmpty) {
-                              Navigator.push(
-                                context,
+                              // ✅ FIX: Added `rootNavigator: true` to push the image OVER the bottom navigation bar
+                              Navigator.of(context, rootNavigator: true).push(
                                 MaterialPageRoute(
                                   builder: (_) => FullScreenImage(
                                     imageUrl: profilePicString,

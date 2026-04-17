@@ -58,12 +58,19 @@ router.get("/unread-status", verify, async (req, res) => {
       participants: req.user._id,
     }).select("_id");
     const conversationIds = conversations.map((c) => c._id);
-    const hasUnread = await Message.exists({
+    
+    // ✅ CHANGED: Use countDocuments to get the exact number of unread messages
+    const unreadCount = await Message.countDocuments({
       conversationId: { $in: conversationIds },
       sender: { $ne: req.user._id },
       isRead: false,
     });
-    res.status(200).json({ hasUnread: !!hasUnread });
+    
+    // ✅ CHANGED: Return both the boolean and the exact count to the mobile app
+    res.status(200).json({ 
+      hasUnread: unreadCount > 0,
+      unreadCount: unreadCount 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

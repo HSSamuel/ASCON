@@ -561,12 +561,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  // ✅ Updated to "Online" from "Active Now"
   String _getStatusText(bool isTyping, bool isOnline, String? lastSeen) {
     if (widget.isGroup) {
       return _groupParticipants; 
     }
     if (isTyping) return "Typing...";
-    if (isOnline) return "Active Now";
+    if (isOnline) return "Online"; 
     if (lastSeen == null) return "Offline";
     return "Last seen ${PresenceFormatter.format(lastSeen)}";
   }
@@ -795,7 +796,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           isAdmin: widget.isGroup && state.groupAdminIds.contains(msg.senderId),
                           showSenderName: widget.isGroup && msg.senderId != state.myUserId,
                           
-                          // ✅ NEW: Passes specific progress percentage for this file
                           uploadProgress: state.uploadProgresses[msg.id],
                           
                           onSwipeReply: (id) {
@@ -823,7 +823,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           onSeekAudio: (pos) => _audioPlayer.seek(pos),
                           onDownloadFile: (url, name) => _downloadAndOpenWith(msg.id, url, name),
                           
-                          // ✅ NEW: Callback to execute reaction
                           onReact: (messageId, emoji) {
                             notifier.sendReaction(messageId, emoji);
                           },

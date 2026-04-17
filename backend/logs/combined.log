@@ -62,3 +62,11 @@
 {"level":"info","message":"📞 Cleaned up 0 stuck calls.","timestamp":"2026-04-15 22:59:36"}
 {"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-04-15 22:59:36"}
 {"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-04-15 22:59:45"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-04-17 03:55:36"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-04-17 03:55:36"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-04-17 03:55:37"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-04-17 03:55:37"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-04-17 03:55:43"}
+{"level":"info","message":"📞 Cleaned up 0 stuck calls.","timestamp":"2026-04-17 03:55:45"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-04-17 03:55:45"}
+{"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-04-17 03:55:50"}
