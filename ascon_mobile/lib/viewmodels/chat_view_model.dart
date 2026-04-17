@@ -59,6 +59,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _setupSocket();
   }
 
+  // ✅ ADDED: Explicit method to completely wipe memory (e.g., on logout)
+  void clearState() {
+    if (mounted) {
+      state = const ChatState();
+    }
+  }
+
+  // ✅ ADDED: Lifecycle hook to remove socket listeners when the ViewModel dies
+  @override
+  void dispose() {
+    final socket = _socket.socket;
+    if (socket != null && socket.connected) {
+      socket.off('new_message');
+      socket.off('messages_read');
+      socket.off('typing_start');
+      socket.off('typing_stop');
+    }
+    super.dispose();
+  }
+
   Future<void> loadConversations() async {
     try {
       final res = await _api.get('/api/chat');
@@ -142,12 +162,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     } catch (_) {}
   }
 
-  // ✅ New Logic: Check if file exists locally
   Future<bool> isFileDownloaded(String? fileName) async {
     if (fileName == null) return false;
     try {
       final dir = await getTemporaryDirectory();
-      // Sanitize filename to prevent path traversal issues
       final safeFileName = fileName.replaceAll(RegExp(r'[^\w\s\.-]'), '_');
       final file = File("${dir.path}/$safeFileName");
       return await file.exists();
@@ -157,10 +175,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  // ✅ New Logic: Handle Download triggering
   Future<void> downloadFile(String url, String fileName) async {
-    // This could call a more complex DownloadService if needed
-    // For now, it logs the action or triggers external open/download
     debugPrint("📥 Downloading $fileName from $url");
   }
 

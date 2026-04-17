@@ -25,7 +25,7 @@ class UpdatesState {
     this.posts = const [],
     this.filteredPosts = const [],
     this.highlights = const [],
-    this.isLoading = true,
+    this.isLoading = false, // ✅ OPTIMIZED: Default to false to prevent initial flash if cached
     this.isPosting = false,
     this.isAdmin = false,
     this.currentUserId,
@@ -78,10 +78,15 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
     state = state.copyWith(isAdmin: adminStatus, currentUserId: userId);
   }
 
+  // ✅ OPTIMIZED: Optimistic Offline Rendering
   Future<void> loadData({bool silent = false}) async {
-    if (!silent) state = state.copyWith(isLoading: true, errorMessage: null);
+    // Only show full-screen loader if we have absolutely no data (not even cached)
+    if (!silent && state.posts.isEmpty) {
+      state = state.copyWith(isLoading: true, errorMessage: null);
+    }
 
     try {
+      // DataService will return cached feed instantly if network fails
       final feed = await _dataService.fetchUpdates();
       final programmes = await _authService.getProgrammes();
 
@@ -94,7 +99,12 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
         );
       }
     } catch (e) {
-      if (mounted) state = state.copyWith(isLoading: false, errorMessage: "Failed to load updates.");
+      if (mounted && state.posts.isEmpty) {
+        state = state.copyWith(isLoading: false, errorMessage: "Failed to connect. Please check your network.");
+      } else if (mounted) {
+        // If we already have cached posts, just quietly stop loading
+        state = state.copyWith(isLoading: false);
+      }
     }
   }
 
@@ -218,7 +228,6 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
     }
   }
 
-  // ✅ UPDATED: Accept List of Images
   Future<String?> createPost(String text, List<XFile>? images) async {
     state = state.copyWith(isPosting: true);
     try {
@@ -227,7 +236,6 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
       request.headers['auth-token'] = token ?? '';
       request.fields['text'] = text;
 
-      // ✅ Map through multiple images
       if (images != null && images.isNotEmpty) {
         for (var img in images) {
           if (kIsWeb) {
@@ -244,7 +252,7 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
 
       if (response.statusCode == 201) {
         await loadData(silent: true);
-        return null; // Success
+        return null; 
       } else {
         return "Failed to post update.";
       }

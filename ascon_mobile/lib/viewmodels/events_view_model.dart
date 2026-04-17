@@ -55,6 +55,13 @@ class EventsNotifier extends StateNotifier<EventsState> {
     loadEvents();
   }
 
+  // ✅ ADDED: Explicit method to completely wipe memory
+  void clearState() {
+    if (mounted) {
+      state = const EventsState();
+    }
+  }
+
   Future<void> checkAdmin() async {
     final bool adminStatus = await _authService.isAdmin;
     state = state.copyWith(isAdmin: adminStatus);
@@ -103,7 +110,6 @@ class EventsNotifier extends StateNotifier<EventsState> {
     }
   }
 
-  // ✅ UPDATED: Accept List of Images
   Future<String?> createEvent({
     required String title,
     required String description,
@@ -127,7 +133,6 @@ class EventsNotifier extends StateNotifier<EventsState> {
     );
   }
 
-  // ✅ UPDATED: Accept List of Images
   Future<String?> createProgramme({
     required String title,
     required String description,
@@ -149,7 +154,6 @@ class EventsNotifier extends StateNotifier<EventsState> {
     );
   }
 
-  // ✅ UPDATED: Generic Upload Helper (Handles Multiple Images)
   Future<String?> _uploadContent({
     required String endpoint,
     required Map<String, String> fields,
@@ -163,7 +167,6 @@ class EventsNotifier extends StateNotifier<EventsState> {
 
       fields.forEach((key, value) => request.fields[key] = value);
 
-      // Loop through and append images array to MultipartRequest
       if (images != null && images.isNotEmpty) {
         for (var img in images) {
           if (kIsWeb) {

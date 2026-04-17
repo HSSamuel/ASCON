@@ -16,6 +16,11 @@ import 'api_client.dart';
 import 'notification_service.dart';
 import 'socket_service.dart';
 
+// ✅ ADDED: Import the ViewModels we want to sweep from memory
+import '../viewmodels/chat_view_model.dart';
+import '../viewmodels/directory_view_model.dart';
+import '../viewmodels/events_view_model.dart';
+
 class AuthService {
   final ApiClient _api = ApiClient();
   static String? _tokenCache;
@@ -25,7 +30,6 @@ class AuthService {
     scopes: ['email', 'profile'],
   );
 
-  // ✅ FIX 2: Global Refresh Lock to perfectly sync preemptive and 401 refresh checks
   bool _isRefreshing = false;
   Completer<String?>? _refreshCompleter;
 
@@ -54,10 +58,7 @@ class AuthService {
     }
   }
 
-  // ✅ FIX 1: Removed storing raw password for biometrics
   Future<void> enableBiometrics(String email, String password) async {
-    // We keep the parameter signature to not break the UI caller, 
-    // but we stop storing the vulnerable credentials payload.
     await _secureStorage.write(key: 'use_biometrics', value: 'true');
     await _secureStorage.delete(key: 'biometric_email');
     await _secureStorage.delete(key: 'biometric_password');
@@ -68,7 +69,6 @@ class AuthService {
     return enabled == 'true';
   }
 
-  // ✅ FIX 1: Login with stored credentials now securely utilizes the refresh token
   Future<Map<String, dynamic>> loginWithStoredCredentials() async {
     final token = await _performSilentRefresh();
     if (token != null) {
@@ -216,7 +216,6 @@ class AuthService {
     } catch (e) {}
   }
 
-  // ✅ FIX 2: Synchronized refresh logic using a Completer lock
   Future<String?> _performSilentRefresh() async {
     if (_isRefreshing) {
       print("⏳ Waiting for pending refresh in AuthService...");
@@ -294,7 +293,6 @@ class AuthService {
   Future<String?> getToken() async {
     try {
       if (_tokenCache != null && _tokenCache!.isNotEmpty) {
-         // Still check expiration against local cache before returning
          bool isExpiredCache = JwtDecoder.isExpired(_tokenCache!) || JwtDecoder.getRemainingTime(_tokenCache!).inSeconds < 60;
          if (!isExpiredCache) return _tokenCache;
       }
@@ -302,7 +300,6 @@ class AuthService {
       String? token = await _secureStorage.read(key: 'auth_token');
       String? refreshToken = await _secureStorage.read(key: 'refresh_token');
 
-      // Migration fallback
       if (token == null) {
         final prefs = await SharedPreferences.getInstance();
         token = prefs.getString('auth_token');
@@ -316,7 +313,6 @@ class AuthService {
 
       bool isExpired = JwtDecoder.isExpired(token) || JwtDecoder.getRemainingTime(token).inSeconds < 60;
 
-      // ✅ FIX 2: Preemptive check now explicitly utilizes the global lock
       if (isExpired && refreshToken != null) {
         return await _performSilentRefresh();
       }
@@ -340,6 +336,15 @@ class AuthService {
   }
 
   Future<void> logout({bool clearBiometrics = false}) async {
+    // ✅ ADDED: Forcefully sweep memory inside the global container
+    try {
+      providerContainer.read(chatProvider.notifier).clearState();
+      providerContainer.read(directoryProvider.notifier).clearState();
+      providerContainer.read(eventsProvider.notifier).clearState();
+    } catch (e) {
+      debugPrint("⚠️ Memory sweep error: $e");
+    }
+
     try {
       SocketService().disconnect();
     } catch (_) {}

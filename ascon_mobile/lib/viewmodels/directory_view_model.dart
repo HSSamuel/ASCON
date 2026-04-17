@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// import 'package:flutter_riverpod/legacy.dart'; // REMOVED
 import '../services/api_client.dart';
 import '../services/data_service.dart';
 import '../services/socket_service.dart';
@@ -88,6 +87,13 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
     loadSmartMatches();
   }
 
+  // ✅ Explicit method to completely wipe memory
+  void clearState() {
+    if (mounted) {
+      state = const DirectoryState();
+    }
+  }
+
   @override
   void dispose() {
     _statusSubscription?.cancel();
@@ -105,7 +111,10 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   }
 
   Future<void> loadDirectory({String query = ""}) async {
-    state = state.copyWith(isLoadingDirectory: true);
+    // ✅ OPTIMIZED UX: Only show the full-screen loading spinner if we have absolutely no data
+    if (state.allAlumni.isEmpty && query.isEmpty) {
+      state = state.copyWith(isLoadingDirectory: true);
+    }
 
     try {
       String endpoint = '/api/directory?search=$query';
@@ -196,7 +205,11 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   }
 
   Future<void> loadSmartMatches() async {
-    state = state.copyWith(isLoadingMatches: true);
+    // ✅ OPTIMIZED UX: Only show loader if we don't have matches cached
+    if (state.smartMatches.isEmpty) {
+      state = state.copyWith(isLoadingMatches: true);
+    }
+    
     try {
       final matches = await _dataService.fetchSmartMatches();
       if (mounted) state = state.copyWith(smartMatches: matches, isLoadingMatches: false);
@@ -206,7 +219,11 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   }
 
   Future<void> loadNearMe({String? city}) async {
-    state = state.copyWith(isLoadingNearMe: true);
+    // ✅ OPTIMIZED UX: Only show loader if we don't have nearby alumni cached
+    if (state.nearbyAlumni.isEmpty) {
+      state = state.copyWith(isLoadingNearMe: true);
+    }
+    
     try {
       final nearby = await _dataService.fetchAlumniNearMe(city: city);
       if (mounted) state = state.copyWith(nearbyAlumni: nearby, isLoadingNearMe: false);

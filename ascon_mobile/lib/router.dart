@@ -16,6 +16,10 @@ import 'screens/polls_screen.dart';
 import 'screens/notification_permission_screen.dart'; 
 import 'screens/call_screen.dart'; 
 import 'screens/notifications_screen.dart';
+import 'screens/event_detail_screen.dart';
+import 'screens/programme_detail_screen.dart';
+import 'screens/facility_detail_screen.dart';
+import 'screens/mentorship_dashboard_screen.dart';
 
 // ✅ Global Keys used for Context-less Navigation
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -146,19 +150,54 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) => const PollsScreen(),
     ),
 
-    // ✅ FIXED CALL ROUTE (using 'args' consistently)
     GoRoute(
       path: '/call',
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) {
         final args = state.extra as Map<String, dynamic>;
         return CallScreen(
+          isGroupCall: args['isGroupCall'] ?? false,
+          isVideoCall: args['isVideoCall'] ?? false,
           remoteName: args['remoteName'] ?? "Unknown",
           remoteId: args['remoteId'] ?? "",
           channelName: args['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}",
           remoteAvatar: args['remoteAvatar'],
           isIncoming: args['isIncoming'] ?? false,
         );
+      },
+    ),
+
+    // ✅ ADDED: Detail Routes for Deep Linking
+    GoRoute(
+      path: '/mentorship_requests',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const MentorshipDashboardScreen(),
+    ),
+
+    GoRoute(
+      path: '/event_detail',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final args = state.extra as Map<String, dynamic>;
+        return EventDetailScreen(eventData: args['eventData']);
+      },
+    ),
+
+    GoRoute(
+      path: '/programme_detail',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final args = state.extra as Map<String, dynamic>;
+        return ProgrammeDetailScreen(programme: args['programme']);
+      },
+    ),
+
+    GoRoute(
+      path: '/facility_detail',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final args = state.extra as Map<String, dynamic>;
+        return FacilityDetailScreen(facility: args['facility']);
       },
     ),
   ],

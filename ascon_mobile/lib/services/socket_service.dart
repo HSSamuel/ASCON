@@ -27,14 +27,23 @@ class SocketService with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
+  // ✅ UPDATED: Robust Socket Wake-Up on App Resume
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      if (socket != null && socket!.connected) return;
-
       _storage.read(key: "auth_token").then((token) {
-        if (token != null && (socket == null || !socket!.connected)) {
-          initSocket();
+        if (token != null) {
+          if (socket == null || !socket!.connected) {
+            // Reconnect completely if the socket died in the background
+            initSocket();
+          } else {
+            // Socket thinks it's connected, but TCP might be stale.
+            // Emit a pulse to the server to instantly wake up the connection
+            // and flush any queued background messages/calls.
+            if (_currentUserId != null) {
+               socket!.emit("user_connected", _currentUserId);
+            }
+          }
         }
       });
     }
@@ -130,7 +139,6 @@ class SocketService with WidgetsBindingObserver {
        _messageStatusController.add({'type': 'status_update', 'data': data});
     });
 
-    // --- NEW CALL LISTENERS ---
     socket!.on('incoming_call', (data) {
        _callEventsController.add({'type': 'incoming', 'data': data});
     });
@@ -166,7 +174,6 @@ class SocketService with WidgetsBindingObserver {
     }
   }
 
-  // --- NEW CALL METHODS ---
   void initiateCall(String targetUserId, String channelName, Map<String, dynamic> callerData) {
     if (socket != null && socket!.connected) {
       socket!.emit('initiate_call', {
@@ -221,5 +228,12 @@ class SocketService with WidgetsBindingObserver {
       socket = null;
       _connectedUserId = null;
     }
+  }
+
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _userStatusController.close();
+    _callEventsController.close();
+    _messageStatusController.close();
   }
 }

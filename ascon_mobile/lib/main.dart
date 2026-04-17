@@ -16,6 +16,9 @@ import 'screens/call_screen.dart';
 final GlobalKey<NavigatorState> navigatorKey = rootNavigatorKey;
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
+// ✅ ADDED: Global ProviderContainer to allow background services to read/modify Riverpod state
+final ProviderContainer providerContainer = ProviderContainer();
+
 void main() async {
   ErrorHandler.init();
 
@@ -29,7 +32,6 @@ void main() async {
   };
 
   FlutterError.onError = (FlutterErrorDetails details) {
-    // ✅ FIX: Removed ignoring of 429 errors to allow UI interception
     FlutterError.presentError(details);
   };
 
@@ -65,11 +67,15 @@ void main() async {
        await NotificationService().init();
     }
 
-    runApp(const ProviderScope(child: MyApp()));
+    // ✅ UPDATED: Pass the global container into the app
+    runApp(UncontrolledProviderScope(
+      container: providerContainer, 
+      child: const MyApp()
+    ));
+    
   }, (error, stack) {
     String errorText = error.toString();
     if (errorText.contains("Future already completed")) return;
-    // ✅ FIX: Removed ignoring of 429 errors to properly track rate limiting
     debugPrint("🔴 Uncaught Zone Error: $error");
   });
 }

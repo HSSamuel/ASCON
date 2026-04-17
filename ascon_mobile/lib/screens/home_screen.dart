@@ -149,7 +149,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     SystemNavigator.pop();
   }
 
-  // ✅ FIXED: Removed the debounce timer so it fires immediately again
   void _onScroll(UserScrollNotification notification) {
     if (notification.metrics.axis == Axis.vertical) {
       if (notification.direction == ScrollDirection.forward) {
@@ -250,26 +249,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           child: widget.navigationShell,
         ),
 
-        floatingActionButton: isKeyboardOpen 
-          ? null 
-          : AnimatedSlide(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              offset: _isBottomNavVisible ? Offset.zero : const Offset(0, 2.5),
-              child: SizedBox(
-                width: 42, height: 42, 
-                child: FloatingActionButton(
-                  heroTag: "main_dashboard_fab",
-                  onPressed: () => _goBranch(2), 
-                  backgroundColor: uiIndex == 2 ? primaryColor : Colors.grey,
-                  elevation: 3.0, 
-                  shape: const CircleBorder(),
-                  child: const Icon(Icons.dynamic_feed, color: Colors.white, size: 20),
-                ),
-              ),
-            ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-        
+        // ✅ FIXED: Converted to a uniform 5-item Bottom Navigation Bar
         bottomNavigationBar: isKeyboardOpen 
           ? null 
           : AnimatedSlide(
@@ -279,8 +259,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
               child: SizedBox(
                 height: 56, 
                 child: BottomAppBar(
-                  shape: const CircularNotchedRectangle(),
-                  notchMargin: 5.0, 
                   color: navBarColor,
                   elevation: 8, 
                   shadowColor: Colors.black.withOpacity(0.1),
@@ -292,7 +270,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                     children: <Widget>[
                       _buildNavItem(label: "Home", icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, index: 0, color: primaryColor, currentIndex: uiIndex),
                       _buildNavItem(label: "Events", icon: Icons.event_outlined, activeIcon: Icons.event, index: 1, color: primaryColor, currentIndex: uiIndex),
-                      const SizedBox(width: 42), 
+                      // ✅ Updates is now perfectly matched with the rest of the icons
+                      _buildNavItem(label: "Updates", icon: Icons.dynamic_feed, activeIcon: Icons.dynamic_feed, index: 2, color: primaryColor, currentIndex: uiIndex),
                       _buildNavItem(label: "Directory", icon: Icons.list_alt, activeIcon: Icons.list, index: 3, color: primaryColor, currentIndex: uiIndex),
                       _buildNavItem(label: "Profile", icon: Icons.person_outline, activeIcon: Icons.person, index: 4, color: primaryColor, currentIndex: uiIndex),
                     ],
@@ -379,7 +358,8 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
 
   Widget _buildSafeImage(String? imageUrl, {IconData fallbackIcon = Icons.image, BoxFit fit = BoxFit.cover}) {
     if (imageUrl == null || imageUrl.isEmpty) return _buildPlaceholder(fallbackIcon);
-    if (imageUrl.contains('profile/picture/1') || imageUrl.contains('googleusercontent.com')) return _buildPlaceholder(fallbackIcon);
+    if (imageUrl.contains('profile/picture/1')) return _buildPlaceholder(fallbackIcon); 
+    
     if (kIsWeb && imageUrl.startsWith('http')) {
        return Image.network(
          imageUrl, fit: fit, errorBuilder: (context, error, stackTrace) => _buildPlaceholder(Icons.broken_image_rounded),
@@ -412,7 +392,6 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
     final textColor = Theme.of(context).textTheme.bodyLarge?.color;
     final dashboardState = ref.watch(dashboardProvider);
 
-    // ✅ Filters out the current user dynamically
     final filteredAlumni = dashboardState.topAlumni.where((alumni) {
       final String id = (alumni['userId'] ?? alumni['_id'] ?? "").toString();
       return id != _currentUserId; 
@@ -441,12 +420,12 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
                   ),
 
                 DigitalIDCard(
-  userName: dashboardState.fullName, 
-  programme: dashboardState.programme, 
-  year: dashboardState.year, 
-  alumniID: dashboardState.alumniID, 
-  imageUrl: dashboardState.profileImage
-),
+                  userName: dashboardState.fullName, 
+                  programme: dashboardState.programme, 
+                  year: dashboardState.year, 
+                  alumniID: dashboardState.alumniID, 
+                  imageUrl: dashboardState.profileImage
+                ),
                 const ChapterCard(),
                 const CelebrationWidget(),
                 const SizedBox(height: 10),

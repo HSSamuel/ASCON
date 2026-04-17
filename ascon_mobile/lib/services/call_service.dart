@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -9,7 +10,8 @@ import 'package:audio_session/audio_session.dart';
 
 enum CallEvent { ringing, connected, callEnded, error, userJoined, userOffline }
 
-class CallService {
+// ✅ ADDED: WidgetsBindingObserver to listen for background/foreground OS events
+class CallService with WidgetsBindingObserver {
   static final CallService _instance = CallService._internal();
   factory CallService() => _instance;
   CallService._internal();
@@ -17,14 +19,13 @@ class CallService {
   late RtcEngine _engine;
   bool _isInitialized = false;
   bool isJoined = false;
+  bool _isVideo = false; // Tracks if current call is video to manage OS camera locks
   
-  // ✅ Track multiple UIDs for Group Video Calls
   Set<int> remoteUids = {}; 
 
   final _callEventController = StreamController<CallEvent>.broadcast();
   Stream<CallEvent> get callEvents => _callEventController.stream;
 
-  // ✅ Expose engine for Video Rendering in UI
   RtcEngine get engine => _engine; 
 
   Future<void> init() async {
@@ -75,10 +76,33 @@ class CallService {
 
     await _engine.enableAudio();
     _isInitialized = true;
+
+    // ✅ ADDED: Register the observer to listen to OS backgrounding
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  // ✅ ADDED: OS Lifecycle Management for Camera/Mic locks
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_isInitialized || !isJoined) return;
+
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // App went to background. OS often kills camera access. 
+      // Mute local video to prevent Agora/OS crash, but keep connection alive.
+      if (_isVideo) {
+        _engine.muteLocalVideoStream(true);
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // App came back to foreground. Safe to resume video.
+      if (_isVideo) {
+        _engine.muteLocalVideoStream(false);
+      }
+    }
   }
 
   Future<bool> joinCall({required String channelName, bool isVideo = false}) async {
     if (!_isInitialized) await init();
+    _isVideo = isVideo; // Track video state for the lifecycle observer
 
     try {
       final response = await ApiClient().post('/api/agora/token', {'channelName': channelName});
@@ -122,6 +146,7 @@ class CallService {
       await _engine.leaveChannel();
       remoteUids.clear(); 
       isJoined = false;
+      _isVideo = false;
     }
   }
 
@@ -133,7 +158,6 @@ class CallService {
     if (_isInitialized) await _engine.setEnableSpeakerphone(isSpeakerOn);
   }
 
-  // ✅ NEW: Fetch available audio output devices (Web/Windows)
   Future<List<AudioDeviceInfo>> getPlaybackDevices() async {
     if (!_isInitialized) return [];
     try {
@@ -144,7 +168,6 @@ class CallService {
     }
   }
 
-  // ✅ NEW: Route audio to a specific device ID (Web/Windows)
   Future<void> setPlaybackDevice(String deviceId) async {
     if (!_isInitialized) return;
     try {
@@ -155,7 +178,6 @@ class CallService {
     }
   }
 
-  // ✅ FIXED: Advanced Native Audio Routing 
   Future<void> setAudioRoute(String route) async {
     if (!_isInitialized) return;
 
@@ -239,5 +261,10 @@ class CallService {
     if (_isInitialized) {
       await _engine.switchCamera();
     }
+  }
+
+  // ✅ ADDED: Cleanup observer if the service is somehow destroyed
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
@@ -12,31 +11,21 @@ import 'package:go_router/go_router.dart';
 
 import '../config.dart';
 import '../router.dart'; 
-
-import '../screens/event_detail_screen.dart';
-import '../screens/programme_detail_screen.dart';
-import '../screens/facility_detail_screen.dart';
-import '../screens/mentorship_dashboard_screen.dart';
 import '../services/socket_service.dart';
 
-// ✅ Background Handler (Handles Terminated & Data-Only Notifications)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint("🌙 Background Message: ${message.messageId}");
   
-  // If the payload has no 'notification' block, it's a data-only message.
-  // We must manually show the notification so the phone rings/vibrates when killed.
   if (message.notification == null && message.data.isNotEmpty) {
     
     final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
     
-    // Initialize standard settings for background execution
     const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('ic_notification');
     const InitializationSettings initSettings = InitializationSettings(android: androidSettings);
     await localNotifications.initialize(initSettings);
 
-    // Determine if it's a call or regular message
-    bool isCall = message.data['type'] == 'call_offer';
+    bool isCall = message.data['type'] == 'call_offer' || message.data['type'] == 'video_call';
     String channelId = isCall ? AppConfig.callChannelId : AppConfig.notificationChannelId;
     String channelName = isCall ? AppConfig.callChannelName : AppConfig.notificationChannelName;
     String title = isCall ? "Incoming Call" : "New Message";
@@ -109,17 +98,15 @@ class NotificationService {
         },
       );
 
-      // Create a dedicated channel for Calls (High Importance)
       const AndroidNotificationChannel callChannel = AndroidNotificationChannel(
         AppConfig.callChannelId,
         AppConfig.callChannelName,
         description: AppConfig.callChannelDesc,
-        importance: Importance.max, // ✅ Controls priority on Android 8+
+        importance: Importance.max, 
         enableVibration: true,
         playSound: true,
       );
 
-      // Standard Channel
       const AndroidNotificationChannel standardChannel = AndroidNotificationChannel(
         AppConfig.notificationChannelId,
         AppConfig.notificationChannelName,
@@ -136,13 +123,10 @@ class NotificationService {
       }
     }
 
-    // ✅ FOREGROUND LISTENER
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       debugPrint("🔔 Foreground Message: ${message.data}");
 
-      // If app is open, we ignore call notifications because SocketService 
-      // will handle the immediate navigation to CallScreen.
-      if (message.data['type'] == 'call_offer') {
+      if (message.data['type'] == 'call_offer' || message.data['type'] == 'video_call') {
         return; 
       }
 
@@ -185,27 +169,31 @@ class NotificationService {
     final BuildContext? context = rootNavigatorKey.currentContext;
 
     if (token == null) {
-      if (context != null) GoRouter.of(context).go('/login', extra: data); 
+      if (context != null) context.go('/login', extra: data); 
       return;
     }
 
     if (context == null) return;
 
-    // ✅ CALL HANDLING: Open CallScreen from Notification Tap
+    // ✅ CALL ROUTING (Uses push to stack over current screen)
     if (type == 'call_offer' || type == 'video_call') {
       SocketService().initSocket(); 
+      bool isVideo = data['isVideoCall'].toString().toLowerCase() == 'true' || type == 'video_call';
+      bool isGroup = data['isGroupCall'].toString().toLowerCase() == 'true';
 
       context.push('/call', extra: {
         'remoteName': data['callerName'] ?? "Unknown Caller",
         'remoteId': data['callerId'],
         'remoteAvatar': data['callerPic'],
-        'isCaller': false, // Receiver
-        'offer': data['offer'] is String ? jsonDecode(data['offer']) : data['offer'],
-        'callLogId': data['callLogId'],
+        'isIncoming': true, 
+        'isVideoCall': isVideo,
+        'isGroupCall': isGroup,
+        'channelName': data['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}",
       });
       return;
     }
 
+    // ✅ CHAT ROUTING
     if (type == 'chat_message') {
       final conversationId = data['conversationId'];
       final senderId = data['senderId'];
@@ -234,6 +222,7 @@ class NotificationService {
       return;
     }
 
+    // ✅ TAB ROUTING (Uses go to swap bottom nav shell)
     if (type == 'new_update' || route == 'updates') {
       context.go('/updates'); 
       return;
@@ -244,20 +233,19 @@ class NotificationService {
       return;
     }
 
+    // ✅ DETAIL SCREEN ROUTING (Uses push to enable back button)
     if (route == 'mentorship_requests') {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const MentorshipDashboardScreen()),
-      );
+      context.push('/mentorship_requests');
       return;
     }
 
     if (id != null) {
       if (route == 'event_detail') {
-        Navigator.of(context).push(MaterialPageRoute(builder: (_) => EventDetailScreen(eventData: {'_id': id.toString(), 'title': 'Loading...'})));
+        context.push('/event_detail', extra: {'eventData': {'_id': id.toString(), 'title': 'Loading...'}});
       } else if (route == 'programme_detail') {
-        Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProgrammeDetailScreen(programme: {'_id': id.toString(), 'title': 'Loading...'})));
+        context.push('/programme_detail', extra: {'programme': {'_id': id.toString(), 'title': 'Loading...'}});
       } else if (route == 'facility_detail') {
-        Navigator.of(context).push(MaterialPageRoute(builder: (_) => FacilityDetailScreen(facility: {'_id': id.toString(), 'title': 'Loading...'})));
+        context.push('/facility_detail', extra: {'facility': {'_id': id.toString(), 'title': 'Loading...'}});
       }
     }
   }
@@ -266,8 +254,7 @@ class NotificationService {
     String originalTitle = message.notification?.title ?? 'New Message';
     String body = message.notification?.body ?? '';
     
-    // Check if it's a call to use the high-priority channel
-    bool isCall = message.data['type'] == 'call_offer';
+    bool isCall = message.data['type'] == 'call_offer' || message.data['type'] == 'video_call';
     String channelId = isCall ? AppConfig.callChannelId : AppConfig.notificationChannelId;
     String channelName = isCall ? AppConfig.callChannelName : AppConfig.notificationChannelName;
 
