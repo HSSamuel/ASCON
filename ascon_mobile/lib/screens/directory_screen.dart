@@ -58,6 +58,15 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     });
   }
 
+  // ✅ FOOLPROOF AVATAR HELPER
+  ImageProvider? _getSafeImageProvider(String? imgUrl) {
+    if (imgUrl == null || imgUrl.isEmpty) return null;
+    // Catch any variation of the Google profile placeholder
+    if (imgUrl.contains('googleusercontent.com') && imgUrl.contains('profile/picture/')) return null;
+    if (imgUrl.startsWith('http')) return CachedNetworkImageProvider(imgUrl);
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(directoryProvider);
@@ -79,16 +88,13 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
 
     final sortedKeys = state.groupedAlumni.keys.toList();
 
-    // ✅ FIX: Define content widget using IF/ELSE logic with Swipe-to-Refresh
     Widget content;
 
     if (state.activeFilter == "Near Me") {
       // --- NEAR ME VIEW ---
-      // Show Skeleton ONLY if loading AND we have no data yet (Initial Load)
       if (state.isLoadingNearMe && state.nearbyAlumni.isEmpty) {
         content = const DirectorySkeleton();
       } 
-      // If empty state (and not loading), allow pull-to-refresh to try again
       else if (state.nearbyAlumni.isEmpty && !state.isLoadingNearMe) {
         content = RefreshIndicator(
           onRefresh: () async => await notifier.loadNearMe(),
@@ -101,12 +107,11 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           ),
         );
       } 
-      // Show List with Pull-to-Refresh
       else {
         content = RefreshIndicator(
           onRefresh: () async => await notifier.loadNearMe(),
           child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(), // Important for small lists
+            physics: const AlwaysScrollableScrollPhysics(), 
             padding: const EdgeInsets.all(16),
             itemCount: state.nearbyAlumni.length,
             itemBuilder: (context, index) {
@@ -119,11 +124,9 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
       }
     } else {
       // --- STANDARD DIRECTORY VIEW (All, Mentors, Classmates) ---
-      // Show Skeleton ONLY if loading AND we have no data yet
       if (state.isLoadingDirectory && sortedKeys.isEmpty) {
         content = const DirectorySkeleton();
       } 
-      // If empty state, allow pull-to-refresh
       else if (sortedKeys.isEmpty && !state.isLoadingDirectory) {
         content = RefreshIndicator(
           onRefresh: () async => await notifier.loadDirectory(),
@@ -136,7 +139,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           ),
         );
       } 
-      // Show List with Pull-to-Refresh
       else {
         content = RefreshIndicator(
           onRefresh: () async => await notifier.loadDirectory(),
@@ -294,6 +296,8 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     
     if (userId == _myUserId) return const SizedBox.shrink();
 
+    final imageProvider = _getSafeImageProvider(img);
+
     return GestureDetector(
       onTap: () {
         Navigator.of(context, rootNavigator: true).push(
@@ -318,10 +322,8 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                 CircleAvatar(
                   radius: 30,
                   backgroundColor: Colors.grey[200],
-                  backgroundImage: (img.isNotEmpty && img.startsWith('http')) 
-                      ? CachedNetworkImageProvider(img) 
-                      : null,
-                  child: img.isEmpty ? const Icon(Icons.person, color: Colors.grey) : null,
+                  backgroundImage: imageProvider,
+                  child: imageProvider == null ? const Icon(Icons.person, color: Colors.grey) : null,
                 ),
                 if (isMentor)
                   Positioned(

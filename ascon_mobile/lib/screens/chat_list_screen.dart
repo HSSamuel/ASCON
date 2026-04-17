@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -68,6 +69,56 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     return {'fullName': 'Unknown User', 'profilePicture': ''};
   }
 
+  // ✅ NEW: Robust Avatar Builder to catch Google's invalid "picture/0" URLs
+  Widget _buildRobustAvatar(String? imageUrl, double radius) {
+    if (imageUrl == null || imageUrl.isEmpty || imageUrl.contains('profile/picture/')) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.grey[200],
+        child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
+      );
+    }
+
+    if (imageUrl.startsWith('http')) {
+      return CachedNetworkImage(
+        imageUrl: imageUrl,
+        imageBuilder: (context, imageProvider) => CircleAvatar(
+          radius: radius,
+          backgroundImage: imageProvider,
+          backgroundColor: Colors.grey[200],
+        ),
+        placeholder: (context, url) => CircleAvatar(
+          radius: radius,
+          backgroundColor: Colors.grey[200],
+          child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
+        ),
+        errorWidget: (context, url, error) => CircleAvatar(
+          radius: radius,
+          backgroundColor: Colors.grey[200],
+          child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
+        ),
+      );
+    }
+
+    try {
+      String cleanBase64 = imageUrl;
+      if (cleanBase64.contains(',')) {
+        cleanBase64 = cleanBase64.split(',').last;
+      }
+      return CircleAvatar(
+        radius: radius,
+        backgroundImage: MemoryImage(base64Decode(cleanBase64)),
+        backgroundColor: Colors.grey[200],
+      );
+    } catch (e) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.grey[200],
+        child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatState = ref.watch(chatProvider);
@@ -76,7 +127,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
     final cardColor = Theme.of(context).cardColor;
-    final textColor = Theme.of(context).textTheme.bodyLarge?.color;
     final primaryColor = Theme.of(context).primaryColor;
 
     return Scaffold(
@@ -95,9 +145,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Connect", style: GoogleFonts.lato(fontSize: 28, fontWeight: FontWeight.w900, color: textColor)),
-                  const SizedBox(height: 16),
-                  
                   TextField(
                     controller: _searchController,
                     onChanged: (val) {
@@ -223,24 +270,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
           children: [
             Stack(
               children: [
-                CachedNetworkImage(
-                  imageUrl: user['profilePicture'] ?? "",
-                  imageBuilder: (context, imageProvider) => CircleAvatar(
-                    radius: 28,
-                    backgroundImage: imageProvider,
-                    backgroundColor: Colors.grey[200],
-                  ),
-                  placeholder: (context, url) => CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.grey[200],
-                    child: const Icon(Icons.person, color: Colors.grey),
-                  ),
-                  errorWidget: (context, url, error) => CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.grey[200],
-                    child: const Icon(Icons.person, color: Colors.grey),
-                  ),
-                ),
+                // ✅ UPDATED: Use the robust avatar builder
+                _buildRobustAvatar(user['profilePicture'], 28),
                 Positioned(
                   right: 2, bottom: 2,
                   child: Container(
@@ -296,7 +327,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
 
     return Dismissible(
       key: Key(convId),
-      // ✅ UPDATED: Dual-Action Swipe Backgrounds
       background: Container(
         color: Colors.orange,
         alignment: Alignment.centerLeft,
@@ -323,7 +353,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
             ),
           );
         } else {
-          // Optimistic UI for Mute (Doesn't actually dismiss the tile)
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Chat Muted")));
           return false;
         }
@@ -343,24 +372,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
             children: [
               Stack(
                 children: [
-                  CachedNetworkImage(
-                    imageUrl: other['profilePicture'] ?? "",
-                    imageBuilder: (context, imageProvider) => CircleAvatar(
-                      radius: 28,
-                      backgroundImage: imageProvider,
-                      backgroundColor: Colors.grey[200],
-                    ),
-                    placeholder: (context, url) => CircleAvatar(
-                      radius: 28,
-                      backgroundColor: Colors.grey[200],
-                      child: const Icon(Icons.person, color: Colors.grey),
-                    ),
-                    errorWidget: (context, url, error) => CircleAvatar(
-                      radius: 28,
-                      backgroundColor: Colors.grey[200],
-                      child: const Icon(Icons.person, color: Colors.grey),
-                    ),
-                  ),
+                  // ✅ UPDATED: Use the robust avatar builder
+                  _buildRobustAvatar(other['profilePicture'], 28),
                   if (isOnline)
                     Positioned(
                       right: 0, bottom: 0,
@@ -411,7 +424,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
                       children: [
                         Expanded(
                           child: isTyping 
-                            // ✅ UPDATED: More prominent Animated Typing styling
                             ? TweenAnimationBuilder<double>(
                                 tween: Tween(begin: 0.0, end: 1.0),
                                 duration: const Duration(milliseconds: 500),

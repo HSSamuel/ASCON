@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/gestures.dart';
-import 'event_registration_screen.dart';
 import '../services/data_service.dart';
 
 class EventDetailScreen extends StatefulWidget {
@@ -119,13 +118,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         : "No detailed description available.";
 
     final String eventType = _event['type'] ?? 'News';
-    final bool isRegistrable = eventType != 'News';
-
-    final String eventId = (_event['_id'] ?? 
-                            _event['id'] ?? 
-                            widget.eventData['_id'] ?? 
-                            widget.eventData['id'] ?? 
-                            '').toString();
 
     // DATE FORMATTING
     String formattedDate = 'Date to be announced';
@@ -176,7 +168,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                     "📅 *Date:* $formattedDate\n"
                     "📍 *Location:* $location\n\n"
                     "${description.length > 200 ? "${description.substring(0, 200)}..." : description}\n\n"
-                    "📲 _Get the full details and register on the ASCON Alumni App._";
+                    "📲 _Get the full details on the ASCON Alumni App._";
                   
                   Share.share(shareText, subject: "ASCON Alumni: $title");
                 },
@@ -335,43 +327,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: isRegistrable 
-        ? Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: cardColor,
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))],
-            ),
-            child: SafeArea(
-              child: SizedBox(
-                height: 50,
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => EventRegistrationScreen(
-                          eventId: eventId, 
-                          eventTitle: title,
-                          eventType: eventType,
-                          eventImage: images.isNotEmpty ? images.first : '',
-                        ),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: Text("Register Now", style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ),
-          )
-        : null,
     );
   }
 

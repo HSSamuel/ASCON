@@ -1,9 +1,8 @@
-import 'package:flutter/foundation.dart'; // ✅ ADDED: Required for kIsWeb
+import 'package:flutter/foundation.dart'; 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
 import 'dart:async'; 
-import 'package:intl/intl.dart'; 
 import 'package:url_launcher/url_launcher.dart'; 
 import 'package:cached_network_image/cached_network_image.dart'; 
 
@@ -49,7 +48,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     _currentAlumniData = Map<String, dynamic>.from(widget.alumniData);
 
     _isOnline = _currentAlumniData['isOnline'] == true;
-    _lastSeen = _currentAlumniData['lastSeen'];
+    _lastSeen = _currentAlumniData['lastSeen']?.toString();
 
     _fetchFullDetails();
 
@@ -78,25 +77,10 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     if (fullData == null) {
        setState(() {
          _isLoadingFullProfile = false;
-         _profileExists = false; 
        });
        
-       await showDialog(
-         context: context,
-         barrierDismissible: false,
-         builder: (ctx) => AlertDialog(
-           title: const Text("Profile Unavailable"),
-           content: const Text("This user profile no longer exists."),
-           actions: [
-             TextButton(
-               onPressed: () {
-                 Navigator.pop(ctx); 
-                 Navigator.pop(context); 
-               },
-               child: const Text("OK"),
-             )
-           ],
-         ),
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text("Could not sync latest profile data. Showing cached version."))
        );
        return;
     }
@@ -120,8 +104,10 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
       if (!mounted) return;
       if (data['userId'] == targetUserId) {
         setState(() {
-          _isOnline = data['isOnline'];
-          if (!_isOnline) _lastSeen = data['lastSeen'];
+          _isOnline = data['isOnline'] == true;
+          if (data['lastSeen'] != null) {
+            _lastSeen = data['lastSeen'].toString();
+          }
         });
       }
     });
@@ -272,9 +258,8 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     final String industry = _currentAlumniData['industry'] ?? '';
     
     String rawBio = _currentAlumniData['bio'] ?? '';
-    final String bio = rawBio.trim().isNotEmpty 
-        ? rawBio 
-        : (_isLoadingFullProfile ? 'Loading biography...' : 'No biography provided.');
+    final bool hasBio = rawBio.trim().isNotEmpty;
+    final String bioText = hasBio ? rawBio : (_isLoadingFullProfile ? 'Loading biography...' : 'No biography provided.');
 
     final bool showPhone = _currentAlumniData['isPhoneVisible'] == true;
     final bool isMentor = _currentAlumniData['isOpenToMentorship'] == true;
@@ -293,73 +278,73 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
         ? _currentAlumniData['programmeTitle'] 
         : (_isLoadingFullProfile ? 'Loading...' : 'Not Specified');
 
+    // ✅ OPTIMIZED: Mentorship Button now uses structural UI with inline loaders instead of blocking
     Widget buildMentorshipButton() {
       if (!isMentor || !_profileExists) return const SizedBox.shrink();
-
-      if (_isLoadingFullProfile || _isLoadingStatus) {
-        return const Center(
-          child: Padding(
-            padding: EdgeInsets.all(12.0), 
-            child: CircularProgressIndicator(strokeWidth: 2)
-          )
-        );
-      }
 
       String label = "Request Mentorship";
       Color btnColor = Colors.amber[800]!;
       VoidCallback? action = _handleRequest;
       IconData icon = Icons.handshake_rounded;
+      
+      final bool isCurrentlyLoading = _isLoadingFullProfile || _isLoadingStatus;
 
-      if (_mentorshipStatus == "Pending") {
-        label = "Withdraw Request"; 
-        btnColor = Colors.orange[800]!;
-        icon = Icons.cancel_outlined;
-        
-        action = () async {
-           final confirm = await showDialog(
-             context: context, 
-             builder: (c) => AlertDialog(
-               title: const Text("Withdraw Request?"),
-               content: const Text("Are you sure you want to cancel this mentorship request?"),
-               actions: [
-                 TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("No")),
-                 TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("Yes", style: TextStyle(color: Colors.red))),
-               ],
-             )
-           );
+      if (!isCurrentlyLoading) {
+        if (_mentorshipStatus == "Pending") {
+          label = "Withdraw Request"; 
+          btnColor = Colors.orange[800]!;
+          icon = Icons.cancel_outlined;
+          
+          action = () async {
+             final confirm = await showDialog(
+               context: context, 
+               builder: (c) => AlertDialog(
+                 title: const Text("Withdraw Request?"),
+                 content: const Text("Are you sure you want to cancel this mentorship request?"),
+                 actions: [
+                   TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("No")),
+                   TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("Yes", style: TextStyle(color: Colors.red))),
+                 ],
+               )
+             );
 
-           if (confirm == true && _requestId != null) {
-             setState(() => _isLoadingStatus = true);
-             final success = await _dataService.deleteMentorshipInteraction(_requestId!, 'cancel');
-             if (mounted) {
-               await _checkStatus(); 
-               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                 content: Text(success ? "Request Withdrawn" : "Failed to withdraw"),
-                 backgroundColor: success ? Colors.grey : Colors.red,
-               ));
+             if (confirm == true && _requestId != null) {
+               setState(() => _isLoadingStatus = true);
+               final success = await _dataService.deleteMentorshipInteraction(_requestId!, 'cancel');
+               if (mounted) {
+                 await _checkStatus(); 
+                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                   content: Text(success ? "Request Withdrawn" : "Failed to withdraw"),
+                   backgroundColor: success ? Colors.grey : Colors.red,
+                 ));
+               }
              }
-           }
-        };
-      } else if (_mentorshipStatus == "Accepted") {
-        label = "Message Mentor";
-        btnColor = Colors.green[700]!;
-        icon = Icons.chat;
-        action = () {
-           final targetId = _currentAlumniData['userId'] ?? _currentAlumniData['_id'];
-           Navigator.of(context, rootNavigator: true).push(
-             MaterialPageRoute(builder: (_) => ChatScreen(
-              receiverId: targetId,
-              receiverName: fullName,
-              receiverProfilePic: imageString,
-              isOnline: _isOnline, 
-              lastSeen: _lastSeen, 
-           )));
-        };
-      } else if (_mentorshipStatus == "Rejected") {
-        label = "Request Declined";
-        btnColor = Colors.red[300]!;
-        action = null;
-        icon = Icons.block;
+          };
+        } else if (_mentorshipStatus == "Accepted") {
+          label = "Message Mentor";
+          btnColor = Colors.green[700]!;
+          icon = Icons.chat;
+          action = () {
+             final targetId = _currentAlumniData['userId'] ?? _currentAlumniData['_id'];
+             Navigator.of(context, rootNavigator: true).push(
+               MaterialPageRoute(builder: (_) => ChatScreen(
+                receiverId: targetId,
+                receiverName: fullName,
+                receiverProfilePic: imageString,
+                isOnline: _isOnline, 
+                lastSeen: _lastSeen, 
+             )));
+          };
+        } else if (_mentorshipStatus == "Rejected") {
+          label = "Request Declined";
+          btnColor = Colors.red[300]!;
+          action = null;
+          icon = Icons.block;
+        }
+      } else {
+        // Render a disabled, optimistic loading state
+        btnColor = Colors.amber[800]!.withOpacity(0.5);
+        action = null; 
       }
 
       return Container(
@@ -367,14 +352,16 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 60, vertical: 10),
         child: ElevatedButton.icon(
           onPressed: action,
-          icon: Icon(icon, color: Colors.white, size: 20),
-          label: Text(label, style: GoogleFonts.lato(fontWeight: FontWeight.bold)),
+          icon: isCurrentlyLoading 
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : Icon(icon, color: Colors.white, size: 20),
+          label: Text(isCurrentlyLoading ? "Checking Status..." : label, style: GoogleFonts.lato(fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
             backgroundColor: btnColor,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
             padding: const EdgeInsets.symmetric(vertical: 10),
-            elevation: 2,
+            elevation: isCurrentlyLoading ? 0 : 2,
           ),
         ),
       );
@@ -414,7 +401,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
-                              // ✅ Prevent tapping to zoom if it's a fake placeholder URL
                               if (imageString.isNotEmpty && 
                                   !imageString.contains('profile/picture/') && 
                                   (imageString.startsWith('http') || imageString.length > 100)) {
@@ -620,13 +606,14 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                                 ],
                               ),
                               const SizedBox(height: 12),
+                              // ✅ OPTIMIZED: Shows text smoothly instead of blanking out entirely
                               Text(
-                                bio,
+                                bioText,
                                 style: GoogleFonts.lato(
                                   fontSize: 14, 
                                   height: 1.6, 
-                                  color: _isLoadingFullProfile ? Colors.grey : subTextColor,
-                                  fontStyle: _isLoadingFullProfile ? FontStyle.italic : FontStyle.normal,
+                                  color: _isLoadingFullProfile && !hasBio ? Colors.grey : subTextColor,
+                                  fontStyle: _isLoadingFullProfile || !hasBio ? FontStyle.italic : FontStyle.normal,
                                 ),
                                 textAlign: TextAlign.justify,
                               ),
@@ -636,7 +623,8 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
 
                         const SizedBox(height: 16),
 
-                        if (job.isNotEmpty || org.isNotEmpty || industry.isNotEmpty) 
+                        // ✅ OPTIMIZED: The professional block stays visible as a skeleton instead of abruptly popping in
+                        if (job.isNotEmpty || org.isNotEmpty || industry.isNotEmpty || _isLoadingFullProfile) 
                           Container(
                             width: double.infinity,
                             margin: const EdgeInsets.only(bottom: 16),
@@ -663,11 +651,18 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                if (job.isNotEmpty) _buildDetailRow(Icons.badge_outlined, "Role", job, textColor),
-                                if (job.isNotEmpty && org.isNotEmpty) const SizedBox(height: 8),
-                                if (org.isNotEmpty) _buildDetailRow(Icons.apartment_rounded, "Organization", org, textColor),
-                                if ((job.isNotEmpty || org.isNotEmpty) && industry.isNotEmpty) const SizedBox(height: 8),
-                                if (industry.isNotEmpty) _buildDetailRow(Icons.category_outlined, "Industry", industry, textColor),
+                                if (_isLoadingFullProfile && job.isEmpty && org.isEmpty && industry.isEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 4.0),
+                                    child: Text("Loading professional details...", style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic, fontSize: 13)),
+                                  )
+                                else ...[
+                                  if (job.isNotEmpty) _buildDetailRow(Icons.badge_outlined, "Role", job, textColor),
+                                  if (job.isNotEmpty && org.isNotEmpty) const SizedBox(height: 8),
+                                  if (org.isNotEmpty) _buildDetailRow(Icons.apartment_rounded, "Organization", org, textColor),
+                                  if ((job.isNotEmpty || org.isNotEmpty) && industry.isNotEmpty) const SizedBox(height: 8),
+                                  if (industry.isNotEmpty) _buildDetailRow(Icons.category_outlined, "Industry", industry, textColor),
+                                ]
                               ],
                             ),
                           ),
@@ -777,7 +772,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     );
   }
 
-  // ✅ FIXED: Better handling for Web CORS and invalid URLs
   Widget _buildRobustAvatar(String imageString, bool isDark) {
     if (imageString.isEmpty || imageString.contains('profile/picture/')) {
       return _buildPlaceholder(isDark);

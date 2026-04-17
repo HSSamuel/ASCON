@@ -1,4 +1,4 @@
-import 'dart:convert'; // ✅ Required for Base64
+import 'dart:convert'; 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -81,7 +81,6 @@ class CelebrationWidget extends ConsumerWidget {
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                     ),
-                    // ✅ Use the robust image builder
                     child: _buildSafeAvatar(img),
                   ),
                   const SizedBox(height: 4),
@@ -105,12 +104,15 @@ class CelebrationWidget extends ConsumerWidget {
     );
   }
 
-  // ✅ CRITICAL FIX: Robust Image Handling (Base64 + URL support)
   Widget _buildSafeAvatar(String? imageUrl) {
     const double radius = 24;
 
-    // 1. Handle HTTP URLs
-    if (imageUrl != null && imageUrl.startsWith('http')) {
+    // ✅ FIX: Catch ANY placeholder number (e.g., profile/picture/2)
+    if (imageUrl == null || imageUrl.isEmpty || imageUrl.contains('profile/picture/')) {
+      return _buildFallbackAvatar();
+    }
+
+    if (imageUrl.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: imageUrl,
         imageBuilder: (context, imageProvider) => CircleAvatar(
@@ -127,8 +129,7 @@ class CelebrationWidget extends ConsumerWidget {
       );
     }
 
-    // 2. Handle Base64 Data
-    if (imageUrl != null && imageUrl.isNotEmpty) {
+    if (imageUrl.isNotEmpty) {
       try {
         String cleanBase64 = imageUrl;
         if (cleanBase64.contains(',')) {
@@ -144,7 +145,6 @@ class CelebrationWidget extends ConsumerWidget {
       }
     }
 
-    // 3. Fallback
     return _buildFallbackAvatar();
   }
 

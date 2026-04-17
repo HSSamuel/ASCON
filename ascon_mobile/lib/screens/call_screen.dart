@@ -52,6 +52,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   StreamSubscription<CallEvent>? _listener;
   StreamSubscription<Map<String, dynamic>>? _socketListener;
+  StreamSubscription<Map<String, dynamic>>? _userStatusSub; // ✅ ADDED: For tracking if the user is online to ring
   
   Timer? _callTimer;
   Duration _callDuration = Duration.zero;
@@ -79,9 +80,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       _pulseController.repeat(reverse: true);
       _playRingtone(); 
     } else {
-      _status = "Ringing...";
+      // ✅ FIX: Start with Calling. We will change to Ringing if the status check proves they are online.
+      _status = "Calling...";
       _startOutgoingCall();
       _playDialingSound(); 
+      
+      // Request their online status immediately
+      if (!widget.isGroupCall && widget.remoteId != null) {
+        _socketService.checkUserStatus(widget.remoteId!);
+      }
     }
   }
 
@@ -178,18 +185,38 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _socketListener = _socketService.callEvents.listen((event) {
       if (!mounted) return;
       if (event['type'] == 'ended' && event['data']['channelName'] == widget.channelName) {
+        
+        // ✅ FIX: Capture exact reasons like 'No Answer' from the socket
+        String endMessage = "Call Ended";
+        if (event['data']['reason'] == "No Answer") {
+          endMessage = "No answer";
+        } else if (event['data']['reason'] == "user_busy") {
+          endMessage = "User is busy";
+        }
+
         if (widget.isGroupCall) {
            if (widget.isIncoming && !_hasAccepted && event['data']['callerId'] == widget.remoteId) {
-             _endCallUI("Call Ended");
+             _endCallUI(endMessage);
            }
         } else {
-           _endCallUI("Call Ended");
+           _endCallUI(endMessage);
         }
       } else if (event['type'] == 'answered' && event['data']['channelName'] == widget.channelName) {
         if (!widget.isGroupCall) {
           setState(() => _status = "Connecting Audio...");
         }
       }
+    });
+
+    // ✅ FIX: Listen to online presence specifically to flip "Calling..." to "Ringing..."
+    _userStatusSub = _socketService.userStatusStream.listen((data) {
+       if (!mounted || widget.isIncoming || widget.isGroupCall) return;
+       
+       if (data['userId'] == widget.remoteId) {
+          if (data['isOnline'] == true && _status == "Calling...") {
+             setState(() => _status = "Ringing...");
+          }
+       }
     });
   }
 
@@ -281,6 +308,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _audioPlayer.dispose();
     _listener?.cancel();
     _socketListener?.cancel();
+    _userStatusSub?.cancel(); // ✅ ADDED cleanup
     _stopTimer();
     _pulseController.dispose();
     super.dispose();

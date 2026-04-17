@@ -75,8 +75,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  // ✅ FIX: Immediately reject if imagePath contains 'profile/picture/'
   ImageProvider? getProfileImage(String? imagePath) {
-    if (imagePath == null || imagePath.isEmpty) return null;
+    if (imagePath == null || imagePath.isEmpty || imagePath.contains('profile/picture/')) return null;
     if (imagePath.startsWith('http')) return NetworkImage(imagePath);
     try { return MemoryImage(base64Decode(imagePath)); } catch (e) { return null; }
   }
@@ -138,9 +139,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 key: ValueKey<bool>(_isScrolled),
                 color: _isScrolled ? (isDark ? Colors.white : Colors.black87) : Colors.white,
                 size: _isScrolled ? 28 : 24, 
-                shadows: !_isScrolled 
-                    ? [const Shadow(color: Colors.black26, blurRadius: 4)] 
-                    : null, 
+                shadows: !_isScrolled ? [const Shadow(color: Colors.black26, blurRadius: 4)] : null, 
               ),
             ),
             tooltip: "Logout",
@@ -156,7 +155,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
             children: [
-              // --- HEADER SECTION ---
               Stack(
                 clipBehavior: Clip.none,
                 alignment: Alignment.center,
@@ -194,14 +192,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         
                         GestureDetector(
                           onTap: () {
-                            if (profilePicString != null && profilePicString.isNotEmpty) {
-                              // ✅ FIX: Added `rootNavigator: true` to push the image OVER the bottom navigation bar
+                            if (profilePicString != null && profilePicString.isNotEmpty && !profilePicString.contains('profile/picture/')) {
                               Navigator.of(context, rootNavigator: true).push(
                                 MaterialPageRoute(
-                                  builder: (_) => FullScreenImage(
-                                    imageUrl: profilePicString,
-                                    heroTag: 'my_profile_pic', 
-                                  ),
+                                  builder: (_) => FullScreenImage(imageUrl: profilePicString, heroTag: 'my_profile_pic'),
                                 ),
                               );
                             }
@@ -209,17 +203,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           child: Hero(
                             tag: 'my_profile_pic',
                             child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(color: cardColor, width: 4),
-                              ),
+                              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: cardColor, width: 4)),
                               child: CircleAvatar(
                                 radius: 45,
                                 backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
                                 backgroundImage: getProfileImage(profilePicString),
-                                child: getProfileImage(profilePicString) == null
-                                    ? Icon(Icons.person, size: 60, color: Colors.grey[400])
-                                    : null,
+                                child: getProfileImage(profilePicString) == null ? Icon(Icons.person, size: 60, color: Colors.grey[400]) : null,
                               ),
                             ),
                           ),
@@ -231,7 +220,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
               const SizedBox(height: 60), 
               
-              // --- NAME & BADGES ---
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16), 
                 child: Column(
@@ -243,7 +231,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     
                     const SizedBox(height: 8),
 
-                    // Presence
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -274,7 +261,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
               const SizedBox(height: 25), 
 
-              // --- ABOUT ME ---
               if (bio.isNotEmpty) ...[
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -297,7 +283,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 const SizedBox(height: 20),
               ],
 
-              // CAREER TIMELINE
               if (jobTitle.isNotEmpty || org.isNotEmpty || industry.isNotEmpty) 
                 Container(
                   width: double.infinity,

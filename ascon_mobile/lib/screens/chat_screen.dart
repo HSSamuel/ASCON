@@ -571,8 +571,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return "Last seen ${PresenceFormatter.format(lastSeen)}";
   }
 
+  // ✅ FIX: Catch Google's profile/picture URL placeholder here
   ImageProvider? _getImageProvider(String? source) {
-    if (source == null || source.isEmpty) return null;
+    if (source == null || source.isEmpty || source.contains('profile/picture/')) return null;
+    
     if (source.startsWith('http')) return CachedNetworkImageProvider(source);
     try {
       return MemoryImage(base64Decode(source));
@@ -808,8 +810,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           
                           // ✅ UPDATED: Pass grouping flags to MessageBubble
                           showSenderName: widget.isGroup && msg.senderId != state.myUserId && showAvatarAndName,
-                          // Note: You may want to add `isConsecutive: !showAvatarAndName` inside MessageBubble's constructor 
-                          // to reduce top padding dynamically for consecutive messages.
                           
                           uploadProgress: state.uploadProgresses[msg.id],
                           

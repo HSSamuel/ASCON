@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:cached_network_image/cached_network_image.dart'; // Needed for Avatar builder in popup
-import 'dart:convert'; // Needed for Base64 decode in popup
+import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:convert'; 
 import '../../viewmodels/directory_view_model.dart';
 import '../skeleton_loader.dart';
 import 'alumni_card.dart';
@@ -23,11 +23,10 @@ class _DirectoryTabState extends State<DirectoryTab> {
   @override
   void initState() {
     super.initState();
-    // Check for popup trigger from ViewModel
     if (widget.viewModel.shouldShowPopup) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showSmartMatchPopup(context);
-        widget.viewModel.shouldShowPopup = false; // Reset trigger
+        widget.viewModel.shouldShowPopup = false; 
       });
     }
   }
@@ -47,7 +46,6 @@ class _DirectoryTabState extends State<DirectoryTab> {
 
     return Column(
       children: [
-        // --- SEARCH & FILTER ---
         Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           color: Theme.of(context).cardColor,
@@ -109,7 +107,6 @@ class _DirectoryTabState extends State<DirectoryTab> {
           ),
         ),
 
-        // --- MAIN LIST ---
         Expanded(
           child: RefreshIndicator(
             onRefresh: () async {
@@ -122,11 +119,9 @@ class _DirectoryTabState extends State<DirectoryTab> {
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 children: [
-                  // A. RECOMMENDATION SECTION
                   if (vm.hasRecommendations && !vm.isSearching)
                     _buildRecommendationsSection(context, vm),
 
-                  // B. STANDARD LIST
                   if (vm.isLoadingDirectory)
                     const DirectorySkeletonList()
                   else if (vm.allAlumni.isEmpty)
@@ -208,7 +203,6 @@ class _DirectoryTabState extends State<DirectoryTab> {
   Widget _buildRecommendationsSection(BuildContext context, DirectoryViewModel vm) {
     final textColor = Theme.of(context).textTheme.bodyLarge?.color;
     final primaryColor = Theme.of(context).primaryColor;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
@@ -230,6 +224,11 @@ class _DirectoryTabState extends State<DirectoryTab> {
               itemCount: vm.recommendedAlumni.length,
               itemBuilder: (context, index) {
                 final user = vm.recommendedAlumni[index];
+                
+                // ✅ FIX: Safely validate the profile picture string before passing to the UI
+                final String imgStr = user['profilePicture']?.toString() ?? "";
+                final bool isValidImg = imgStr.isNotEmpty && imgStr.startsWith('http') && !imgStr.contains('profile/picture/');
+
                 return GestureDetector(
                   onTap: () {
                     Navigator.of(context, rootNavigator: true).push(
@@ -249,15 +248,11 @@ class _DirectoryTabState extends State<DirectoryTab> {
                           ),
                           child: SizedBox(
                             width: 60, height: 60,
-                            // Simplified avatar builder for brevity, normally reuse _buildAvatar
                             child: CircleAvatar(
                               radius: 28,
                               backgroundColor: Colors.grey[200],
-                              backgroundImage: (user['profilePicture'] != null && user['profilePicture'].toString().startsWith('http')) 
-                                ? CachedNetworkImageProvider(user['profilePicture']) 
-                                : null,
-                              child: (user['profilePicture'] == null || !user['profilePicture'].toString().startsWith('http'))
-                                ? const Icon(Icons.person) : null,
+                              backgroundImage: isValidImg ? CachedNetworkImageProvider(imgStr) : null,
+                              child: !isValidImg ? const Icon(Icons.person, color: Colors.grey) : null,
                             ),
                           ),
                         ),
@@ -286,8 +281,5 @@ class _DirectoryTabState extends State<DirectoryTab> {
     );
   }
 
-  void _showSmartMatchPopup(BuildContext context) {
-    // Popup implementation logic from original file...
-    // (Implementation omitted for brevity, identical to original code but uses widget.viewModel.recommendedAlumni)
-  }
+  void _showSmartMatchPopup(BuildContext context) {}
 }

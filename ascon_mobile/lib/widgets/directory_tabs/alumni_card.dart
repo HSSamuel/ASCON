@@ -139,9 +139,11 @@ class AlumniCard extends StatelessWidget {
   }
 
   Widget _buildAvatar(String? imagePath, bool isDark) {
-    if (imagePath == null || imagePath.isEmpty || imagePath.contains('profile/picture/0')) {
+    // ✅ FIX: Broadened check to catch any number Google appends (e.g., picture/0, picture/1, etc.)
+    if (imagePath == null || imagePath.isEmpty || imagePath.contains('profile/picture/')) {
       return _buildPlaceholder(isDark);
     }
+    
     if (imagePath.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: imagePath,
@@ -150,6 +152,7 @@ class AlumniCard extends StatelessWidget {
         errorWidget: (context, url, error) => _buildPlaceholder(isDark),
       );
     }
+    
     try {
       return CircleAvatar(radius: 24, backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100], backgroundImage: MemoryImage(base64Decode(imagePath)));
     } catch (e) {

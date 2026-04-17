@@ -21,9 +21,8 @@ class DigitalIDCard extends StatelessWidget {
   });
 
   Widget _buildAvatarImage(String url, double size) {
-    if (url.isEmpty || 
-        url.contains('profile/picture/1') || 
-        url.contains('googleusercontent.com/profile/picture')) {
+    // ✅ FIX: Broadened check to catch any profile/picture/ variation
+    if (url.isEmpty || url.contains('profile/picture/')) {
       return Icon(Icons.person, color: Colors.grey, size: size * 0.5);
     }
 
@@ -66,7 +65,6 @@ class DigitalIDCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const Color cardGreen = Color(0xFF1B5E3A);
-    // ✅ URL FIXED: Redirects to alumni site
     final String verificationLink = "https://asconalumni.netlify.app/verify/${alumniID.replaceAll('/', '-')}";
 
     return LayoutBuilder(
@@ -114,9 +112,9 @@ class DigitalIDCard extends StatelessWidget {
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.center, 
-                              child: Text(
+                              child: const Text(
                                 "ADMINISTRATIVE STAFF COLLEGE OF NIGERIA",
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,

@@ -38,20 +38,24 @@ mailClient.setCredentials({
 });
 
 // --------------------------------------------------------------------------
-// ✅ HELPER: SEND EMAIL VIA GMAIL REST API (HTTP Port 443)
+// ✅ HELPER: SEND EMAIL VIA GMAIL (Nodemailer Built-in OAuth2)
 // --------------------------------------------------------------------------
 const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
   if (!process.env.MAILER_REFRESH_TOKEN) {
     console.warn("⚠️ Email Skipped: MAILER_REFRESH_TOKEN is missing.");
-    throw new Error("Email configuration missing on server."); // ✅ Throw error instead of silent return
+    throw new Error("Email configuration missing on server.");
   }
 
   try {
-    const { token: accessToken } = await mailClient.getAccessToken();
-
-    const mailGenerator = nodemailer.createTransport({
-      streamTransport: true,
-      newline: "windows",
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        type: "OAuth2",
+        user: process.env.EMAIL_USER,
+        clientId: process.env.MAILER_CLIENT_ID,
+        clientSecret: process.env.MAILER_CLIENT_SECRET,
+        refreshToken: process.env.MAILER_REFRESH_TOKEN,
+      },
     });
 
     const mailOptions = {
@@ -61,38 +65,12 @@ const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
       html: htmlContent,
     };
 
-    const info = await mailGenerator.sendMail(mailOptions);
-
-    const rawEmail = await new Promise((resolve, reject) => {
-      let buffer = Buffer.alloc(0);
-      info.message.on("data", (chunk) => {
-        buffer = Buffer.concat([buffer, chunk]);
-      });
-      info.message.on("end", () => {
-        resolve(buffer.toString("base64"));
-      });
-      info.message.on("error", reject);
-    });
-
-    const response = await axios.post(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`,
-      { raw: rawEmail },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    console.log(`✅ Gmail API: Sent to ${toEmail} (ID: ${response.data.id})`);
-    return response.data;
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Gmail API: Sent to ${toEmail} (ID: ${info.messageId})`);
+    return info;
   } catch (error) {
-    console.error(
-      "❌ Gmail API Error:",
-      error.response ? error.response.data : error.message,
-    );
-    throw error; // ✅ THROW the error so forgotPassword knows it failed!
+    console.error("❌ Gmail API Error:", error.message);
+    throw error;
   }
 };
 
@@ -382,13 +360,8 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   let userProfile, userSettings;
 
   if (!userAuth) {
-    const randomPassword = crypto.randomBytes(16).toString("hex");
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(randomPassword, salt);
-
     userAuth = new UserAuth({
       email: email,
-      password: hashedPassword,
       isVerified: true,
       provider: "google",
       fcmTokens: fcmToken ? [fcmToken] : [],
@@ -506,7 +479,7 @@ exports.refreshToken = asyncHandler(async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// 5. FORGOT PASSWORD (Using Gmail API)
+// 5. FORGOT PASSWORD
 // --------------------------------------------------------------------------
 exports.forgotPassword = asyncHandler(async (req, res) => {
   if (!req.body.email) {
@@ -521,13 +494,20 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   const userProfile = await UserProfile.findOne({ userId: userAuth._id });
   const userName = userProfile ? userProfile.fullName : "Alumni";
 
-  const token = crypto.randomBytes(20).toString("hex");
-  userAuth.resetPasswordToken = token;
+  // ✅ FIX: Generate a raw token to send to the user
+  const resetToken = crypto.randomBytes(20).toString("hex");
+  
+  // ✅ FIX: Hash the token using SHA-256 before saving to the DB
+  const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+  userAuth.resetPasswordToken = hashedToken;
   userAuth.resetPasswordExpires = Date.now() + 3600000; // 1 hour
   await userAuth.save();
 
   const clientUrl = process.env.CLIENT_URL || "https://asconalumni.netlify.app";
-  const resetUrl = `${clientUrl}/reset-password?token=${token}`;
+  
+  // ✅ Send the UNHASHED token in the email link
+  const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
 
   try {
     await sendEmailViaGmailAPI(
@@ -562,10 +542,14 @@ exports.resetPassword = asyncHandler(async (req, res) => {
     throw new AppError("Password too short.", 400);
   }
 
+  // ✅ FIX: Hash the incoming raw token from the user's URL to compare with the DB
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
   const userAuth = await UserAuth.findOne({
-    resetPasswordToken: token,
+    resetPasswordToken: hashedToken,
     resetPasswordExpires: { $gt: Date.now() },
   });
+  
   if (!userAuth) {
     throw new AppError("Invalid or expired token.", 400);
   }
