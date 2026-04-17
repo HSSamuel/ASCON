@@ -392,7 +392,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 32),
 
                       SizedBox(
-                        height: 50, // ✅ Taller for premium feel
+                        height: 42, // Reduced height
                         child: ElevatedButton(
                           onPressed: _handleRegister, 
                           style: ElevatedButton.styleFrom(
@@ -402,7 +402,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             shadowColor: primaryColor.withOpacity(0.5),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          child: const Text("REGISTER", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                          child: const Text("REGISTER", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.2)), // Reduced font size
                         ),
                       ),
                       

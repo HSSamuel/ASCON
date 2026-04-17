@@ -214,12 +214,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             )
           : null, 
 
-        body: NotificationListener<UserScrollNotification>(
-          onNotification: (notification) {
-            _onScroll(notification);
-            return false; 
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragEnd: (DragEndDetails details) {
+            final int currentIndex = widget.navigationShell.currentIndex;
+            final double velocity = details.primaryVelocity ?? 0;
+            const int totalTabs = 5;
+
+            int nextIndex = currentIndex;
+
+            // Swipe Left (Negative velocity) -> Go to Next Tab
+            if (velocity < -300) {
+              nextIndex = currentIndex + 1;
+            } 
+            // Swipe Right (Positive velocity) -> Go to Previous Tab
+            else if (velocity > 300) {
+              nextIndex = currentIndex - 1;
+            }
+
+            // Only navigate if the index changed and is within bounds
+            if (nextIndex != currentIndex && nextIndex >= 0 && nextIndex < totalTabs) {
+              // Clear chat badge if swiping to the Chat tab (Index 1)
+              if (nextIndex == 1) { 
+                ref.read(badgeProvider.notifier).clearMessageBadge(); 
+              }
+              _goBranch(nextIndex);
+            }
           },
-          child: widget.navigationShell,
+          child: NotificationListener<UserScrollNotification>(
+            onNotification: (notification) {
+              _onScroll(notification);
+              return false; 
+            },
+            child: widget.navigationShell,
+          ),
         ),
 
         bottomNavigationBar: isKeyboardOpen 
@@ -234,7 +262,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   color: navBarColor,
                   elevation: 8, 
                   shadowColor: Colors.black.withOpacity(0.1),
-                  clipBehavior: Clip.antiAlias,
+                  clipBehavior: Clip.none,
                   padding: EdgeInsets.zero,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -315,8 +343,88 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     );
   }
   
-  Widget _buildNavItem({required String label, required IconData icon, required IconData activeIcon, required int index, required Color color, required int currentIndex, bool showBadge = false, int badgeCount = 0, String? imageUrl}) {
+ Widget _buildNavItem({
+    required String label, 
+    required IconData icon, 
+    required IconData activeIcon, 
+    required int index, 
+    required Color color, 
+    required int currentIndex, 
+    bool showBadge = false, 
+    int badgeCount = 0, 
+    String? imageUrl
+  }) {
     final isSelected = currentIndex == index;
+    final isUpdates = index == 2; // Targeting the center Updates icon
+
+    Widget iconContent = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        if (imageUrl != null)
+          _buildNavProfileIcon(imageUrl, isSelected, color, icon, activeIcon)
+        else
+          Icon(
+            isSelected ? activeIcon : icon, 
+            color: isUpdates ? Colors.white : (isSelected ? color : Colors.grey[400]), 
+            size: isUpdates ? 22 : 20
+          ),
+          
+        if (showBadge)
+          Positioned(
+            right: -2, top: -2,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.red, 
+                shape: BoxShape.circle,
+                border: Border.all(color: Theme.of(context).cardColor, width: 1.0)
+              ),
+              constraints: const BoxConstraints(minWidth: 10, minHeight: 10),
+              child: badgeCount > 0 
+                ? Center(
+                    child: Text(
+                      '$badgeCount',
+                      style: const TextStyle(color: Colors.white, fontSize: 6, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : null, 
+            ),
+          )
+      ],
+    );
+
+    // Apply the floating circular adjustment, explicitly managing layout size
+    if (isUpdates) {
+      iconContent = SizedBox(
+        height: 24, // Restrict layout height so it doesn't overflow the 48px boundary
+        width: 38,  // Maintain standard horizontal footprint
+        child: OverflowBox(
+          maxHeight: 60, // Allow container to paint upwards outside the box bounds
+          maxWidth: 60,
+          alignment: Alignment.bottomCenter, // Anchor to the bottom text
+          child: Transform.translate(
+            offset: const Offset(0, -6), // Shift upward visually
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isSelected ? color : Colors.grey[400], 
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3)
+                  )
+                ]
+              ),
+              child: iconContent,
+            ),
+          ),
+        ),
+      );
+    }
+
     return InkWell(
       onTap: () {
         if (index == 1) { 
@@ -331,40 +439,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                if (imageUrl != null)
-                  _buildNavProfileIcon(imageUrl, isSelected, color, icon, activeIcon)
-                else
-                  Icon(isSelected ? activeIcon : icon, color: isSelected ? color : Colors.grey[400], size: 20),
-                  
-                if (showBadge)
-                  Positioned(
-                    right: -2, top: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.red, 
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Theme.of(context).cardColor, width: 1.0)
-                      ),
-                      constraints: const BoxConstraints(minWidth: 10, minHeight: 10),
-                      child: badgeCount > 0 
-                        ? Center(
-                            child: Text(
-                              '$badgeCount',
-                              style: const TextStyle(color: Colors.white, fontSize: 6, fontWeight: FontWeight.bold),
-                              textAlign: TextAlign.center,
-                            ),
-                          )
-                        : null, 
-                    ),
-                  )
-              ],
+            iconContent,
+            SizedBox(height: isUpdates ? 0 : 2), // Keep tight to the elevated bubble
+            Transform.translate(
+              offset: isUpdates ? const Offset(0, -2) : Offset.zero, 
+              child: Text(
+                label, 
+                style: GoogleFonts.lato(
+                  fontSize: 9, 
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, 
+                  color: isSelected ? color : Colors.grey[400]
+                )
+              ),
             ),
-            const SizedBox(height: 2),
-            Text(label, style: GoogleFonts.lato(fontSize: 9, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? color : Colors.grey[400])),
           ],
         ),
       ),
