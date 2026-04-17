@@ -53,8 +53,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (mounted) setState(() => _canCheckBiometrics = available);
   }
 
-  // ✅ OPT-IN DIALOG for Biometrics
-  void _showBiometricOptInDialog(String email, String password, Map<String, dynamic> user) {
+  // ✅ UPDATED: No longer accepts email/password. Just the user data for routing.
+  void _showBiometricOptInDialog(Map<String, dynamic> user) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -70,7 +70,8 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              await _authService.enableBiometrics(email, password);
+              // ✅ FIXED: Call without plaintext credentials
+              await _authService.enableBiometrics(); 
               if (mounted) {
                 Navigator.pop(context);
                 _handleLoginSuccess(user);
@@ -83,12 +84,12 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // ✅ HANDLE BIOMETRIC BUTTON TAP
+  // ✅ UPDATED: Uses the secure Refresh Token flow instead of replaying a password
   Future<void> _handleBiometricLogin() async {
     bool hasConsent = await _authService.isBiometricEnabled();
     if (!hasConsent) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please log in with password once to enable Biometrics.")),
+        const SnackBar(content: Text("Please log in with your password once to enable Biometrics.")),
       );
       return;
     }
@@ -96,14 +97,24 @@ class _LoginScreenState extends State<LoginScreen> {
     bool authenticated = await _biometricService.authenticate();
     if (authenticated) {
       setState(() => _isEmailLoading = true); 
-      final result = await _authService.loginWithStoredCredentials();
+
+      // ✅ Trigger the token refresh flow instead of loginWithStoredCredentials
+      String? validToken = await _authService.getToken();
+      
       if (mounted) setState(() => _isEmailLoading = false);
 
-      if (result['success']) {
-        _handleLoginSuccess(result['data']['user']);
+      if (validToken != null) {
+        final user = await _authService.getCachedUser();
+        if (user != null) {
+          _handleLoginSuccess(user);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Profile data missing. Please log in manually.")),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Biometric login failed: ${result['message']}")),
+          const SnackBar(content: Text("Session expired or revoked. Please log in manually.")),
         );
       }
     }
@@ -235,12 +246,12 @@ class _LoginScreenState extends State<LoginScreen> {
       if (result['success']) {
         setState(() => _isEmailLoading = false);
         
-        // ✅ Check if we should prompt for Biometrics
         bool alreadyEnabled = await _authService.isBiometricEnabled();
         bool hardwareAvailable = await _biometricService.isBiometricAvailable;
 
         if (!alreadyEnabled && hardwareAvailable && mounted) {
-          _showBiometricOptInDialog(email, password, result['data']['user']);
+          // ✅ FIXED: Pass only the user payload
+          _showBiometricOptInDialog(result['data']['user']);
         } else {
           _handleLoginSuccess(result['data']['user']);
         }
@@ -268,8 +279,6 @@ class _LoginScreenState extends State<LoginScreen> {
         } catch (error) {
           if (mounted) {
             setState(() => _isGoogleLoading = false);
-            
-            // ✅ Expose the error to the user and console
             debugPrint("🔴 Google Sign-In Error: $error");
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -298,9 +307,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       setState(() => _isGoogleLoading = false);
 
-      // ✅ FIX 1: Pull the 404 check OUTSIDE the success block
       if (result['statusCode'] == 404) {
-        // Safely extract the data whether the API client nests it or not
         final responseData = result['data'] ?? result;
         final googleData = responseData['googleData'] ?? {};
 
@@ -309,10 +316,9 @@ class _LoginScreenState extends State<LoginScreen> {
           prefilledEmail: googleData['email'],
           googleToken: tokenToSend, 
         )));
-        return; // Stop execution here
+        return; 
       }
 
-      // ✅ FIX 2: Normal Login Success
       if (result['success']) {
         _handleLoginSuccess(result['data']['user']);
       } else {
@@ -346,7 +352,6 @@ class _LoginScreenState extends State<LoginScreen> {
           // ==========================================
           // 1. FLOATING BACKGROUND ORBS
           // ==========================================
-          // Top Left Orb
           Positioned(
             top: -50,
             left: -50,
@@ -359,7 +364,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-          // Bottom Right Orb
           Positioned(
             bottom: -100,
             right: -50,
@@ -374,12 +378,12 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           
           // ==========================================
-          // 2. FROSTED GLASS EFFECT (BackdropFilter)
+          // 2. FROSTED GLASS EFFECT
           // ==========================================
           Positioned.fill(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 60.0, sigmaY: 60.0), // Heavy blur for premium look
-              child: const SizedBox(), // Empty container to hold the blur
+              filter: ImageFilter.blur(sigmaX: 60.0, sigmaY: 60.0), 
+              child: const SizedBox(), 
             ),
           ),
 
@@ -391,7 +395,6 @@ class _LoginScreenState extends State<LoginScreen> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
                 child: Container(
-                  // The "Glass Pane" card
                   padding: const EdgeInsets.all(24.0),
                   decoration: BoxDecoration(
                     color: isDark ? Colors.black.withOpacity(0.4) : Colors.white.withOpacity(0.6),
@@ -415,7 +418,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           height: 90, width: 90,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle, 
-                            color: Colors.white, // Ensure logo pops on glass
+                            color: Colors.white, 
                             boxShadow: [
                               BoxShadow(
                                 color: primaryColor.withOpacity(0.2), 
@@ -435,7 +438,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text('Sign in to access your alumni network', style: TextStyle(fontSize: 14, color: subTextColor)),
                       const SizedBox(height: 28), 
 
-                      // Text Fields
                       TextFormField(
                         controller: _emailController, 
                         enabled: !isAnyLoading, 
@@ -443,7 +445,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           labelText: 'Email Address', 
                           prefixIcon: Icon(Icons.email_outlined, color: primaryColor, size: 20),
                           filled: true,
-                          fillColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5), // Semi-transparent fields
+                          fillColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5), 
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                         )
                       ),
@@ -465,12 +467,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       Align(alignment: Alignment.centerRight, child: TextButton(onPressed: isAnyLoading ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())), child: Text("Forgot Password?", style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 13)))),
                       const SizedBox(height: 8),
 
-                      // Login & Biometric Row
                       Row(
                         children: [
                           Expanded(
                             child: SizedBox(
-                              height: 45, // ✅ Reduced from 50 to 45
+                              height: 45, 
                               child: ElevatedButton(
                                 onPressed: isAnyLoading ? null : loginUser, 
                                 style: ElevatedButton.styleFrom(
@@ -482,33 +483,32 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ), 
                                 child: _isEmailLoading 
                                   ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-                                  : const Text('LOGIN', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1.2)) // ✅ slightly reduced font size to fit better
+                                  : const Text('LOGIN', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1.2)) 
                               )
                             ),
                           ),
                           if (_canCheckBiometrics) ...[
                             const SizedBox(width: 12),
                             Container(
-                              height: 45, width: 45, // ✅ Reduced from 50x50 to perfectly match the Login button height
+                              height: 45, width: 45, 
                               decoration: BoxDecoration(
                                 color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(color: primaryColor.withOpacity(0.3))
                               ),
                               child: IconButton(
-                                icon: Icon(Icons.fingerprint, color: primaryColor, size: 24), // ✅ Slightly reduced icon size to fit
+                                icon: Icon(Icons.fingerprint, color: primaryColor, size: 24), 
                                 onPressed: isAnyLoading ? null : _handleBiometricLogin,
                               ),
                             )
                           ]
                         ],
                       ),
-                      const SizedBox(height: 16), // Spacing between buttons
+                      const SizedBox(height: 16), 
                       
-                      // Google Button
                       SizedBox(
                         width: double.infinity, 
-                        height: 45, // ✅ Reduced from 50 to 45
+                        height: 45, 
                         child: OutlinedButton(
                           onPressed: isAnyLoading ? null : signInWithGoogle, 
                           style: OutlinedButton.styleFrom(
@@ -521,9 +521,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             : Row(
                                 mainAxisAlignment: MainAxisAlignment.center, 
                                 children: [
-                                  Image.asset('assets/images/google_logo.png', height: 20), // ✅ Slightly reduced image size
+                                  Image.asset('assets/images/google_logo.png', height: 20), 
                                   const SizedBox(width: 10), 
-                                  Text("Continue with Google", style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 14)) // ✅ Slightly reduced text size
+                                  Text("Continue with Google", style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 14)) 
                                 ]
                               )
                         )

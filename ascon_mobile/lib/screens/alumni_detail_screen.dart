@@ -234,10 +234,14 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     );
   }
 
+  // ✅ FIX: Cleanly format the Last Seen string for the detail screen
   String _formatLastSeen(String? dateString) {
-    if (dateString == null) return "Offline";
+    if (dateString == null || dateString.isEmpty) return "Offline";
+    
     final formatted = PresenceFormatter.format(dateString);
-    if (formatted == "Just now" || formatted == "Active just now") return "Active just now";
+    if (formatted == "Offline") return "Offline";
+    if (formatted.toLowerCase().contains("just now")) return "Active just now";
+    
     return "Last seen $formatted";
   }
 
@@ -278,7 +282,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
         ? _currentAlumniData['programmeTitle'] 
         : (_isLoadingFullProfile ? 'Loading...' : 'Not Specified');
 
-    // ✅ OPTIMIZED: Mentorship Button now uses structural UI with inline loaders instead of blocking
     Widget buildMentorshipButton() {
       if (!isMentor || !_profileExists) return const SizedBox.shrink();
 
@@ -342,7 +345,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
           icon = Icons.block;
         }
       } else {
-        // Render a disabled, optimistic loading state
         btnColor = Colors.amber[800]!.withOpacity(0.5);
         action = null; 
       }
@@ -606,7 +608,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                                 ],
                               ),
                               const SizedBox(height: 12),
-                              // ✅ OPTIMIZED: Shows text smoothly instead of blanking out entirely
                               Text(
                                 bioText,
                                 style: GoogleFonts.lato(
@@ -623,7 +624,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
 
                         const SizedBox(height: 16),
 
-                        // ✅ OPTIMIZED: The professional block stays visible as a skeleton instead of abruptly popping in
                         if (job.isNotEmpty || org.isNotEmpty || industry.isNotEmpty || _isLoadingFullProfile) 
                           Container(
                             width: double.infinity,

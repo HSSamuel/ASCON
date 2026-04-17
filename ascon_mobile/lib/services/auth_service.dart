@@ -15,9 +15,8 @@ import '../router.dart';
 import 'api_client.dart';
 import 'notification_service.dart';
 import 'socket_service.dart';
-import 'biometric_service.dart'; // ✅ ADDED
+import 'biometric_service.dart';
 
-// ✅ ADDED: Import the ViewModels we want to sweep from memory
 import '../viewmodels/chat_view_model.dart';
 import '../viewmodels/directory_view_model.dart';
 import '../viewmodels/events_view_model.dart';
@@ -59,27 +58,14 @@ class AuthService {
     }
   }
 
-  // ✅ UPDATED: Securely store credentials for biometric fallback
-  Future<void> enableBiometrics(String email, String password) async {
+  // ✅ SECURITY PATCH: Removed plaintext password storage
+  Future<void> enableBiometrics() async {
     await _secureStorage.write(key: 'use_biometrics', value: 'true');
-    await _secureStorage.write(key: 'biometric_email', value: email);
-    await _secureStorage.write(key: 'biometric_password', value: password);
   }
 
   Future<bool> isBiometricEnabled() async {
     String? enabled = await _secureStorage.read(key: 'use_biometrics');
     return enabled == 'true';
-  }
-
-  // ✅ UPDATED: Fetch stored credentials and execute fresh login
-  Future<Map<String, dynamic>> loginWithStoredCredentials() async {
-    String? email = await _secureStorage.read(key: 'biometric_email');
-    String? password = await _secureStorage.read(key: 'biometric_password');
-    
-    if (email != null && password != null) {
-      return await login(email, password);
-    }
-    return {'success': false, 'message': 'No credentials stored. Please log in manually.'};
   }
 
   Future<String?> _getFcmToken() async {
@@ -217,7 +203,6 @@ class AuthService {
     } catch (e) {}
   }
 
-  // ✅ UPDATED: Complete Hard Fallback Integration
   Future<String?> _performSilentRefresh() async {
     if (_isRefreshing) {
       debugPrint("⏳ Waiting for pending refresh in AuthService...");
@@ -253,7 +238,7 @@ class AuthService {
         }
       } else {
         // ==============================================================
-        // 🚨 THE HARD FALLBACK LAYER (Refresh Token Expired)
+        // 🚨 THE HARD FALLBACK LAYER (Refresh Token Expired/Revoked)
         // ==============================================================
         
         // 1. Try Google Silent Auth First
@@ -273,25 +258,14 @@ class AuthService {
            debugPrint("Silent Google Auth failed: $e");
         }
 
-        // 2. Try Biometric Auth (Local Password Users)
-        bool useBio = await isBiometricEnabled();
-        if (useBio) {
-          final authSuccess = await BiometricService().authenticate();
-          if (authSuccess) {
-            final res = await loginWithStoredCredentials();
-            if (res['success']) {
-              _refreshCompleter?.complete(_tokenCache);
-              return _tokenCache;
-            }
-          }
-        }
-
-        // 3. If all fallbacks fail, force logout.
+        // 2. ✅ SECURITY UPDATE: If refresh token is expired, user MUST 
+        // type their password again. We force logout to prompt for credentials.
         await logout();
         _refreshCompleter?.complete(null);
         return null;
       }
     } catch (e) {
+      // If it's a network error, do not force logout. Just return null to fail gracefully.
       _refreshCompleter?.complete(null);
       return null;
     } finally {
@@ -373,6 +347,27 @@ class AuthService {
   }
 
   Future<void> logout({bool clearBiometrics = false}) async {
+    // ✅ ADDED: Fire backend API to revoke the Refresh Token
+    try {
+      final String? fcmToken = await _getFcmToken();
+      final String? refreshToken = await _secureStorage.read(key: 'refresh_token');
+      final String? userId = await currentUserId;
+
+      if (userId != null) {
+        await http.post(
+          Uri.parse('${AppConfig.baseUrl}/api/auth/logout'),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ${_tokenCache ?? ""}'},
+          body: jsonEncode({
+            'userId': userId,
+            'fcmToken': fcmToken ?? "",
+            'refreshToken': refreshToken ?? ""
+          }),
+        );
+      }
+    } catch (e) {
+      debugPrint("⚠️ API Logout Error: $e");
+    }
+
     try {
       providerContainer.read(chatProvider.notifier).clearState();
       providerContainer.read(directoryProvider.notifier).clearState();
@@ -401,8 +396,6 @@ class AuthService {
 
       if (clearBiometrics) {
         await _secureStorage.delete(key: 'use_biometrics');
-        await _secureStorage.delete(key: 'biometric_email');
-        await _secureStorage.delete(key: 'biometric_password');
       }
     } catch (_) {}
 

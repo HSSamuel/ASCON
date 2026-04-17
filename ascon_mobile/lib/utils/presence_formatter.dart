@@ -14,27 +14,34 @@ class PresenceFormatter {
       if (diff.inSeconds < 60) {
         return "Active just now";
       }
+      
       // Minutes
       if (diff.inMinutes < 60) {
-        return "${diff.inMinutes}m ago";
+        final m = diff.inMinutes;
+        return "$m ${m == 1 ? 'min' : 'mins'} ago";
       }
+      
       // Hours
       if (diff.inHours < 24) {
-        return "${diff.inHours}h ago";
+        final h = diff.inHours;
+        return "$h ${h == 1 ? 'hr' : 'hrs'} ago";
       }
+      
       // Days
       if (diff.inDays < 30) {
-        return "${diff.inDays}d ago";
+        final d = diff.inDays;
+        return "$d ${d == 1 ? 'day' : 'days'} ago";
       }
+      
       // Months
       if (diff.inDays < 365) {
         final months = (diff.inDays / 30).floor();
-        return "${months}mo ago";
+        return "$months ${months == 1 ? 'mo' : 'mos'} ago";
       }
       
       // Years
       final years = (diff.inDays / 365).floor();
-      return "${years}y ago";
+      return "$years ${years == 1 ? 'yr' : 'yrs'} ago";
       
     } catch (e) {
       return "Offline";

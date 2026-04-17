@@ -147,8 +147,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (!mounted) return;
       if (data['userId'] == widget.receiverId) {
         setState(() {
-          _realtimeIsOnline = data['isOnline'];
-          if (!_realtimeIsOnline) _realtimeLastSeen = data['lastSeen'];
+          // ✅ FIX: Ensure boolean safety and accurately extract the string value for the timestamp
+          _realtimeIsOnline = data['isOnline'] == true;
+          if (data['lastSeen'] != null) {
+            _realtimeLastSeen = data['lastSeen'].toString(); 
+          }
         });
       }
     });
@@ -561,17 +564,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
+  // ✅ FIX: Cleanly formats the presence status avoiding "Last seen Offline"
   String _getStatusText(bool isTyping, bool isOnline, String? lastSeen) {
     if (widget.isGroup) {
       return _groupParticipants; 
     }
     if (isTyping) return "Typing...";
     if (isOnline) return "Online"; 
-    if (lastSeen == null) return "Offline";
-    return "Last seen ${PresenceFormatter.format(lastSeen)}";
+    if (lastSeen == null || lastSeen.isEmpty) return "Offline";
+
+    final formatted = PresenceFormatter.format(lastSeen);
+    
+    if (formatted == "Offline") return "Offline";
+    if (formatted.toLowerCase().contains("just now")) return "Active just now";
+    
+    return "Last seen $formatted";
   }
 
-  // ✅ FIX: Catch Google's profile/picture URL placeholder here
   ImageProvider? _getImageProvider(String? source) {
     if (source == null || source.isEmpty || source.contains('profile/picture/')) return null;
     
@@ -755,7 +764,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     )
                   : ListView.builder(
                   controller: _scrollController,
-                  // ✅ UPDATED: Native fluid swiping to dismiss keyboard
                   keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                   itemCount: state.messages.length,
@@ -773,7 +781,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         showDate = true;
                       }
                       
-                      // ✅ UPDATED: Visual Message Grouping Logic
                       if (prevMsg.senderId == msg.senderId && 
                           msg.createdAt.difference(prevMsg.createdAt).inMinutes < 2 &&
                           !showDate) {
@@ -808,9 +815,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           downloadingFileId: _downloadingFileId,
                           isAdmin: widget.isGroup && state.groupAdminIds.contains(msg.senderId),
                           
-                          // ✅ UPDATED: Pass grouping flags to MessageBubble
                           showSenderName: widget.isGroup && msg.senderId != state.myUserId && showAvatarAndName,
-                          
                           uploadProgress: state.uploadProgresses[msg.id],
                           
                           onSwipeReply: (id) {

@@ -4,16 +4,7 @@ const userAuthSchema = new mongoose.Schema(
   {
     // Core Authentication
     email: { type: String, required: true, max: 255, min: 6, unique: true },
-
-    // ✅ FIX: Password is now conditionally required ONLY for local logins
-    password: {
-      type: String,
-      required: function () {
-        return this.provider === "local";
-      },
-      max: 1024,
-      min: 6,
-    },
+    password: { type: String, required: true, max: 1024, min: 6 },
 
     // System & Auth States
     isVerified: { type: Boolean, default: true },
@@ -23,14 +14,17 @@ const userAuthSchema = new mongoose.Schema(
 
     provider: { type: String, default: "local", enum: ["local", "google"] },
 
-    // Password Reset (Will store hashed tokens)
+    // Password Reset
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
 
-    // Real-Time System
+    // Real-Time System (Needed at the Auth level for socket connection checks)
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date, default: Date.now },
-    fcmTokens: { type: [String], default: [] },
+
+    // ✅ ADDED: Cap at 5 tokens to manage devices securely
+    fcmTokens: { type: [String], default: [] }, // Push notification tokens
+    refreshTokens: { type: [String], default: [] }, // Security: Active Refresh Tokens
   },
   {
     timestamps: true,

@@ -9,53 +9,45 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
 const Joi = require("joi");
-const axios = require("axios"); // ✅ Using Axios for HTTP Requests
-const nodemailer = require("nodemailer"); // ✅ Used ONLY for formatting the email content
+const axios = require("axios");
+const nodemailer = require("nodemailer");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../utils/AppError");
 
-// ✅ IMPORT NOTIFICATION HANDLER
 const { sendPersonalNotification } = require("../utils/notificationHandler");
 
 // --------------------------------------------------------------------------
-// 1. AUTH CLIENT (For Verifying User Logins)
+// 1. AUTH CLIENT
 // --------------------------------------------------------------------------
-// This uses the OLD Client ID linked to your Mobile App/Frontend
 const authClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // --------------------------------------------------------------------------
-// 2. MAILER CLIENT (For Sending Emails via Gmail API)
+// 2. MAILER CLIENT
 // --------------------------------------------------------------------------
-// This uses the NEW Client ID & Secret you just added to Render
 const mailClient = new OAuth2Client(
   process.env.MAILER_CLIENT_ID,
   process.env.MAILER_CLIENT_SECRET,
 );
 
-// Set credentials for the mailer (SERVER-SIDE SENDER)
 mailClient.setCredentials({
   refresh_token: process.env.MAILER_REFRESH_TOKEN,
 });
 
 // --------------------------------------------------------------------------
-// ✅ HELPER: SEND EMAIL VIA GMAIL (Nodemailer Built-in OAuth2)
+// HELPER: SEND EMAIL VIA GMAIL API
 // --------------------------------------------------------------------------
 const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
   if (!process.env.MAILER_REFRESH_TOKEN) {
     console.warn("⚠️ Email Skipped: MAILER_REFRESH_TOKEN is missing.");
-    throw new Error("Email configuration missing on server.");
+    return;
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        type: "OAuth2",
-        user: process.env.EMAIL_USER,
-        clientId: process.env.MAILER_CLIENT_ID,
-        clientSecret: process.env.MAILER_CLIENT_SECRET,
-        refreshToken: process.env.MAILER_REFRESH_TOKEN,
-      },
+    const { token: accessToken } = await mailClient.getAccessToken();
+
+    const mailGenerator = nodemailer.createTransport({
+      streamTransport: true,
+      newline: "windows",
     });
 
     const mailOptions = {
@@ -65,12 +57,37 @@ const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
       html: htmlContent,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Gmail API: Sent to ${toEmail} (ID: ${info.messageId})`);
-    return info;
+    const info = await mailGenerator.sendMail(mailOptions);
+
+    const rawEmail = await new Promise((resolve, reject) => {
+      let buffer = Buffer.alloc(0);
+      info.message.on("data", (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+      });
+      info.message.on("end", () => {
+        resolve(buffer.toString("base64"));
+      });
+      info.message.on("error", reject);
+    });
+
+    const response = await axios.post(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`,
+      { raw: rawEmail },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    console.log(`✅ Gmail API: Sent to ${toEmail} (ID: ${response.data.id})`);
+    return response.data;
   } catch (error) {
-    console.error("❌ Gmail API Error:", error.message);
-    throw error;
+    console.error(
+      "❌ Gmail API Error:",
+      error.response ? error.response.data : error.message,
+    );
   }
 };
 
@@ -100,7 +117,6 @@ const loginSchema = Joi.object({
   fcmToken: Joi.string().optional().allow("", null),
 });
 
-// ✅ HELPER: Manage Tokens in the Auth Schema (Cap at 5)
 const manageFcmToken = async (userId, token) => {
   if (!token) return;
   await UserAuth.findByIdAndUpdate(userId, {
@@ -118,21 +134,18 @@ const manageFcmToken = async (userId, token) => {
 };
 
 // --------------------------------------------------------------------------
-// 1. REGISTER (Atomic Transaction Implemented)
+// 1. REGISTER
 // --------------------------------------------------------------------------
 exports.register = asyncHandler(async (req, res) => {
   const { error } = registerSchema.validate(req.body);
-  if (error) {
-    throw new AppError(error.details[0].message, 400);
-  }
+  if (error) throw new AppError(error.details[0].message, 400);
 
   const { fullName, email, password, phoneNumber, fcmToken, dateOfBirth } =
     req.body;
 
   const emailExist = await UserAuth.findOne({ email });
-  if (emailExist) {
+  if (emailExist)
     throw new AppError("Email already registered. Please Login.", 400);
-  }
 
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -141,18 +154,26 @@ exports.register = asyncHandler(async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // STEP 1: Create Auth
+    // ✅ Generate ID and Refresh Token before saving
+    const newAuthId = new mongoose.Types.ObjectId();
+    const refreshToken = jwt.sign(
+      { _id: newAuthId },
+      process.env.REFRESH_SECRET,
+      { expiresIn: "30d" },
+    );
+
     const newUserAuth = new UserAuth({
+      _id: newAuthId,
       email,
       password: hashedPassword,
       isVerified: true,
       provider: "local",
       fcmTokens: fcmToken ? [fcmToken] : [],
+      refreshTokens: [refreshToken], // ✅ Store token securely
       isOnline: true,
     });
     const savedAuth = await newUserAuth.save({ session });
 
-    // STEP 2: Create Profile (Minimal Data)
     const newUserProfile = new UserProfile({
       userId: savedAuth._id,
       fullName,
@@ -161,7 +182,6 @@ exports.register = asyncHandler(async (req, res) => {
     });
     await newUserProfile.save({ session });
 
-    // STEP 3: Create Settings
     const newUserSettings = new UserSettings({
       userId: savedAuth._id,
       hasSeenWelcome: false,
@@ -174,9 +194,6 @@ exports.register = asyncHandler(async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    // ==========================================
-    // 🔔 SEND WELCOME EMAIL (VIA GMAIL API)
-    // ==========================================
     await sendEmailViaGmailAPI(
       email,
       fullName,
@@ -222,12 +239,6 @@ exports.register = asyncHandler(async (req, res) => {
       { expiresIn: "2h" },
     );
 
-    const refreshToken = jwt.sign(
-      { _id: savedAuth._id },
-      process.env.REFRESH_SECRET,
-      { expiresIn: "30d" },
-    );
-
     res.status(201).json({
       message: "Registration successful!",
       token: token,
@@ -256,21 +267,15 @@ exports.register = asyncHandler(async (req, res) => {
 // --------------------------------------------------------------------------
 exports.login = asyncHandler(async (req, res) => {
   const { error } = loginSchema.validate(req.body);
-  if (error) {
-    throw new AppError(error.details[0].message, 400);
-  }
+  if (error) throw new AppError(error.details[0].message, 400);
 
   const { email, password, fcmToken } = req.body;
 
   let userAuth = await UserAuth.findOne({ email });
-  if (!userAuth) {
-    throw new AppError("Invalid email or password.", 401);
-  }
+  if (!userAuth) throw new AppError("Invalid email or password.", 401);
 
   const validPass = await bcrypt.compare(password, userAuth.password);
-  if (!validPass) {
-    throw new AppError("Invalid email or password.", 401);
-  }
+  if (!validPass) throw new AppError("Invalid email or password.", 401);
 
   if (userAuth.isVerified === false) {
     throw new AppError("Account pending approval by administrator.", 403);
@@ -279,8 +284,24 @@ exports.login = asyncHandler(async (req, res) => {
   const userProfile = await UserProfile.findOne({ userId: userAuth._id });
   const userSettings = await UserSettings.findOne({ userId: userAuth._id });
 
-  if (fcmToken) {
-    await manageFcmToken(userAuth._id, fcmToken);
+  if (fcmToken) await manageFcmToken(userAuth._id, fcmToken);
+
+  const token = jwt.sign(
+    { _id: userAuth._id, isAdmin: userAuth.isAdmin, canEdit: userAuth.canEdit },
+    process.env.JWT_SECRET,
+    { expiresIn: "2h" },
+  );
+
+  const refreshToken = jwt.sign(
+    { _id: userAuth._id },
+    process.env.REFRESH_SECRET,
+    { expiresIn: "30d" },
+  );
+
+  // ✅ Store Refresh Token securely (Cap at 5 concurrent sessions)
+  userAuth.refreshTokens.push(refreshToken);
+  if (userAuth.refreshTokens.length > 5) {
+    userAuth.refreshTokens.shift();
   }
 
   userAuth.isOnline = true;
@@ -294,18 +315,6 @@ exports.login = asyncHandler(async (req, res) => {
       lastSeen: userAuth.lastSeen,
     });
   }
-
-  const token = jwt.sign(
-    { _id: userAuth._id, isAdmin: userAuth.isAdmin, canEdit: userAuth.canEdit },
-    process.env.JWT_SECRET,
-    { expiresIn: "2h" },
-  );
-
-  const refreshToken = jwt.sign(
-    { _id: userAuth._id },
-    process.env.REFRESH_SECRET,
-    { expiresIn: "30d" },
-  );
 
   res.json({
     token,
@@ -338,7 +347,6 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   const isIdToken = token.split(".").length === 3;
   if (isIdToken) {
     const ticket = await authClient.verifyIdToken({
-      // ✅ Use authClient here
       idToken: token,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
@@ -349,7 +357,9 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   } else {
     const response = await axios.get(
       "https://www.googleapis.com/oauth2/v3/userinfo",
-      { headers: { Authorization: `Bearer ${token}` } },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
     );
     name = response.data.name;
     email = response.data.email;
@@ -360,14 +370,24 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   let userProfile, userSettings;
 
   if (!userAuth) {
+    const randomPassword = crypto.randomBytes(16).toString("hex");
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(randomPassword, salt);
+
     userAuth = new UserAuth({
       email: email,
+      password: hashedPassword,
       isVerified: true,
       provider: "google",
       fcmTokens: fcmToken ? [fcmToken] : [],
       isOnline: true,
     });
     await userAuth.save();
+
+    let safePicture = picture;
+    if (picture && picture.includes("profile/picture/0")) {
+      safePicture = null; // Set to null so the app uses the default fallback
+    }
 
     userProfile = new UserProfile({
       userId: userAuth._id,
@@ -384,7 +404,6 @@ exports.googleLogin = asyncHandler(async (req, res) => {
 
     if (req.io) req.io.emit("admin_stats_update", { type: "NEW_USER" });
 
-    // Send Welcome via Gmail API
     await sendEmailViaGmailAPI(
       email,
       name,
@@ -396,25 +415,9 @@ exports.googleLogin = asyncHandler(async (req, res) => {
     userSettings = await UserSettings.findOne({ userId: userAuth._id });
   }
 
-  if (!userAuth.isVerified) {
+  if (!userAuth.isVerified)
     throw new AppError("Account pending approval.", 403);
-  }
-
-  if (fcmToken) {
-    await manageFcmToken(userAuth._id, fcmToken);
-  }
-
-  userAuth.isOnline = true;
-  userAuth.lastSeen = new Date();
-  await userAuth.save();
-
-  if (req.io) {
-    req.io.emit("user_status_update", {
-      userId: userAuth._id,
-      isOnline: true,
-      lastSeen: userAuth.lastSeen,
-    });
-  }
+  if (fcmToken) await manageFcmToken(userAuth._id, fcmToken);
 
   const authToken = jwt.sign(
     { _id: userAuth._id, isAdmin: userAuth.isAdmin, canEdit: userAuth.canEdit },
@@ -427,6 +430,22 @@ exports.googleLogin = asyncHandler(async (req, res) => {
     process.env.REFRESH_SECRET,
     { expiresIn: "30d" },
   );
+
+  // ✅ Store Refresh Token Securely
+  userAuth.refreshTokens.push(refreshToken);
+  if (userAuth.refreshTokens.length > 5) userAuth.refreshTokens.shift();
+
+  userAuth.isOnline = true;
+  userAuth.lastSeen = new Date();
+  await userAuth.save();
+
+  if (req.io) {
+    req.io.emit("user_status_update", {
+      userId: userAuth._id,
+      isOnline: true,
+      lastSeen: userAuth.lastSeen,
+    });
+  }
 
   return res.json({
     token: authToken,
@@ -450,17 +469,20 @@ exports.googleLogin = asyncHandler(async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// 4. REFRESH TOKEN
+// 4. REFRESH TOKEN (SECURED)
 // --------------------------------------------------------------------------
 exports.refreshToken = asyncHandler(async (req, res) => {
   const { refreshToken } = req.body;
-  if (!refreshToken) {
-    throw new AppError("Refresh Token Required", 401);
-  }
+  if (!refreshToken) throw new AppError("Refresh Token Required", 401);
 
   try {
     const verified = jwt.verify(refreshToken, process.env.REFRESH_SECRET);
     const userAuth = await UserAuth.findById(verified._id);
+
+    // ✅ SECURE CHECK: Ensure token is tracked in DB (prevents stolen/logged-out token usage)
+    if (!userAuth || !userAuth.refreshTokens.includes(refreshToken)) {
+      throw new AppError("Invalid, Stolen, or Expired Refresh Token", 403);
+    }
 
     const newAccessToken = jwt.sign(
       {
@@ -482,32 +504,21 @@ exports.refreshToken = asyncHandler(async (req, res) => {
 // 5. FORGOT PASSWORD
 // --------------------------------------------------------------------------
 exports.forgotPassword = asyncHandler(async (req, res) => {
-  if (!req.body.email) {
-    throw new AppError("Email is required", 400);
-  }
+  if (!req.body.email) throw new AppError("Email is required", 400);
 
   const userAuth = await UserAuth.findOne({ email: req.body.email });
-  if (!userAuth) {
-    throw new AppError("Email not found", 404);
-  }
+  if (!userAuth) throw new AppError("Email not found", 404);
 
   const userProfile = await UserProfile.findOne({ userId: userAuth._id });
   const userName = userProfile ? userProfile.fullName : "Alumni";
 
-  // ✅ FIX: Generate a raw token to send to the user
-  const resetToken = crypto.randomBytes(20).toString("hex");
-  
-  // ✅ FIX: Hash the token using SHA-256 before saving to the DB
-  const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
-
-  userAuth.resetPasswordToken = hashedToken;
-  userAuth.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+  const token = crypto.randomBytes(20).toString("hex");
+  userAuth.resetPasswordToken = token;
+  userAuth.resetPasswordExpires = Date.now() + 3600000;
   await userAuth.save();
 
   const clientUrl = process.env.CLIENT_URL || "https://asconalumni.netlify.app";
-  
-  // ✅ Send the UNHASHED token in the email link
-  const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
+  const resetUrl = `${clientUrl}/reset-password?token=${token}`;
 
   try {
     await sendEmailViaGmailAPI(
@@ -521,14 +532,11 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
       <p><a href="${resetUrl}">Reset Password</a></p>
       `,
     );
-
     res.json({ message: "Reset link sent to your email!" });
   } catch (error) {
-    // Rollback token if email fails
     userAuth.resetPasswordToken = undefined;
     userAuth.resetPasswordExpires = undefined;
     await userAuth.save();
-
     throw new AppError("Email could not be sent. Please try again later.", 500);
   }
 });
@@ -538,21 +546,14 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 // --------------------------------------------------------------------------
 exports.resetPassword = asyncHandler(async (req, res) => {
   const { token, newPassword } = req.body;
-  if (!newPassword || newPassword.length < 6) {
+  if (!newPassword || newPassword.length < 6)
     throw new AppError("Password too short.", 400);
-  }
-
-  // ✅ FIX: Hash the incoming raw token from the user's URL to compare with the DB
-  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
   const userAuth = await UserAuth.findOne({
-    resetPasswordToken: hashedToken,
+    resetPasswordToken: token,
     resetPasswordExpires: { $gt: Date.now() },
   });
-  
-  if (!userAuth) {
-    throw new AppError("Invalid or expired token.", 400);
-  }
+  if (!userAuth) throw new AppError("Invalid or expired token.", 400);
 
   const salt = await bcrypt.genSalt(10);
   const hashedPassword = await bcrypt.hash(newPassword, salt);
@@ -561,19 +562,28 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   userAuth.resetPasswordToken = undefined;
   userAuth.resetPasswordExpires = undefined;
 
+  // ✅ Security: Force log out of all existing devices upon password reset
+  userAuth.refreshTokens = [];
+
   await userAuth.save();
   res.json({ message: "Password updated successfully! Please login." });
 });
 
 // --------------------------------------------------------------------------
-// 7. LOGOUT
+// 7. LOGOUT (SECURED)
 // --------------------------------------------------------------------------
 exports.logout = asyncHandler(async (req, res) => {
-  const { userId, fcmToken } = req.body;
-  if (userId && fcmToken) {
+  const { userId, fcmToken, refreshToken } = req.body;
+
+  if (userId) {
     await UserAuth.updateOne(
       { _id: userId },
-      { $pull: { fcmTokens: fcmToken } },
+      {
+        $pull: {
+          fcmTokens: fcmToken,
+          refreshTokens: refreshToken, // ✅ Revoke the specific refresh token
+        },
+      },
     );
   }
   res.status(200).json({ message: "Logged out successfully" });
