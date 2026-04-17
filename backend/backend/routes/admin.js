@@ -46,7 +46,7 @@ const verifyAdmin = (req, res, next) => {
   if (!token) return res.status(401).json({ message: "Access Denied" });
 
   try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET);
+    const verified = jwt.verify(token, import.meta.env.JWT_SECRET);
     if (!verified.isAdmin) {
       return res.status(403).json({ message: "Admin privileges required." });
     }
@@ -62,7 +62,7 @@ const verifyEditor = (req, res, next) => {
   if (!token) return res.status(401).json({ message: "Access Denied" });
 
   try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET);
+    const verified = jwt.verify(token, import.meta.env.JWT_SECRET);
     if (!verified.isAdmin)
       return res.status(403).json({ message: "Admin access required" });
 

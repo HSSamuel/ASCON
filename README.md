@@ -61,8 +61,8 @@ _Located in `/ascon_web_admin`_
 2.  Install dependencies: `npm install`
 3.  **Configuration:** Ensure `.env` points to your backend:
     ```env
-    REACT_APP_API_URL=http://localhost:5000
-    # For Production: REACT_APP_API_URL=[https://ascon.onrender.com]
+    VITE_API_URL=http://localhost:5000
+    # For Production: VITE_API_URL=[https://ascon.onrender.com]
     ```
 4.  Start the dashboard: `npm start`
 5.  _Access at: `http://localhost:3000`_

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
@@ -23,6 +24,10 @@ class AuthService {
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
   );
+
+  // ✅ FIX 2: Global Refresh Lock to perfectly sync preemptive and 401 refresh checks
+  bool _isRefreshing = false;
+  Completer<String?>? _refreshCompleter;
 
   AuthService() {
     _api.onTokenRefresh = _performSilentRefresh;
@@ -49,10 +54,13 @@ class AuthService {
     }
   }
 
+  // ✅ FIX 1: Removed storing raw password for biometrics
   Future<void> enableBiometrics(String email, String password) async {
-    await _secureStorage.write(key: 'biometric_email', value: email);
-    await _secureStorage.write(key: 'biometric_password', value: password);
+    // We keep the parameter signature to not break the UI caller, 
+    // but we stop storing the vulnerable credentials payload.
     await _secureStorage.write(key: 'use_biometrics', value: 'true');
+    await _secureStorage.delete(key: 'biometric_email');
+    await _secureStorage.delete(key: 'biometric_password');
   }
 
   Future<bool> isBiometricEnabled() async {
@@ -60,14 +68,17 @@ class AuthService {
     return enabled == 'true';
   }
 
+  // ✅ FIX 1: Login with stored credentials now securely utilizes the refresh token
   Future<Map<String, dynamic>> loginWithStoredCredentials() async {
-    final email = await _secureStorage.read(key: 'biometric_email');
-    final password = await _secureStorage.read(key: 'biometric_password');
-
-    if (email != null && password != null) {
-      return await login(email, password);
+    final token = await _performSilentRefresh();
+    if (token != null) {
+      final user = await getCachedUser();
+      return {
+        'success': true, 
+        'data': {'token': token, 'user': user ?? {}}
+      };
     }
-    return {'success': false, 'message': 'No credentials stored'};
+    return {'success': false, 'message': 'Session expired. Please log in manually.'};
   }
 
   Future<String?> _getFcmToken() async {
@@ -184,7 +195,6 @@ class AuthService {
     }
   }
 
-  // ✅ THE MISSING METHOD RESTORED
   Future<List<dynamic>> getProgrammes() async {
     try {
       final result = await _api.get('/api/admin/programmes');
@@ -206,10 +216,22 @@ class AuthService {
     } catch (e) {}
   }
 
+  // ✅ FIX 2: Synchronized refresh logic using a Completer lock
   Future<String?> _performSilentRefresh() async {
+    if (_isRefreshing) {
+      print("⏳ Waiting for pending refresh in AuthService...");
+      return await _refreshCompleter?.future;
+    }
+
+    _isRefreshing = true;
+    _refreshCompleter = Completer<String?>();
+
     try {
       String? refreshToken = await _secureStorage.read(key: 'refresh_token');
-      if (refreshToken == null) return null;
+      if (refreshToken == null) {
+        _refreshCompleter?.complete(null);
+        return null;
+      }
 
       final result = await http.post(
         Uri.parse('${AppConfig.baseUrl}/api/auth/refresh'),
@@ -225,14 +247,20 @@ class AuthService {
           _tokenCache = newToken;
           await _secureStorage.write(key: 'auth_token', value: newToken);
           _api.setAuthToken(newToken);
+          _refreshCompleter?.complete(newToken);
           return newToken;
         }
       } else {
         await logout();
+        _refreshCompleter?.complete(null);
         return null;
       }
     } catch (e) {
+      _refreshCompleter?.complete(null);
       return null;
+    } finally {
+      _isRefreshing = false;
+      _refreshCompleter = null;
     }
     return null;
   }
@@ -265,7 +293,11 @@ class AuthService {
 
   Future<String?> getToken() async {
     try {
-      if (_tokenCache != null && _tokenCache!.isNotEmpty) return _tokenCache;
+      if (_tokenCache != null && _tokenCache!.isNotEmpty) {
+         // Still check expiration against local cache before returning
+         bool isExpiredCache = JwtDecoder.isExpired(_tokenCache!) || JwtDecoder.getRemainingTime(_tokenCache!).inSeconds < 60;
+         if (!isExpiredCache) return _tokenCache;
+      }
 
       String? token = await _secureStorage.read(key: 'auth_token');
       String? refreshToken = await _secureStorage.read(key: 'refresh_token');
@@ -284,18 +316,9 @@ class AuthService {
 
       bool isExpired = JwtDecoder.isExpired(token) || JwtDecoder.getRemainingTime(token).inSeconds < 60;
 
+      // ✅ FIX 2: Preemptive check now explicitly utilizes the global lock
       if (isExpired && refreshToken != null) {
-        try {
-          final result = await _api.post('/api/auth/refresh', {'refreshToken': refreshToken});
-          if (result['success']) {
-            final newToken = result['data']['token'];
-            _tokenCache = newToken;
-            await _secureStorage.write(key: 'auth_token', value: newToken);
-            _api.setAuthToken(newToken);
-            return newToken;
-          }
-        } catch (e) {}
-        return null;
+        return await _performSilentRefresh();
       }
 
       _tokenCache = token;
@@ -336,9 +359,9 @@ class AuthService {
       await _secureStorage.delete(key: 'cached_user');
 
       if (clearBiometrics) {
+        await _secureStorage.delete(key: 'use_biometrics');
         await _secureStorage.delete(key: 'biometric_email');
         await _secureStorage.delete(key: 'biometric_password');
-        await _secureStorage.delete(key: 'use_biometrics');
       }
     } catch (_) {}
 

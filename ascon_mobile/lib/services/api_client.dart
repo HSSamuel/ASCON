@@ -22,19 +22,11 @@ class ApiClient {
   factory ApiClient() => _instance;
   ApiClient._internal();
 
-  // ✅ ENCRYPTED VAULT FOR TOKENS
   final _secureStorage = StorageConfig.storage;
 
-  // Callback to handle token refresh
+  // Callback to handle token refresh (Locking is now handled strictly in AuthService)
   Future<String?> Function()? onTokenRefresh;
 
-  // ✅ LOCKING MECHANISM VARIABLES
-  bool _isRefreshing = false;
-  Completer<String?>? _refreshCompleter;
-
-  // =========================================================
-  // 🔐 DYNAMIC SECURE HEADER GENERATOR
-  // =========================================================
   Future<Map<String, String>> _getSecureHeaders() async {
     final token = await _secureStorage.read(key: 'auth_token');
     return {
@@ -43,22 +35,14 @@ class ApiClient {
     };
   }
 
-  // ✅ Legacy method kept for backward compatibility with AuthService
-  void setAuthToken(String token) {
-    // No longer needs to set a static map, as _getSecureHeaders reads dynamically
-  }
+  void setAuthToken(String token) {}
+  void clearAuthToken() {}
 
-  void clearAuthToken() {
-    // Tokens are now cleared directly in AuthService via secureStorage.delete()
-  }
-
-  // ✅ FIX: Added {bool requiresAuth = true} to allow public requests
   Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> body, {bool requiresAuth = true}) async {
     final response = await _request(() async {
-      // ✅ LOGIC CHANGE: Only add secure headers if explicitly requested
       final headers = requiresAuth 
           ? await _getSecureHeaders() 
-          : {'Content-Type': 'application/json'}; // Public Header
+          : {'Content-Type': 'application/json'}; 
           
       return http.post(
         Uri.parse('${AppConfig.baseUrl}$endpoint'),
@@ -112,41 +96,16 @@ class ApiClient {
 
   Future<dynamic> _request(Future<http.Response> Function() req) async {
     try {
-      // ✅ Use Centralized Timeout
       var response = await req().timeout(AppConfig.apiTimeout);
 
-      // ✅ CRITICAL FIX: Handle Race Condition for 401
+      // ✅ FIX: Lock mechanism moved entirely to AuthService to perfectly sync 
+      // with preemptive UI checks. ApiClient just awaits the callback.
       if (response.statusCode == 401 && onTokenRefresh != null) {
         print("🔄 401 Detected. Attempting Refresh...");
-
-        String? newToken;
-
-        if (_isRefreshing) {
-          print("⏳ Waiting for pending refresh...");
-          newToken = await _refreshCompleter?.future;
-        } else {
-          _isRefreshing = true;
-          _refreshCompleter = Completer<String?>();
-          print("🔄 Initiating Silent Refresh...");
-
-          try {
-            newToken = await onTokenRefresh!();
-            if (!(_refreshCompleter?.isCompleted ?? true)) {
-              _refreshCompleter?.complete(newToken);
-            }
-          } catch (e) {
-            if (!(_refreshCompleter?.isCompleted ?? true)) {
-              _refreshCompleter?.complete(null);
-            }
-          } finally {
-            _isRefreshing = false;
-            _refreshCompleter = null;
-          }
-        }
+        final newToken = await onTokenRefresh!();
 
         if (newToken != null) {
           print("✅ Token Refreshed. Retrying Request...");
-          // This call to req() will now re-execute and pick up the NEW token
           response = await req().timeout(AppConfig.apiTimeout); 
         }
       }

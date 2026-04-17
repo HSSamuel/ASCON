@@ -29,7 +29,7 @@ void main() async {
   };
 
   FlutterError.onError = (FlutterErrorDetails details) {
-    if (details.exception.toString().contains("statusCode: 429")) return;
+    // ✅ FIX: Removed ignoring of 429 errors to allow UI interception
     FlutterError.presentError(details);
   };
 
@@ -69,7 +69,7 @@ void main() async {
   }, (error, stack) {
     String errorText = error.toString();
     if (errorText.contains("Future already completed")) return;
-    if (errorText.contains("statusCode: 429")) return;
+    // ✅ FIX: Removed ignoring of 429 errors to properly track rate limiting
     debugPrint("🔴 Uncaught Zone Error: $error");
   });
 }
@@ -95,7 +95,6 @@ class _MyAppState extends State<MyApp> {
       if (event['type'] == 'incoming') {
         final data = event['data'];
         
-        // ✅ MAP GROUP CALL UI
         bool isGroup = data['callerData']?['isGroupCall'] ?? false;
         String displayRemoteName = isGroup 
             ? (data['callerData']?['groupName'] ?? "Group Call") 
@@ -106,7 +105,7 @@ class _MyAppState extends State<MyApp> {
             MaterialPageRoute(
               builder: (context) => CallScreen(
                 isGroupCall: isGroup, 
-                isVideoCall: data['callerData']?['isVideoCall'] ?? false, // ✅ READ VIDEO FLAG
+                isVideoCall: data['callerData']?['isVideoCall'] ?? false, 
                 remoteName: displayRemoteName,
                 remoteId: data['callerId'] ?? "", 
                 channelName: data['channelName'] ?? "",
