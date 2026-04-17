@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:hive/hive.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../config.dart';
 import '../services/api_client.dart';
@@ -46,6 +48,9 @@ class EventsNotifier extends StateNotifier<EventsState> {
   final ApiClient _api = ApiClient();
   final AuthService _authService = AuthService();
 
+  // ✅ Reference the fast local database
+  final Box _cacheBox = Hive.box('ascon_cache');
+
   EventsNotifier() : super(const EventsState()) {
     init();
   }
@@ -55,7 +60,6 @@ class EventsNotifier extends StateNotifier<EventsState> {
     loadEvents();
   }
 
-  // ✅ ADDED: Explicit method to completely wipe memory
   void clearState() {
     if (mounted) {
       state = const EventsState();
@@ -67,9 +71,48 @@ class EventsNotifier extends StateNotifier<EventsState> {
     state = state.copyWith(isAdmin: adminStatus);
   }
 
+  // =========================================================================
+  // ✅ OFFLINE-FIRST EVENTS LOADING
+  // =========================================================================
   Future<void> loadEvents({bool silent = false}) async {
-    if (!silent) state = state.copyWith(isLoading: true, errorMessage: null);
+    const String eventsCacheKey = 'events_list_cache';
+
+    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
+    if (!silent) {
+      final String? cachedEvents = _cacheBox.get(eventsCacheKey);
+      if (cachedEvents != null) {
+        try {
+          final List<dynamic> fetchedEvents = jsonDecode(cachedEvents);
+          
+          fetchedEvents.sort((a, b) {
+            final da = DateTime.tryParse(a['date'] ?? '') ?? DateTime(2000);
+            final db = DateTime.tryParse(b['date'] ?? '') ?? DateTime(2000);
+            return db.compareTo(da);
+          });
+
+          if (mounted) {
+            state = state.copyWith(isLoading: false, events: fetchedEvents, errorMessage: null);
+            debugPrint("⚡ Loaded ${fetchedEvents.length} events instantly from cache.");
+          }
+        } catch (e) {
+          debugPrint("Events Cache read error: $e");
+        }
+      } else if (state.events.isEmpty) {
+        state = state.copyWith(isLoading: true, errorMessage: null);
+      }
+    }
     
+    // 2. CHECK CONNECTIVITY (Fail Fast)
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
+    
+    if (isOffline) {
+      debugPrint("🚫 Offline. Relying entirely on events cache.");
+      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
+      return; 
+    }
+
+    // 3. BACKGROUND NETWORK FETCH
     try {
       final fetchedEvents = await _dataService.fetchEvents();
       fetchedEvents.sort((a, b) {
@@ -78,22 +121,30 @@ class EventsNotifier extends StateNotifier<EventsState> {
         return db.compareTo(da);
       });
 
+      // 4. OVERWRITE CACHE WITH FRESH DATA
+      await _cacheBox.put(eventsCacheKey, jsonEncode(fetchedEvents));
+
+      // 5. SILENTLY UPDATE UI
       if (mounted) {
         state = state.copyWith(isLoading: false, events: fetchedEvents);
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && state.events.isEmpty) {
         state = state.copyWith(isLoading: false, errorMessage: "Could not load events.");
+      } else if (mounted) {
+        state = state.copyWith(isLoading: false);
       }
     }
   }
 
   Future<bool> deleteEvent(String eventId) async {
     final previousEvents = state.events;
-    state = state.copyWith(events: state.events.where((e) => (e['_id'] ?? e['id']) != eventId).toList());
+    final updatedEvents = state.events.where((e) => (e['_id'] ?? e['id']) != eventId).toList();
+    state = state.copyWith(events: updatedEvents);
 
     try {
       await _api.delete('/api/events/$eventId');
+      await _cacheBox.put('events_list_cache', jsonEncode(updatedEvents)); // Fast delete in cache
       return true;
     } catch (e) {
       state = state.copyWith(events: previousEvents, errorMessage: "Failed to delete event.");

@@ -68,6 +68,11 @@ dependencies:
   agora_rtc_engine: ^6.5.3
   audio_session: ^0.2.2
 
+  # ✅ High-Speed Local Caching & Offline Detection
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  connectivity_plus: ^6.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:hive/hive.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import '../services/api_client.dart';
 import '../services/data_service.dart';
 import '../services/socket_service.dart';
@@ -76,6 +80,9 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   final ApiClient _api = ApiClient();
   final DataService _dataService = DataService();
   StreamSubscription? _statusSubscription;
+  
+  // Reference the fast local database
+  final Box _cacheBox = Hive.box('ascon_cache');
 
   DirectoryNotifier() : super(const DirectoryState()) {
     init();
@@ -87,7 +94,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
     loadSmartMatches();
   }
 
-  // ✅ Explicit method to completely wipe memory
   void clearState() {
     if (mounted) {
       state = const DirectoryState();
@@ -110,12 +116,47 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
     }
   }
 
+  // =========================================================================
+  // ✅ THE CORE OF OFFLINE-FIRST ARCHITECTURE
+  // =========================================================================
   Future<void> loadDirectory({String query = ""}) async {
-    // ✅ OPTIMIZED UX: Only show the full-screen loading spinner if we have absolutely no data
-    if (state.allAlumni.isEmpty && query.isEmpty) {
-      state = state.copyWith(isLoadingDirectory: true);
+    final String cacheKey = 'dir_cache_${state.activeFilter}';
+
+    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
+    if (query.isEmpty) {
+      final String? cachedDataString = _cacheBox.get(cacheKey);
+      if (cachedDataString != null) {
+        try {
+          final List<dynamic> cachedList = jsonDecode(cachedDataString);
+          if (mounted) {
+            state = state.copyWith(
+              allAlumni: cachedList,
+              searchResults: cachedList,
+              groupedAlumni: _groupUsersByYear(cachedList),
+              isLoadingDirectory: false, // Turn off loader instantly
+            );
+            debugPrint("⚡ Loaded ${cachedList.length} alumni instantly from cache.");
+          }
+        } catch (e) {
+          debugPrint("Cache read error: $e");
+        }
+      } else if (state.allAlumni.isEmpty) {
+        // Only show spinner if we literally have NO data (first app install)
+        state = state.copyWith(isLoadingDirectory: true);
+      }
     }
 
+    // 2. CHECK CONNECTIVITY (Fail Fast)
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
+    
+    if (isOffline) {
+      debugPrint("🚫 Offline. Relying entirely on cache.");
+      if (mounted && state.isLoadingDirectory) state = state.copyWith(isLoadingDirectory: false);
+      return; 
+    }
+
+    // 3. BACKGROUND NETWORK FETCH
     try {
       String endpoint = '/api/directory?search=$query';
       
@@ -134,6 +175,12 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
           list = rawData['data'];
         }
 
+        // 4. OVERWRITE CACHE WITH FRESH DATA
+        if (query.isEmpty) {
+          await _cacheBox.put(cacheKey, jsonEncode(list));
+        }
+
+        // 5. SILENTLY UPDATE UI
         if (mounted) {
           state = state.copyWith(
             allAlumni: list,
@@ -144,15 +191,13 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
         }
       }
     } catch (e) {
-      debugPrint("Directory Load Error: $e");
+      debugPrint("Directory Background Sync Error: $e");
       if (mounted) state = state.copyWith(isLoadingDirectory: false);
     }
   }
 
   void onSearchChanged(String query) {
-    if (state.activeFilter == "Near Me") {
-       return; 
-    }
+    if (state.activeFilter == "Near Me") return; 
 
     if (query.isEmpty) {
       state = state.copyWith(
@@ -205,11 +250,9 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   }
 
   Future<void> loadSmartMatches() async {
-    // ✅ OPTIMIZED UX: Only show loader if we don't have matches cached
     if (state.smartMatches.isEmpty) {
       state = state.copyWith(isLoadingMatches: true);
     }
-    
     try {
       final matches = await _dataService.fetchSmartMatches();
       if (mounted) state = state.copyWith(smartMatches: matches, isLoadingMatches: false);
@@ -219,11 +262,9 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   }
 
   Future<void> loadNearMe({String? city}) async {
-    // ✅ OPTIMIZED UX: Only show loader if we don't have nearby alumni cached
     if (state.nearbyAlumni.isEmpty) {
       state = state.copyWith(isLoadingNearMe: true);
     }
-    
     try {
       final nearby = await _dataService.fetchAlumniNearMe(city: city);
       if (mounted) state = state.copyWith(nearbyAlumni: nearby, isLoadingNearMe: false);
@@ -250,11 +291,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
       return b.compareTo(a);
     });
     return {for (var key in sortedKeys) key: groups[key]!};
-  }
-
-  void _listenToSocket() {
-    _statusSubscription = SocketService().userStatusStream.listen((data) {
-    });
   }
 }
 

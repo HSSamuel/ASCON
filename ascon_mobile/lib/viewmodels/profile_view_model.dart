@@ -1,5 +1,9 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-// import 'package:flutter_riverpod/legacy.dart'; // REMOVED
+import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import '../services/data_service.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
@@ -40,12 +44,52 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
   final DataService _dataService = DataService();
   final AuthService _authService = AuthService();
 
+  // ✅ Reference the fast local database
+  final Box _cacheBox = Hive.box('ascon_cache');
+
   ProfileNotifier() : super(const ProfileState()) {
     loadProfile();
   }
 
+  // =========================================================================
+  // ✅ OFFLINE-FIRST PROFILE LOADING
+  // =========================================================================
   Future<void> loadProfile() async {
-    state = state.copyWith(isLoading: true);
+    const String cacheKey = 'user_profile_cache';
+
+    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
+    final String? cachedProfileStr = _cacheBox.get(cacheKey);
+    if (cachedProfileStr != null) {
+      try {
+        final Map<String, dynamic> cachedProfile = jsonDecode(cachedProfileStr);
+        if (mounted) {
+          state = state.copyWith(
+            userProfile: cachedProfile,
+            isLoading: false,
+            isOnline: cachedProfile['isOnline'] == true,
+            lastSeen: cachedProfile['lastSeen'],
+            completionPercent: _calculateCompletion(cachedProfile),
+          );
+          debugPrint("⚡ Loaded Profile instantly from cache.");
+        }
+      } catch (e) {
+        debugPrint("Profile Cache read error: $e");
+      }
+    } else {
+      state = state.copyWith(isLoading: true);
+    }
+
+    // 2. CHECK CONNECTIVITY (Fail Fast)
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
+    
+    if (isOffline) {
+      debugPrint("🚫 Offline. Relying entirely on profile cache.");
+      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
+      return; 
+    }
+
+    // 3. BACKGROUND NETWORK FETCH
     try {
       final profile = await _dataService.fetchProfile();
       
@@ -53,6 +97,12 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       final lastSeen = profile?['lastSeen'];
       final percent = _calculateCompletion(profile ?? {});
 
+      // 4. OVERWRITE CACHE WITH FRESH DATA
+      if (profile != null) {
+        await _cacheBox.put(cacheKey, jsonEncode(profile));
+      }
+
+      // 5. SILENTLY UPDATE UI
       if (mounted) {
         state = state.copyWith(
           userProfile: profile,
@@ -86,12 +136,12 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
   double _calculateCompletion(Map<String, dynamic> data) {
     int total = 6; 
     int filled = 0;
-    if (data['fullName'] != null) filled++;
-    if (data['profilePicture'] != null) filled++;
-    if (data['jobTitle'] != null) filled++;
-    if (data['bio'] != null) filled++;
-    if (data['city'] != null) filled++;
-    if (data['phoneNumber'] != null) filled++;
+    if (data['fullName'] != null && data['fullName'].toString().isNotEmpty) filled++;
+    if (data['profilePicture'] != null && data['profilePicture'].toString().isNotEmpty) filled++;
+    if (data['jobTitle'] != null && data['jobTitle'].toString().isNotEmpty) filled++;
+    if (data['bio'] != null && data['bio'].toString().isNotEmpty) filled++;
+    if (data['city'] != null && data['city'].toString().isNotEmpty) filled++;
+    if (data['phoneNumber'] != null && data['phoneNumber'].toString().isNotEmpty) filled++;
     return filled / total;
   }
 

@@ -15,6 +15,7 @@ import '../router.dart';
 import 'api_client.dart';
 import 'notification_service.dart';
 import 'socket_service.dart';
+import 'biometric_service.dart'; // ✅ ADDED
 
 // ✅ ADDED: Import the ViewModels we want to sweep from memory
 import '../viewmodels/chat_view_model.dart';
@@ -58,10 +59,11 @@ class AuthService {
     }
   }
 
+  // ✅ UPDATED: Securely store credentials for biometric fallback
   Future<void> enableBiometrics(String email, String password) async {
     await _secureStorage.write(key: 'use_biometrics', value: 'true');
-    await _secureStorage.delete(key: 'biometric_email');
-    await _secureStorage.delete(key: 'biometric_password');
+    await _secureStorage.write(key: 'biometric_email', value: email);
+    await _secureStorage.write(key: 'biometric_password', value: password);
   }
 
   Future<bool> isBiometricEnabled() async {
@@ -69,16 +71,15 @@ class AuthService {
     return enabled == 'true';
   }
 
+  // ✅ UPDATED: Fetch stored credentials and execute fresh login
   Future<Map<String, dynamic>> loginWithStoredCredentials() async {
-    final token = await _performSilentRefresh();
-    if (token != null) {
-      final user = await getCachedUser();
-      return {
-        'success': true, 
-        'data': {'token': token, 'user': user ?? {}}
-      };
+    String? email = await _secureStorage.read(key: 'biometric_email');
+    String? password = await _secureStorage.read(key: 'biometric_password');
+    
+    if (email != null && password != null) {
+      return await login(email, password);
     }
-    return {'success': false, 'message': 'Session expired. Please log in manually.'};
+    return {'success': false, 'message': 'No credentials stored. Please log in manually.'};
   }
 
   Future<String?> _getFcmToken() async {
@@ -216,9 +217,10 @@ class AuthService {
     } catch (e) {}
   }
 
+  // ✅ UPDATED: Complete Hard Fallback Integration
   Future<String?> _performSilentRefresh() async {
     if (_isRefreshing) {
-      print("⏳ Waiting for pending refresh in AuthService...");
+      debugPrint("⏳ Waiting for pending refresh in AuthService...");
       return await _refreshCompleter?.future;
     }
 
@@ -250,6 +252,41 @@ class AuthService {
           return newToken;
         }
       } else {
+        // ==============================================================
+        // 🚨 THE HARD FALLBACK LAYER (Refresh Token Expired)
+        // ==============================================================
+        
+        // 1. Try Google Silent Auth First
+        try {
+          if (await _googleSignIn.isSignedIn()) {
+            final googleUser = await _googleSignIn.signInSilently();
+            if (googleUser != null) {
+              final auth = await googleUser.authentication;
+              final res = await googleLogin(auth.idToken ?? auth.accessToken);
+              if (res['success']) {
+                _refreshCompleter?.complete(_tokenCache);
+                return _tokenCache;
+              }
+            }
+          }
+        } catch (e) {
+           debugPrint("Silent Google Auth failed: $e");
+        }
+
+        // 2. Try Biometric Auth (Local Password Users)
+        bool useBio = await isBiometricEnabled();
+        if (useBio) {
+          final authSuccess = await BiometricService().authenticate();
+          if (authSuccess) {
+            final res = await loginWithStoredCredentials();
+            if (res['success']) {
+              _refreshCompleter?.complete(_tokenCache);
+              return _tokenCache;
+            }
+          }
+        }
+
+        // 3. If all fallbacks fail, force logout.
         await logout();
         _refreshCompleter?.complete(null);
         return null;
@@ -336,7 +373,6 @@ class AuthService {
   }
 
   Future<void> logout({bool clearBiometrics = false}) async {
-    // ✅ ADDED: Forcefully sweep memory inside the global container
     try {
       providerContainer.read(chatProvider.notifier).clearState();
       providerContainer.read(directoryProvider.notifier).clearState();

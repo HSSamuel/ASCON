@@ -4,13 +4,15 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../services/api_client.dart';
 import '../services/socket_service.dart';
 import '../services/auth_service.dart';
 import '../models/chat_objects.dart';
 import '../config.dart';
-import '../utils/multipart_request_with_progress.dart'; // ✅ Added import
+import '../utils/multipart_request_with_progress.dart'; 
 
 class ChatDetailState {
   final List<ChatMessage> messages;
@@ -24,7 +26,7 @@ class ChatDetailState {
   final String myUserId;
   final List<String> groupAdminIds;
   final bool isKicked;
-  final Map<String, double> uploadProgresses; // ✅ NEW: Tracks upload percentages
+  final Map<String, double> uploadProgresses;
 
   const ChatDetailState({
     this.messages = const [],
@@ -104,6 +106,9 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
   final AuthService _auth = AuthService();
   final SocketService _socket = SocketService();
   
+  // ✅ Reference the fast local database
+  final Box _cacheBox = Hive.box('ascon_cache');
+
   final String receiverId;
   final bool isGroup;
   final String? groupId;
@@ -149,7 +154,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     _socket.socket?.off('typing_start');
     _socket.socket?.off('typing_stop');
     _socket.socket?.off('removed_from_group');
-    _socket.socket?.off('message_reaction_update'); // Clean up reaction listener
+    _socket.socket?.off('message_reaction_update'); 
     
     super.dispose();
   }
@@ -242,10 +247,48 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     }
   }
 
+  // =========================================================================
+  // ✅ OFFLINE-FIRST MESSAGE THREAD LOADING
+  // =========================================================================
   Future<void> loadMessages({bool initial = false}) async {
     if (state.conversationId == null) return;
-    if (initial && mounted) state = state.copyWith(isLoading: true);
+    
+    final String cacheKey = 'chat_thread_${state.conversationId}';
 
+    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
+    if (initial) {
+      final String? cachedThread = _cacheBox.get(cacheKey);
+      if (cachedThread != null) {
+        try {
+          final List<dynamic> rawList = jsonDecode(cachedThread);
+          final newMessages = rawList.map((m) => ChatMessage.fromJson(m)).toList();
+          if (mounted) {
+            state = state.copyWith(
+              messages: newMessages,
+              isLoading: false,
+              hasMoreMessages: newMessages.length >= 20
+            );
+            debugPrint("⚡ Loaded ${newMessages.length} messages instantly from cache.");
+          }
+        } catch (e) {
+          debugPrint("Chat Thread Cache read error: $e");
+        }
+      } else if (state.messages.isEmpty && mounted) {
+        state = state.copyWith(isLoading: true);
+      }
+    }
+
+    // 2. CHECK CONNECTIVITY (Fail Fast)
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
+    
+    if (isOffline) {
+      debugPrint("🚫 Offline. Relying entirely on chat thread cache.");
+      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
+      return; 
+    }
+
+    // 3. BACKGROUND NETWORK FETCH
     try {
       final result = await _api.get('/api/chat/${state.conversationId}');
       if (!mounted) return;
@@ -255,6 +298,10 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
         final rawList = (body is Map && body.containsKey('data')) ? body['data'] : body;
 
         if (rawList is List) {
+          // 4. OVERWRITE CACHE WITH FRESH DATA
+          await _cacheBox.put(cacheKey, jsonEncode(rawList));
+
+          // 5. SILENTLY UPDATE UI
           final newMessages = rawList.map((m) => ChatMessage.fromJson(m)).toList();
           if (mounted) {
             state = state.copyWith(
@@ -277,6 +324,14 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     if (!mounted || state.isLoadingMore || !state.hasMoreMessages || state.messages.isEmpty || state.conversationId == null) return;
     state = state.copyWith(isLoadingMore: true);
     String oldestId = state.messages.first.id;
+    
+    // Fail fast for pagination if offline
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+        if (mounted) state = state.copyWith(isLoadingMore: false);
+        return;
+    }
+
     try {
       final result = await _api.get('/api/chat/${state.conversationId}?beforeId=$oldestId');
       if (!mounted) return;
@@ -345,8 +400,19 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     }
   }
 
-  // ✅ NEW: Emit Reaction to Socket
   void sendReaction(String messageId, String emoji) {
+    final updated = state.messages.map((m) {
+      if (m.id == messageId) {
+        final existingReactions = List<dynamic>.from(m.reactions ?? []);
+        existingReactions.removeWhere((r) => r['userId'] == state.myUserId);
+        existingReactions.add({'userId': state.myUserId, 'emoji': emoji});
+        m.reactions = existingReactions; 
+      }
+      return m;
+    }).toList();
+    
+    state = state.copyWith(messages: List.from(updated));
+
     if (state.conversationId != null) {
       _socket.socket?.emit('add_reaction', {
         'messageId': messageId,
@@ -398,14 +464,12 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
 
       final url = Uri.parse('$baseUrl/api/chat/message/send');
       
-      // ✅ UPDATED: Use the custom MultipartRequest to track upload progress
       var request = MultipartRequestWithProgress(
         'POST', url,
         onProgress: (bytes, total) {
           if (!mounted || total == 0) return;
           final progress = bytes / total;
           
-          // Throttle state updates so UI doesn't freeze
           final currentP = state.uploadProgresses[tempId] ?? 0.0;
           if (progress - currentP > 0.05 || progress == 1.0) {
              final newMap = Map<String, double>.from(state.uploadProgresses);
@@ -455,7 +519,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
 
           final updated = state.messages.map((m) => m.id == tempId ? realMessage : m).toList();
           
-          // ✅ Cleanup Progress Map
           final newProgressMap = Map<String, double>.from(state.uploadProgresses);
           newProgressMap.remove(tempId);
 
@@ -528,7 +591,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
       }
     });
 
-    // ✅ NEW: Listen for real-time Emoji reactions
     socket.on('message_reaction_update', (data) {
       if (!mounted) return;
       if (data['conversationId'] == state.conversationId) {
@@ -537,7 +599,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
 
         final updated = state.messages.map((m) {
           if (m.id == msgId) {
-            m.reactions = reactions; // Update the message object
+            m.reactions = reactions; 
           }
           return m;
         }).toList();

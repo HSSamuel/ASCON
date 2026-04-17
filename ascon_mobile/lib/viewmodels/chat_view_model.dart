@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:hive/hive.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/socket_service.dart';
@@ -47,6 +51,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final ApiClient _api = ApiClient();
   final AuthService _auth = AuthService();
   final SocketService _socket = SocketService();
+  
+  // ✅ Reference the fast local database
+  final Box _cacheBox = Hive.box('ascon_cache');
 
   ChatNotifier() : super(const ChatState()) {
     init();
@@ -59,14 +66,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _setupSocket();
   }
 
-  // ✅ ADDED: Explicit method to completely wipe memory (e.g., on logout)
   void clearState() {
     if (mounted) {
       state = const ChatState();
     }
   }
 
-  // ✅ ADDED: Lifecycle hook to remove socket listeners when the ViewModel dies
   @override
   void dispose() {
     final socket = _socket.socket;
@@ -79,7 +84,37 @@ class ChatNotifier extends StateNotifier<ChatState> {
     super.dispose();
   }
 
+  // =========================================================================
+  // ✅ OFFLINE-FIRST CHAT LIST LOADING
+  // =========================================================================
   Future<void> loadConversations() async {
+    const String cacheKey = 'chat_list_cache';
+
+    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
+    final String? cachedDataString = _cacheBox.get(cacheKey);
+    if (cachedDataString != null) {
+      try {
+        final List<dynamic> cachedList = jsonDecode(cachedDataString);
+        _updateStateWithData(cachedList, isFromCache: true);
+      } catch (e) {
+        debugPrint("Chat Cache read error: $e");
+      }
+    } else if (state.conversations.isEmpty) {
+      // Only show spinner if we have absolutely no data
+      state = state.copyWith(isLoading: true);
+    }
+
+    // 2. CHECK CONNECTIVITY (Fail Fast)
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
+    
+    if (isOffline) {
+      debugPrint("🚫 Offline. Relying entirely on chat cache.");
+      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
+      return; 
+    }
+
+    // 3. BACKGROUND NETWORK FETCH
     try {
       final res = await _api.get('/api/chat');
       
@@ -91,40 +126,52 @@ class ChatNotifier extends StateNotifier<ChatState> {
            if (body['data'] is List) {
              data = body['data'];
            } else {
-             debugPrint("⚠️ Unexpected data format: body['data'] is ${body['data'].runtimeType}");
              data = [];
            }
         } else if (body is List) {
            data = body;
         }
+
+        // 4. OVERWRITE CACHE WITH FRESH DATA
+        await _cacheBox.put(cacheKey, jsonEncode(data));
+
+        // 5. SILENTLY UPDATE UI
+        _updateStateWithData(data, isFromCache: false);
         
-        debugPrint("✅ Loaded ${data.length} conversations");
-
-        final online = data.where((c) {
-           try {
-             final mapC = c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{};
-             final other = _getOtherParticipant(mapC, state.myId);
-             return other['isOnline'] == true;
-           } catch (e) {
-             return false;
-           }
-        }).take(10).toList();
-
-        if (mounted) {
-          state = state.copyWith(
-            conversations: data,
-            filteredConversations: data,
-            onlineUsers: online,
-            isLoading: false
-          );
-        }
       } else {
-        debugPrint("❌ Failed to load chats: ${res['message']}");
-        if (mounted) state = state.copyWith(isLoading: false);
+        if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
       }
     } catch (e) {
       debugPrint("⚠️ Chat Load Error: $e");
-      if (mounted) state = state.copyWith(isLoading: false);
+      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
+    }
+  }
+
+  // Helper method to keep parsing logic dry
+  void _updateStateWithData(List<dynamic> data, {required bool isFromCache}) {
+    if (!mounted) return;
+
+    final online = data.where((c) {
+        try {
+          final mapC = c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{};
+          final other = _getOtherParticipant(mapC, state.myId);
+          return other['isOnline'] == true;
+        } catch (e) {
+          return false;
+        }
+    }).take(10).toList();
+
+    state = state.copyWith(
+      conversations: data,
+      filteredConversations: data,
+      onlineUsers: online,
+      isLoading: false
+    );
+    
+    if (isFromCache) {
+       debugPrint("⚡ Loaded ${data.length} chats instantly from cache.");
+    } else {
+       debugPrint("✅ Background sync complete: ${data.length} chats.");
     }
   }
 
@@ -158,6 +205,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     try {
       final newConvs = state.conversations.where((c) => c['_id'] != id).toList();
       state = state.copyWith(conversations: newConvs, filteredConversations: newConvs);
+      
+      // Update cache immediately so it doesn't reappear on reload before server sync
+      await _cacheBox.put('chat_list_cache', jsonEncode(newConvs));
+      
       await _api.delete('/api/chat/conversation/$id');
     } catch (_) {}
   }
@@ -196,6 +247,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       if (index != -1) {
         updated[index] = Map.from(updated[index])..['unreadCount'] = 0;
         state = state.copyWith(conversations: updated, filteredConversations: updated);
+        // Silently update cache
+        _cacheBox.put('chat_list_cache', jsonEncode(updated));
       }
     });
 
@@ -232,6 +285,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
       updated.insert(0, chat);
       state = state.copyWith(conversations: updated, filteredConversations: updated);
+      
+      // Silently update cache so if they kill the app, the latest message is saved
+      _cacheBox.put('chat_list_cache', jsonEncode(updated));
     } else {
       loadConversations();
     }

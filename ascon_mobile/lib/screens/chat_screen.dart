@@ -561,7 +561,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  // ✅ Updated to "Online" from "Active Now"
   String _getStatusText(bool isTyping, bool isOnline, String? lastSeen) {
     if (widget.isGroup) {
       return _groupParticipants; 
@@ -754,17 +753,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     )
                   : ListView.builder(
                   controller: _scrollController,
+                  // ✅ UPDATED: Native fluid swiping to dismiss keyboard
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                   itemCount: state.messages.length,
                   itemBuilder: (context, index) {
                     final msg = state.messages[index];
+                    
                     bool showDate = false;
+                    bool showAvatarAndName = true;
+                    
                     if (index == 0) {
                       showDate = true;
                     } else {
                       final prevMsg = state.messages[index - 1];
                       if (msg.createdAt.day != prevMsg.createdAt.day || msg.createdAt.month != prevMsg.createdAt.month) {
                         showDate = true;
+                      }
+                      
+                      // ✅ UPDATED: Visual Message Grouping Logic
+                      if (prevMsg.senderId == msg.senderId && 
+                          msg.createdAt.difference(prevMsg.createdAt).inMinutes < 2 &&
+                          !showDate) {
+                        showAvatarAndName = false;
                       }
                     }
 
@@ -794,7 +805,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           totalDuration: _totalDuration,
                           downloadingFileId: _downloadingFileId,
                           isAdmin: widget.isGroup && state.groupAdminIds.contains(msg.senderId),
-                          showSenderName: widget.isGroup && msg.senderId != state.myUserId,
+                          
+                          // ✅ UPDATED: Pass grouping flags to MessageBubble
+                          showSenderName: widget.isGroup && msg.senderId != state.myUserId && showAvatarAndName,
+                          // Note: You may want to add `isConsecutive: !showAvatarAndName` inside MessageBubble's constructor 
+                          // to reduce top padding dynamically for consecutive messages.
                           
                           uploadProgress: state.uploadProgresses[msg.id],
                           

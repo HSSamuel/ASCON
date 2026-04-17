@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive/hive.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import '../services/data_service.dart';
 import '../services/auth_service.dart';
 import '../services/api_client.dart'; 
@@ -76,25 +80,70 @@ class DashboardState {
 class DashboardNotifier extends StateNotifier<DashboardState> {
   final DataService _dataService = DataService();
   final AuthService _authService = AuthService();
+  
+  // ✅ Reference the fast local database
+  final Box _cacheBox = Hive.box('ascon_cache');
 
-  // ✅ CHANGE THIS: Call loadData() automatically on initialization
   DashboardNotifier() : super(const DashboardState()) {
     loadData();
   }
 
+  // =========================================================================
+  // ✅ OFFLINE-FIRST DASHBOARD LOADING
+  // =========================================================================
   Future<void> loadData({bool isRefresh = false}) async {
-    // ✅ 1. Instantly pull the cached name and ID so the UI updates at lightning speed
+    const String cacheKey = 'dashboard_data_cache';
+    
     final prefs = await SharedPreferences.getInstance();
     String localAlumniID = prefs.getString('alumni_id') ?? "PENDING";
     String cachedName = prefs.getString('user_name') ?? state.fullName;
 
+    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
     if (!isRefresh) {
-      state = state.copyWith(isLoading: true, errorMessage: null, fullName: cachedName, alumniID: localAlumniID);
+      final String? cachedDataStr = _cacheBox.get(cacheKey);
+      if (cachedDataStr != null) {
+        try {
+          final Map<String, dynamic> cachedData = jsonDecode(cachedDataStr);
+          if (mounted) {
+            state = state.copyWith(
+              isLoading: false,
+              errorMessage: null,
+              fullName: cachedName,
+              firstName: cachedName.split(" ")[0],
+              alumniID: localAlumniID,
+              events: cachedData['events'] ?? [],
+              programmes: cachedData['programmes'] ?? [],
+              topAlumni: cachedData['topAlumni'] ?? [],
+              birthdays: cachedData['birthdays'] ?? [],
+              profileImage: cachedData['profileImage'] ?? "",
+              programme: cachedData['programme'] ?? "Member",
+              year: cachedData['year'] ?? "....",
+              profileCompletionPercent: (cachedData['profileCompletionPercent'] ?? 0.0).toDouble(),
+              isProfileComplete: cachedData['isProfileComplete'] ?? false,
+            );
+            debugPrint("⚡ Loaded Dashboard instantly from cache.");
+          }
+        } catch (e) {
+          debugPrint("Dashboard Cache read error: $e");
+        }
+      } else {
+        state = state.copyWith(isLoading: true, errorMessage: null, fullName: cachedName, alumniID: localAlumniID);
+      }
     } else {
-      // ✅ Instantly push the new cached name to the UI during a silent background refresh
       state = state.copyWith(fullName: cachedName, errorMessage: null);
     }
 
+    // 2. CHECK CONNECTIVITY (Fail Fast)
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
+    
+    if (isOffline) {
+      debugPrint("🚫 Offline. Relying entirely on dashboard cache.");
+      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
+      return; 
+    }
+
+    // 3. BACKGROUND NETWORK FETCH
     try {
       final String? myId = await _authService.currentUserId;
 
@@ -127,7 +176,6 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
       String programme = "Member";
       String year = "....";
       
-      // ✅ 1. Default to the cached name from Step 1, NOT "Alumni"
       String fullName = cachedName; 
       String firstName = fullName.split(" ")[0]; 
       
@@ -142,13 +190,9 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         if (programme.isEmpty) programme = "Member";
         year = profile['yearOfAttendance']?.toString() ?? "....";
         
-        // ✅ 2. Only overwrite the cache if the API actually sends a real name
         if (profile['fullName'] != null && profile['fullName'].toString().trim().isNotEmpty) {
-          // Note: NO "String" keyword here! We update the outer variable.
           fullName = profile['fullName'];
           firstName = fullName.split(" ")[0];
-          
-          // Silently sync the fresh API name back to device storage
           prefs.setString('user_name', fullName); 
         }
 
@@ -166,8 +210,6 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
 
       // 4. Process Directory (Top Alumni)
       var fetchedAlumni = List.from(results[3] as List);
-
-      // ✅ Ensure the current user is strictly removed from the backend payload list before taking 20
       if (myId != null) {
         fetchedAlumni.removeWhere((user) {
           final id = user['_id'] ?? user['userId'];
@@ -176,7 +218,6 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
       }
       
       fetchedAlumni.shuffle(); 
-      // ✅ FIXED: Now takes up to 20 random users instead of 8
       final topAlumni = fetchedAlumni.take(20).toList(); 
 
       // 5. Process Birthdays
@@ -188,6 +229,20 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         fetchedBirthdays = celebrationResult;
       }
 
+      // 4. OVERWRITE CACHE WITH FRESH DATA
+      await _cacheBox.put(cacheKey, jsonEncode({
+        'events': fetchedEvents,
+        'programmes': fetchedProgrammes,
+        'topAlumni': topAlumni,
+        'birthdays': fetchedBirthdays,
+        'profileImage': profileImage,
+        'programme': programme,
+        'year': year,
+        'profileCompletionPercent': profileCompletionPercent,
+        'isProfileComplete': isProfileComplete,
+      }));
+
+      // 5. SILENTLY UPDATE UI
       if (mounted) {
         state = state.copyWith(
           isLoading: false,
@@ -224,11 +279,13 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         readableError = "Network error. Please check your connection.";
       }
 
-      if (mounted) {
+      if (mounted && state.events.isEmpty) {
         state = state.copyWith(
           isLoading: false,
           errorMessage: readableError,
         );
+      } else if (mounted) {
+        state = state.copyWith(isLoading: false);
       }
     }
   }

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../config.dart';
 import '../services/api_client.dart';
@@ -25,7 +27,7 @@ class UpdatesState {
     this.posts = const [],
     this.filteredPosts = const [],
     this.highlights = const [],
-    this.isLoading = false, // ✅ OPTIMIZED: Default to false to prevent initial flash if cached
+    this.isLoading = false, 
     this.isPosting = false,
     this.isAdmin = false,
     this.currentUserId,
@@ -62,6 +64,9 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
   final DataService _dataService = DataService();
   final AuthService _authService = AuthService();
   final ApiClient _api = ApiClient();
+  
+  // ✅ Reference the fast local database
+  final Box _cacheBox = Hive.box('ascon_cache');
 
   UpdatesNotifier() : super(const UpdatesState()) {
     init();
@@ -78,23 +83,66 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
     state = state.copyWith(isAdmin: adminStatus, currentUserId: userId);
   }
 
-  // ✅ OPTIMIZED: Optimistic Offline Rendering
+  // =========================================================================
+  // ✅ OFFLINE-FIRST UPDATES LOADING
+  // =========================================================================
   Future<void> loadData({bool silent = false}) async {
-    // Only show full-screen loader if we have absolutely no data (not even cached)
-    if (!silent && state.posts.isEmpty) {
-      state = state.copyWith(isLoading: true, errorMessage: null);
+    const String updatesCacheKey = 'updates_feed_cache';
+    const String highlightsCacheKey = 'updates_highlights_cache';
+
+    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
+    if (!silent) {
+      final String? cachedUpdates = _cacheBox.get(updatesCacheKey);
+      final String? cachedHighlights = _cacheBox.get(highlightsCacheKey);
+      
+      if (cachedUpdates != null) {
+        try {
+          final List<dynamic> feed = jsonDecode(cachedUpdates);
+          final List<dynamic> highlights = cachedHighlights != null ? jsonDecode(cachedHighlights) : [];
+          
+          if (mounted) {
+            state = state.copyWith(
+              isLoading: false,
+              posts: feed,
+              // Apply existing media filter if active
+              filteredPosts: state.showMediaOnly ? feed.where((p) => p['mediaType'] == 'image').toList() : feed,
+              highlights: highlights,
+            );
+            debugPrint("⚡ Loaded ${feed.length} updates instantly from cache.");
+          }
+        } catch (e) {
+          debugPrint("Updates Cache read error: $e");
+        }
+      } else if (state.posts.isEmpty) {
+        state = state.copyWith(isLoading: true, errorMessage: null);
+      }
     }
 
+    // 2. CHECK CONNECTIVITY (Fail Fast)
+    final connectivityResult = await (Connectivity().checkConnectivity());
+    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
+    
+    if (isOffline) {
+      debugPrint("🚫 Offline. Relying entirely on updates cache.");
+      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
+      return; 
+    }
+
+    // 3. BACKGROUND NETWORK FETCH
     try {
-      // DataService will return cached feed instantly if network fails
       final feed = await _dataService.fetchUpdates();
       final programmes = await _authService.getProgrammes();
 
+      // 4. OVERWRITE CACHE WITH FRESH DATA
+      await _cacheBox.put(updatesCacheKey, jsonEncode(feed));
+      await _cacheBox.put(highlightsCacheKey, jsonEncode(programmes));
+
+      // 5. SILENTLY UPDATE UI
       if (mounted) {
         state = state.copyWith(
           isLoading: false,
           posts: feed,
-          filteredPosts: feed,
+          filteredPosts: state.showMediaOnly ? feed.where((p) => p['mediaType'] == 'image').toList() : feed,
           highlights: programmes,
         );
       }
@@ -102,7 +150,6 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
       if (mounted && state.posts.isEmpty) {
         state = state.copyWith(isLoading: false, errorMessage: "Failed to connect. Please check your network.");
       } else if (mounted) {
-        // If we already have cached posts, just quietly stop loading
         state = state.copyWith(isLoading: false);
       }
     }
@@ -266,6 +313,11 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
     state = state.copyWith(isLoading: true);
     try {
       await _api.delete('/api/updates/$postId');
+      
+      // Remove from cache directly to make it snappy
+      final updatedPosts = state.posts.where((p) => p['_id'] != postId).toList();
+      await _cacheBox.put('updates_feed_cache', jsonEncode(updatedPosts));
+
       await loadData(silent: true);
       return true;
     } catch (e) {

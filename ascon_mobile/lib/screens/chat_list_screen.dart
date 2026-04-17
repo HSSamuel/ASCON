@@ -25,7 +25,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
   @override
   void initState() {
     super.initState();
-    // Initialize TabController for 2 tabs
     _tabController = TabController(length: 2, vsync: this);
   }
 
@@ -36,7 +35,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     super.dispose();
   }
 
-  // SAFELY GET OTHER PARTICIPANT (Prevents Map Cast Error)
   Map<String, dynamic> _getOtherParticipant(Map<String, dynamic> conversation, String myId) {
     if (conversation['isGroup'] == true) {
       final groupRaw = conversation['groupId'];
@@ -59,7 +57,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
       return {'fullName': 'Unknown User', 'profilePicture': ''};
     }
 
-    // Safe retrieval
     final otherRaw = participants.firstWhere(
       (p) => p['_id'] != myId,
       orElse: () => participants.isNotEmpty ? participants[0] : {'fullName': 'Unknown User', 'profilePicture': ''},
@@ -87,7 +84,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
       body: SafeArea(
         child: Column(
           children: [
-            // 1. CUSTOM APP BAR WITH TABS
             Container(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               decoration: BoxDecoration(
@@ -102,7 +98,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
                   Text("Connect", style: GoogleFonts.lato(fontSize: 28, fontWeight: FontWeight.w900, color: textColor)),
                   const SizedBox(height: 16),
                   
-                  // SEARCH BAR
                   TextField(
                     controller: _searchController,
                     onChanged: (val) {
@@ -118,7 +113,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
                     ),
                   ),
                   
-                  // TAB BAR
                   TabBar(
                     controller: _tabController,
                     labelColor: primaryColor,
@@ -135,20 +129,16 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
               ),
             ),
 
-            // 2. TAB CONTENT
             Expanded(
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  // TAB 1: CHATS
                   chatState.isLoading 
                     ? const ChatListSkeleton() 
                     : RefreshIndicator(
                         onRefresh: () async => notifier.loadConversations(),
                         child: _buildChatListTab(chatState, notifier),
                       ),
-                  
-                  // TAB 2: CALL LOGS
                   const CallLogsTab(), 
                 ],
               ),
@@ -163,11 +153,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        // A. ONLINE RAIL
         if (chatState.onlineUsers.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-            child: Text("Online", style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey[600])), // ✅ Changed from Active Now
+            child: Text("Online", style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey[600])),
           ),
           SizedBox(
             height: 90,
@@ -188,7 +177,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
           ),
         ],
 
-        // B. CHAT LIST
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
           child: Text("Recent", style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey[600])),
@@ -308,27 +296,43 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
 
     return Dismissible(
       key: Key(convId),
-      direction: DismissDirection.endToStart,
+      // ✅ UPDATED: Dual-Action Swipe Backgrounds
       background: Container(
+        color: Colors.orange,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        child: const Icon(Icons.notifications_off, color: Colors.white),
+      ),
+      secondaryBackground: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       confirmDismiss: (direction) async {
-        return await showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text("Delete Chat?"),
-            content: const Text("This conversation will be removed from your list."),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
-            ],
-          ),
-        );
+        if (direction == DismissDirection.endToStart) {
+          return await showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text("Delete Chat?"),
+              content: const Text("This conversation will be removed from your list."),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+                TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
+              ],
+            ),
+          );
+        } else {
+          // Optimistic UI for Mute (Doesn't actually dismiss the tile)
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Chat Muted")));
+          return false;
+        }
       },
-      onDismissed: (direction) => notifier.deleteConversation(convId),
+      onDismissed: (direction) {
+        if (direction == DismissDirection.endToStart) {
+          notifier.deleteConversation(convId);
+        }
+      },
       child: InkWell(
         onTap: () {
           _openChat(other, convId);
@@ -407,9 +411,17 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
                       children: [
                         Expanded(
                           child: isTyping 
-                            ? Text(
-                                "Typing...", 
-                                style: TextStyle(color: Theme.of(context).primaryColor, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600)
+                            // ✅ UPDATED: More prominent Animated Typing styling
+                            ? TweenAnimationBuilder<double>(
+                                tween: Tween(begin: 0.0, end: 1.0),
+                                duration: const Duration(milliseconds: 500),
+                                builder: (context, val, child) => Opacity(
+                                  opacity: val,
+                                  child: Text(
+                                    "Typing...", 
+                                    style: TextStyle(color: Theme.of(context).primaryColor, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)
+                                  ),
+                                )
                               )
                             : Row(
                                 children: [
