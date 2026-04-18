@@ -26,7 +26,10 @@ class AuthService {
   static String? _tokenCache;
   final _secureStorage = StorageConfig.storage;
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
+  // ✅ Made static so it only initializes ONCE for the entire app lifecycle
+  static final GoogleSignIn googleSignIn = GoogleSignIn(
+    clientId: kIsWeb ? AppConfig.googleWebClientId : null,
+    serverClientId: kIsWeb ? null : AppConfig.googleWebClientId,
     scopes: ['email', 'profile'],
   );
 
@@ -58,11 +61,24 @@ class AuthService {
     }
   }
 
-  // ✅ SECURITY PATCH: Removed plaintext password storage
-  Future<void> enableBiometrics() async {
+  // ✅ Securely stash credentials in the hardware Keystore/Keychain
+  Future<void> enableBiometrics(String email, String password) async {
     await _secureStorage.write(key: 'use_biometrics', value: 'true');
+    await _secureStorage.write(key: 'bio_email', value: email);
+    await _secureStorage.write(key: 'bio_password', value: password);
   }
 
+  // ✅ Retrieve them for silent background login
+  Future<Map<String, String>?> getBiometricCredentials() async {
+    String? email = await _secureStorage.read(key: 'bio_email');
+    String? password = await _secureStorage.read(key: 'bio_password');
+    if (email != null && password != null) {
+      return {'email': email, 'password': password};
+    }
+    return null;
+  }
+
+  // ✅ Check if the user has opted into biometrics
   Future<bool> isBiometricEnabled() async {
     String? enabled = await _secureStorage.read(key: 'use_biometrics');
     return enabled == 'true';
@@ -145,7 +161,7 @@ class AuthService {
 
       if (tokenToSend == null && !kIsWeb) {
         try {
-          final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+          final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
           if (googleUser == null) return {'success': false, 'message': 'Sign in cancelled'};
           final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
           tokenToSend = googleAuth.idToken ?? googleAuth.accessToken;
@@ -243,8 +259,8 @@ class AuthService {
         
         // 1. Try Google Silent Auth First
         try {
-          if (await _googleSignIn.isSignedIn()) {
-            final googleUser = await _googleSignIn.signInSilently();
+          if (await googleSignIn.isSignedIn()) {
+            final googleUser = await googleSignIn.signInSilently();
             if (googleUser != null) {
               final auth = await googleUser.authentication;
               final res = await googleLogin(auth.idToken ?? auth.accessToken);
@@ -258,8 +274,8 @@ class AuthService {
            debugPrint("Silent Google Auth failed: $e");
         }
 
-        // 2. ✅ SECURITY UPDATE: If refresh token is expired, user MUST 
-        // type their password again. We force logout to prompt for credentials.
+        // 2. If refresh token is expired, user MUST type their password again. 
+        // We force logout to prompt for credentials.
         await logout();
         _refreshCompleter?.complete(null);
         return null;
@@ -347,7 +363,7 @@ class AuthService {
   }
 
   Future<void> logout({bool clearBiometrics = false}) async {
-    // ✅ ADDED: Fire backend API to revoke the Refresh Token
+    // ✅ Fire backend API to revoke the Refresh Token
     try {
       final String? fcmToken = await _getFcmToken();
       final String? refreshToken = await _secureStorage.read(key: 'refresh_token');
@@ -362,7 +378,7 @@ class AuthService {
             'fcmToken': fcmToken ?? "",
             'refreshToken': refreshToken ?? ""
           }),
-        );
+        ).timeout(const Duration(seconds: 2)); // 👈 Prevents the UI from hanging on slow networks
       }
     } catch (e) {
       debugPrint("⚠️ API Logout Error: $e");
@@ -381,10 +397,10 @@ class AuthService {
     } catch (_) {}
 
     try {
-      if (_googleSignIn.currentUser != null) {
-        await _googleSignIn.disconnect();
+      if (googleSignIn.currentUser != null) {
+        await googleSignIn.disconnect();
       }
-      await _googleSignIn.signOut();
+      await googleSignIn.signOut();
     } catch (_) {}
 
     try {
@@ -396,6 +412,8 @@ class AuthService {
 
       if (clearBiometrics) {
         await _secureStorage.delete(key: 'use_biometrics');
+        await _secureStorage.delete(key: 'bio_email');
+        await _secureStorage.delete(key: 'bio_password');
       }
     } catch (_) {}
 

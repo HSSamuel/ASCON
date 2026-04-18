@@ -262,7 +262,18 @@ class _CallLogsTabState extends ConsumerState<CallLogsTab> {
   }
 
   Widget _buildAvatar(String? url, String? name) {
-    if (url != null && url.isNotEmpty) {
+    if (url == null || url.trim().isEmpty) {
+      return _buildFallbackAvatar(name);
+    }
+
+    final cleanUrl = url.toLowerCase().trim();
+    
+    // 🛡️ Explicitly block dummy URLs before they trigger network decoding errors
+    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) {
+      return _buildFallbackAvatar(name);
+    }
+
+    if (cleanUrl.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: url,
         imageBuilder: (context, imageProvider) => CircleAvatar(
@@ -275,16 +286,15 @@ class _CallLogsTabState extends ConsumerState<CallLogsTab> {
           backgroundColor: Colors.grey[200],
           child: const Icon(Icons.person, color: Colors.grey),
         ),
-        errorWidget: (context, url, error) => CircleAvatar(
-          radius: 24,
-          backgroundColor: Colors.grey[200],
-          child: Text(
-            (name ?? "?").substring(0, 1).toUpperCase(),
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[600]),
-          ),
-        ),
+        errorWidget: (context, url, error) => _buildFallbackAvatar(name),
       );
     }
+    
+    return _buildFallbackAvatar(name);
+  }
+
+  // Helper method for the text fallback
+  Widget _buildFallbackAvatar(String? name) {
     return CircleAvatar(
       radius: 24,
       backgroundColor: Colors.grey[200],

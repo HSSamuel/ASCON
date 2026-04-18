@@ -28,11 +28,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
   final BiometricService _biometricService = BiometricService(); 
-
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    clientId: kIsWeb ? AppConfig.googleWebClientId : null,
-    serverClientId: kIsWeb ? null : AppConfig.googleWebClientId,
-  );
   
   bool _isEmailLoading = false;
   bool _isGoogleLoading = false;
@@ -48,13 +43,21 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // ✅ Best Practice: Dispose controllers to prevent memory leaks
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _checkBiometrics() async {
     bool available = await _biometricService.isBiometricAvailable;
     if (mounted) setState(() => _canCheckBiometrics = available);
   }
 
-  // ✅ UPDATED: No longer accepts email/password. Just the user data for routing.
-  void _showBiometricOptInDialog(Map<String, dynamic> user) {
+  // ✅ Pass email and password into the dialog
+  void _showBiometricOptInDialog(Map<String, dynamic> user, String email, String password) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -70,8 +73,8 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              // ✅ FIXED: Call without plaintext credentials
-              await _authService.enableBiometrics(); 
+              // ✅ Save credentials securely to the Keystore
+              await _authService.enableBiometrics(email, password); 
               if (mounted) {
                 Navigator.pop(context);
                 _handleLoginSuccess(user);
@@ -84,7 +87,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // ✅ UPDATED: Uses the secure Refresh Token flow instead of replaying a password
   Future<void> _handleBiometricLogin() async {
     bool hasConsent = await _authService.isBiometricEnabled();
     if (!hasConsent) {
@@ -98,24 +100,40 @@ class _LoginScreenState extends State<LoginScreen> {
     if (authenticated) {
       setState(() => _isEmailLoading = true); 
 
-      // ✅ Trigger the token refresh flow instead of loginWithStoredCredentials
-      String? validToken = await _authService.getToken();
+      // 1. Fetch hardware-encrypted credentials
+      final creds = await _authService.getBiometricCredentials();
       
-      if (mounted) setState(() => _isEmailLoading = false);
+      if (creds != null) {
+        // 2. Perform a fresh login silently in the background
+        final result = await _authService.login(creds['email']!, creds['password']!);
+        if (mounted) setState(() => _isEmailLoading = false);
 
-      if (validToken != null) {
-        final user = await _authService.getCachedUser();
-        if (user != null) {
-          _handleLoginSuccess(user);
+        if (result['success']) {
+          _handleLoginSuccess(result['data']['user']);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Profile data missing. Please log in manually.")),
+            SnackBar(content: Text(result['message']), backgroundColor: Colors.red)
           );
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Session expired or revoked. Please log in manually.")),
-        );
+        // 3. Fallback if credentials are missing from secure storage
+        String? validToken = await _authService.getToken();
+        if (mounted) setState(() => _isEmailLoading = false);
+
+        if (validToken != null) {
+          final user = await _authService.getCachedUser();
+          if (user != null) {
+            _handleLoginSuccess(user);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Profile data missing. Please log in manually."))
+            );
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Session expired. Please log in manually."))
+          );
+        }
       }
     }
   }
@@ -250,8 +268,8 @@ class _LoginScreenState extends State<LoginScreen> {
         bool hardwareAvailable = await _biometricService.isBiometricAvailable;
 
         if (!alreadyEnabled && hardwareAvailable && mounted) {
-          // ✅ FIXED: Pass only the user payload
-          _showBiometricOptInDialog(result['data']['user']);
+          // ✅ Pass the email and password variables to the dialog
+          _showBiometricOptInDialog(result['data']['user'], email, password);
         } else {
           _handleLoginSuccess(result['data']['user']);
         }
@@ -271,11 +289,13 @@ class _LoginScreenState extends State<LoginScreen> {
       
       GoogleSignInAccount? googleUser;
       if (kIsWeb) {
-        try { googleUser = await _googleSignIn.signInSilently(); } catch (e) {}
+        // ✅ Uses the single global instance from AuthService
+        try { googleUser = await AuthService.googleSignIn.signInSilently(); } catch (e) {}
       }
       if (googleUser == null) {
         try { 
-          googleUser = await _googleSignIn.signIn(); 
+          // ✅ Uses the single global instance from AuthService
+          googleUser = await AuthService.googleSignIn.signIn(); 
         } catch (error) {
           if (mounted) {
             setState(() => _isGoogleLoading = false);

@@ -143,25 +143,32 @@ class AlumniCard extends StatelessWidget {
       return _buildPlaceholder(isDark);
     }
 
-    // ✅ FIX: Make case-insensitive and catch broader default avatars
     final cleanPath = imagePath.toLowerCase().trim();
+    
+    // 🛡️ Explicitly block dummy URLs before they trigger network decoding errors
     if (cleanPath.contains('profile/picture') || cleanPath.contains('default-user')) {
       return _buildPlaceholder(isDark);
     }
     
     if (cleanPath.startsWith('http')) {
-    
-    if (imagePath.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: imagePath,
-        imageBuilder: (context, imageProvider) => CircleAvatar(radius: 24, backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100], backgroundImage: imageProvider),
+        imageBuilder: (context, imageProvider) => CircleAvatar(
+          radius: 24, 
+          backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100], 
+          backgroundImage: imageProvider
+        ),
         placeholder: (context, url) => _buildPlaceholder(isDark),
         errorWidget: (context, url, error) => _buildPlaceholder(isDark),
       );
     }
     
     try {
-      return CircleAvatar(radius: 24, backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100], backgroundImage: MemoryImage(base64Decode(imagePath)));
+      return CircleAvatar(
+        radius: 24, 
+        backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100], 
+        backgroundImage: MemoryImage(base64Decode(imagePath))
+      );
     } catch (e) {
       return _buildPlaceholder(isDark);
     }
@@ -169,7 +176,8 @@ class AlumniCard extends StatelessWidget {
 
   Widget _buildPlaceholder(bool isDark) {
     return CircleAvatar(
-      radius: 24, backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100],
+      radius: 24, 
+      backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100],
       child: const Icon(Icons.person, color: Colors.grey, size: 26),
     );
   }

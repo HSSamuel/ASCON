@@ -9,7 +9,13 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
+// ✅ NEW IMPORTS FOR PRO-UX UPGRADES
+import 'package:flutter_linkify/flutter_linkify.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:vibration/vibration.dart';
+
 import '../viewmodels/updates_view_model.dart';
+import '../viewmodels/profile_view_model.dart'; // Needed for Optimistic UI
 import 'programme_detail_screen.dart';
 import 'alumni_detail_screen.dart'; 
 
@@ -52,30 +58,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
       context, 
       MaterialPageRoute(builder: (_) => AlumniDetailScreen(alumniData: alumniData))
     );
-  }
-
-  List<TextSpan> _parseFormattedText(String text, TextStyle baseStyle) {
-    final List<TextSpan> spans = [];
-    final RegExp exp = RegExp(r'([*_~])(.*?)\1'); 
-    
-    text.splitMapJoin(exp, onMatch: (Match m) {
-        final String marker = m.group(1)!; 
-        final String content = m.group(2)!;
-        
-        TextStyle newStyle = baseStyle;
-        if (marker == '*') newStyle = newStyle.copyWith(fontWeight: FontWeight.bold);
-        if (marker == '_') newStyle = newStyle.copyWith(fontStyle: FontStyle.italic);
-        if (marker == '~') newStyle = newStyle.copyWith(decoration: TextDecoration.underline);
-        
-        spans.add(TextSpan(text: content, style: newStyle));
-        return '';
-      }, 
-      onNonMatch: (String s) { 
-        spans.add(TextSpan(text: s, style: baseStyle)); 
-        return ''; 
-      },
-    );
-    return spans;
   }
 
   Future<void> _showEditDialog(String postId, String currentText) async {
@@ -151,10 +133,10 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                                 leading: Stack(
                                   children: [
                                     CircleAvatar(
-                                      backgroundImage: (user['profilePicture'] != null && user['profilePicture'].toString().startsWith('http')) 
+                                      backgroundImage: (user['profilePicture'] != null && user['profilePicture'].toString().startsWith('http') && !user['profilePicture'].toString().contains('profile/picture/')) 
                                           ? CachedNetworkImageProvider(user['profilePicture']) 
                                           : null,
-                                      child: user['profilePicture'] == null ? const Icon(Icons.person) : null,
+                                      child: (user['profilePicture'] == null || user['profilePicture'].toString().contains('profile/picture/')) ? const Icon(Icons.person) : null,
                                     ),
                                     if (isOnline)
                                       Positioned(
@@ -188,7 +170,8 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
 
   void _showCommentsSheet(String postId) {
     final commentController = TextEditingController();
-    bool isPosting = false; 
+    List<dynamic> localComments = [];
+    bool hasFetched = false;
 
     showModalBottomSheet(
       context: context,
@@ -202,31 +185,38 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
             final textColor = isDark ? Colors.white : Colors.black87;
             final bubbleColor = isDark ? Colors.grey[800] : Colors.grey[100];
 
-            return FutureBuilder<List<dynamic>>(
-              future: ref.read(updatesProvider.notifier).fetchComments(postId),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()));
-                
-                final comments = snapshot.data!;
+            // Fetch comments only once
+            if (!hasFetched) {
+              ref.read(updatesProvider.notifier).fetchComments(postId).then((data) {
+                if (mounted) {
+                  setSheetState(() {
+                    localComments = data;
+                    hasFetched = true;
+                  });
+                }
+              });
+            }
 
-                return Padding(
-                  padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-                  child: SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.7,
-                    child: Column(
-                      children: [
-                        Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-                        Text("Comments", style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 16, color: textColor)),
-                        const Divider(),
-                        
-                        Expanded(
-                          child: comments.isEmpty 
-                              ? Center(child: Text("No comments yet.", style: GoogleFonts.lato(color: Colors.grey)))
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.7,
+                child: Column(
+                  children: [
+                    Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+                    Text("Comments", style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 16, color: textColor)),
+                    const Divider(),
+                    
+                    Expanded(
+                      child: !hasFetched 
+                          ? const Center(child: CircularProgressIndicator())
+                          : localComments.isEmpty 
+                              ? Center(child: Text("No comments yet. Be the first!", style: GoogleFonts.lato(color: Colors.grey)))
                               : ListView.builder(
-                                  itemCount: comments.length,
+                                  itemCount: localComments.length,
                                   padding: const EdgeInsets.all(16),
                                   itemBuilder: (context, index) {
-                                    final c = comments[index];
+                                    final c = localComments[index];
                                     final author = c['author'] ?? {};
                                     final authorName = author['fullName'] ?? "User";
                                     final authorImg = author['profilePicture'];
@@ -245,19 +235,15 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                                                 CircleAvatar(
                                                   radius: 16,
                                                   backgroundColor: Colors.grey[200],
-                                                  backgroundImage: authorImg != null && authorImg.toString().startsWith('http') ? CachedNetworkImageProvider(authorImg) : null,
-                                                  child: authorImg == null ? const Icon(Icons.person, size: 16, color: Colors.grey) : null,
+                                                  backgroundImage: (authorImg != null && authorImg.toString().startsWith('http') && !authorImg.toString().contains('profile/picture/')) ? CachedNetworkImageProvider(authorImg) : null,
+                                                  child: (authorImg == null || authorImg.toString().contains('profile/picture/')) ? const Icon(Icons.person, size: 16, color: Colors.grey) : null,
                                                 ),
                                                 if (isOnline)
                                                   Positioned(
                                                     right: 0, bottom: 0,
                                                     child: Container(
                                                       width: 10, height: 10,
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.green,
-                                                        shape: BoxShape.circle,
-                                                        border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 1.5)
-                                                      ),
+                                                      decoration: BoxDecoration(color: Colors.green, shape: BoxShape.circle, border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 1.5)),
                                                     ),
                                                   )
                                               ],
@@ -282,8 +268,16 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                                                     ],
                                                   ),
                                                   const SizedBox(height: 4),
-                                                  Text.rich(
-                                                    TextSpan(children: _parseFormattedText(c['text'] ?? "", GoogleFonts.lato(fontSize: 14, color: textColor))),
+                                                  // ✅ LINKIFY COMMENTS
+                                                  Linkify(
+                                                    onOpen: (link) async {
+                                                      if (await canLaunchUrl(Uri.parse(link.url))) {
+                                                        await launchUrl(Uri.parse(link.url));
+                                                      }
+                                                    },
+                                                    text: c['text'] ?? "",
+                                                    style: GoogleFonts.lato(fontSize: 14, color: textColor),
+                                                    linkStyle: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
                                                   ),
                                                 ],
                                               ),
@@ -294,52 +288,72 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                                     );
                                   },
                                 ),
-                        ),
-
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(color: Theme.of(context).cardColor, border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.2)))),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: commentController,
-                                  style: TextStyle(color: textColor),
-                                  decoration: InputDecoration(
-                                    hintText: "Add a comment...",
-                                    hintStyle: GoogleFonts.lato(fontSize: 14, color: Colors.grey),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                    filled: true,
-                                    fillColor: bubbleColor,
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              CircleAvatar(
-                                backgroundColor: const Color(0xFFD4AF37),
-                                radius: 22,
-                                child: isPosting
-                                    ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                    : IconButton(
-                                        icon: const Icon(Icons.send_rounded, size: 20, color: Colors.white), 
-                                        onPressed: () async {
-                                          if (commentController.text.trim().isEmpty) return;
-                                          setSheetState(() => isPosting = true);
-                                          await ref.read(updatesProvider.notifier).postComment(postId, commentController.text.trim());
-                                          commentController.clear();
-                                          if (mounted) setSheetState(() => isPosting = false);
-                                        }
-                                      ),
-                              )
-                            ],
-                          ),
-                        )
-                      ],
                     ),
-                  ),
-                );
-              }
+
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(color: Theme.of(context).cardColor, border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.2)))),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: commentController,
+                              style: TextStyle(color: textColor),
+                              textCapitalization: TextCapitalization.sentences,
+                              decoration: InputDecoration(
+                                hintText: "Add a comment...",
+                                hintStyle: GoogleFonts.lato(fontSize: 14, color: Colors.grey),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                filled: true,
+                                fillColor: bubbleColor,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          CircleAvatar(
+                            backgroundColor: const Color(0xFFD4AF37),
+                            radius: 22,
+                            child: IconButton(
+                              icon: const Icon(Icons.send_rounded, size: 20, color: Colors.white), 
+                              onPressed: () {
+                                final text = commentController.text.trim();
+                                if (text.isEmpty) return;
+
+                                // ✅ OPTIMISTIC UI: Build the local comment instantly
+                                final currentUser = ref.read(profileProvider).userProfile;
+                                final optimisticComment = {
+                                  'text': text,
+                                  'createdAt': DateTime.now().toIso8601String(),
+                                  'author': {
+                                    'fullName': currentUser?['fullName'] ?? 'Me',
+                                    'profilePicture': currentUser?['profilePicture'],
+                                    'isOnline': true,
+                                  }
+                                };
+
+                                // 1. Inject into UI immediately
+                                setSheetState(() {
+                                  localComments.insert(0, optimisticComment);
+                                });
+                                commentController.clear();
+                                
+                                // 2. Play subtle haptic pop
+                                Vibration.hasVibrator().then((hasVib) {
+                                  if (hasVib ?? false) Vibration.vibrate(duration: 15);
+                                });
+
+                                // 3. Fire to server in the background
+                                ref.read(updatesProvider.notifier).postComment(postId, text);
+                              }
+                            ),
+                          )
+                        ],
+                      ),
+                    )
+                  ],
+                ),
+              ),
             );
           },
         );
@@ -350,7 +364,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
   void _showCreatePostSheet() {
     final TextEditingController textController = TextEditingController();
     List<XFile> selectedImages = []; 
-    // ✅ ADDED: Local state to handle UI and debounce inside the BottomSheet Builder
     bool isPostingLocal = false; 
     
     showModalBottomSheet(
@@ -378,18 +391,21 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
 
             Future<void> submitPost() async {
               if (textController.text.trim().isEmpty && selectedImages.isEmpty) return;
-              if (isPostingLocal) return; // 🛑 Block accidental double taps
+              if (isPostingLocal) return; 
 
-              setSheetState(() => isPostingLocal = true); // Instantly update UI
+              setSheetState(() => isPostingLocal = true); 
 
               final error = await ref.read(updatesProvider.notifier).createPost(textController.text.trim(), selectedImages);
               
               if (error == null) {
                 Navigator.pop(sheetContext);
-                if (mounted) ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text("Update posted! 🚀"), backgroundColor: Colors.green));
+                if (mounted) {
+                  ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text("Update posted! 🚀"), backgroundColor: Colors.green));
+                  Vibration.hasVibrator().then((v) { if (v ?? false) Vibration.vibrate(duration: 30); });
+                }
               } else {
                 if (mounted) {
-                  setSheetState(() => isPostingLocal = false); // Re-enable button
+                  setSheetState(() => isPostingLocal = false); 
                   ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text(error), backgroundColor: Colors.red));
                 }
               }
@@ -405,7 +421,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text("New Update", style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold)),
-                      // ✅ UPDATED: Used local boolean for instant visual response
                       isPostingLocal 
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                         : TextButton(
@@ -416,12 +431,18 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  
+                  // ✅ PRO-INITIATIVE: Expanded typing area with auto-capitalization
                   TextField(
                     controller: textController,
-                    maxLines: 5,
-                    minLines: 2,
+                    maxLines: 10,
+                    minLines: 5,
                     autofocus: true,
-                    decoration: const InputDecoration(hintText: "Share news, achievements...", border: InputBorder.none),
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      hintText: "What's happening in your network?", 
+                      border: InputBorder.none
+                    ),
                   ),
                   
                   if (selectedImages.isNotEmpty)
@@ -538,7 +559,13 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
           ];
         },
         body: RefreshIndicator(
-          onRefresh: () async => await notifier.loadData(),
+          // ✅ TACTILE REFRESH: Small vibration pop when loading new posts
+          onRefresh: () async {
+            if (!kIsWeb) {
+              Vibration.hasVibrator().then((v) { if (v ?? false) Vibration.vibrate(duration: 15); });
+            }
+            await notifier.loadData();
+          },
           color: const Color(0xFFD4AF37),
           child: CustomScrollView(
             slivers: [
@@ -684,10 +711,10 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                   child: CircleAvatar(
                     radius: 20, 
                     backgroundColor: Colors.grey[200],
-                    backgroundImage: author['profilePicture'] != null && author['profilePicture'].toString().startsWith('http')
+                    backgroundImage: (author['profilePicture'] != null && author['profilePicture'].toString().startsWith('http') && !author['profilePicture'].toString().contains('profile/picture/'))
                         ? CachedNetworkImageProvider(author['profilePicture'])
                         : null,
-                    child: author['profilePicture'] == null ? Icon(Icons.person, size: 20, color: Colors.grey[400]) : null,
+                    child: (author['profilePicture'] == null || author['profilePicture'].toString().contains('profile/picture/')) ? Icon(Icons.person, size: 20, color: Colors.grey[400]) : null,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -750,13 +777,16 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
           if (post['text'] != null && post['text'].toString().isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: SelectableText.rich( 
-                TextSpan(
-                  children: _parseFormattedText(
-                    post['text'], 
-                    GoogleFonts.lato(fontSize: 14, color: textColor, height: 1.4)
-                  )
-                ),
+              // ✅ PRO-INITIATIVE: Convert raw links into clickable buttons
+              child: Linkify(
+                onOpen: (link) async {
+                  if (await canLaunchUrl(Uri.parse(link.url))) {
+                    await launchUrl(Uri.parse(link.url), mode: LaunchMode.externalApplication);
+                  }
+                },
+                text: post['text'],
+                style: GoogleFonts.lato(fontSize: 14, color: textColor, height: 1.4),
+                linkStyle: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
               ),
             ),
 
@@ -807,7 +837,11 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                     icon: Icon(post['isLikedByMe'] == true ? Icons.thumb_up : Icons.thumb_up_outlined, 
                       size: 18, color: post['isLikedByMe'] == true ? Colors.blue : subTextColor),
                     label: Text("Like", style: TextStyle(color: post['isLikedByMe'] == true ? Colors.blue : subTextColor, fontSize: 12)),
-                    onPressed: () => notifier.toggleLike(post['_id']),
+                    onPressed: () {
+                      // ✅ TACTILE FEEDBACK: Play haptic tap when liking
+                      if (!kIsWeb) Vibration.hasVibrator().then((v) { if (v ?? false) Vibration.vibrate(duration: 10); });
+                      notifier.toggleLike(post['_id']);
+                    },
                   ),
                 ),
                 Expanded(

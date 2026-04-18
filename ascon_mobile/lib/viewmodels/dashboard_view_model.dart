@@ -171,24 +171,27 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         return idB.toString().compareTo(idA.toString());
       });
 
-      // 3. Process Profile
-      String profileImage = "";
-      String programme = "Member";
-      String year = "....";
+      // 3. Process Profile (Safely fallback to current state instead of hardcoded strings)
+      String profileImage = state.profileImage;
+      String programme = state.programme;
+      String year = state.year;
       
       String fullName = cachedName; 
       String firstName = fullName.split(" ")[0]; 
       
       String alumniID = localAlumniID;
-      double profileCompletionPercent = 0.0;
-      bool isProfileComplete = false;
+      double profileCompletionPercent = state.profileCompletionPercent;
+      bool isProfileComplete = state.isProfileComplete;
 
       final profile = results[2] as Map<String, dynamic>?;
       if (profile != null) {
-        profileImage = profile['profilePicture'] ?? "";
-        programme = profile['programmeTitle'] ?? "Member";
-        if (programme.isEmpty) programme = "Member";
-        year = profile['yearOfAttendance']?.toString() ?? "....";
+        // Only overwrite if the backend explicitly provides valid data
+        profileImage = profile['profilePicture'] ?? state.profileImage;
+        
+        String incomingProgramme = profile['programmeTitle'] ?? "";
+        programme = incomingProgramme.isNotEmpty ? incomingProgramme : state.programme;
+        
+        year = profile['yearOfAttendance']?.toString() ?? state.year;
         
         if (profile['fullName'] != null && profile['fullName'].toString().trim().isNotEmpty) {
           fullName = profile['fullName'];

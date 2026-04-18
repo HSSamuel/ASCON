@@ -276,7 +276,6 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
   }
 
   Future<String?> createPost(String text, List<XFile>? images) async {
-    // ✅ ADDED: Prevent duplicate submission at the logic level
     if (state.isPosting) return null; 
 
     state = state.copyWith(isPosting: true);
@@ -297,17 +296,24 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
         }
       }
 
-      var response = await request.send();
+      // ✅ FIX 1: Enforce a strict 30-second timeout to prevent indefinite hanging
+      var response = await request.send().timeout(const Duration(seconds: 30));
+      
       state = state.copyWith(isPosting: false);
 
-      if (response.statusCode == 201) {
-        await loadData(silent: true);
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        // ✅ FIX 2: Removed 'await'. This tells the app to refresh the feed in the 
+        // background, allowing the UI to return 'null' and close the sheet instantly.
+        loadData(silent: true);
         return null; 
       } else {
         return "Failed to post update.";
       }
     } catch (e) {
       state = state.copyWith(isPosting: false);
+      if (e.toString().contains('Timeout')) {
+        return "Request timed out. Please check your network.";
+      }
       return "Connection error.";
     }
   }
