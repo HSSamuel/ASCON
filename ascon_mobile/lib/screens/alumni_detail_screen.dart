@@ -273,7 +273,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     final String phone = _currentAlumniData['phoneNumber'] ?? '';
     final String linkedin = _currentAlumniData['linkedin'] ?? '';
     final String email = _currentAlumniData['email'] ?? '';
-    final String year = _currentAlumniData['yearOfAttendance']?.toString() ?? '';
+    final String year = _currentAlumniData['yearOfAttendance']?.toString() ?? 'Unknown';
     final String imageString = _currentAlumniData['profilePicture'] ?? '';
     
     final String zoomHeroTag = "zoom_profile_${_currentAlumniData['_id'] ?? DateTime.now().millisecondsSinceEpoch}";
@@ -403,9 +403,12 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
-                              if (imageString.isNotEmpty && 
-                                  !imageString.contains('profile/picture/') && 
-                                  (imageString.startsWith('http') || imageString.length > 100)) {
+                              final cleanImg = imageString.toLowerCase().trim();
+                              // 🛡️ Safely block bad URLs from opening the FullScreenImage viewer
+                              if (cleanImg.isNotEmpty && 
+                                  !cleanImg.contains('profile/picture') && 
+                                  !cleanImg.contains('default-user') &&
+                                  (cleanImg.startsWith('http') || cleanImg.length > 100)) {
                                 Navigator.of(context, rootNavigator: true).push(
                                   MaterialPageRoute(
                                     builder: (_) => FullScreenImage(
@@ -517,7 +520,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                             ),
                           ),
 
-                       Container(
+                        Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
                             color: const Color(0xFFD4AF37).withOpacity(0.1),
@@ -525,9 +528,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                             border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
                           ),
                           child: Text(
-                            (year.isNotEmpty && year != 'Others' && year != 'null') 
-                                ? "Class of $year" 
-                                : "Alumni Member",
+                            "Class of $year",
                             style: GoogleFonts.lato(color: const Color(0xFFB8860B), fontWeight: FontWeight.bold, fontSize: 12),
                           ),
                         ),
@@ -775,11 +776,18 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
   }
 
   Widget _buildRobustAvatar(String imageString, bool isDark) {
-    if (imageString.isEmpty || imageString.contains('profile/picture/')) {
+    if (imageString.trim().isEmpty) {
       return _buildPlaceholder(isDark);
     }
 
-    if (imageString.startsWith('http')) {
+    final cleanString = imageString.toLowerCase().trim();
+
+    // 🛡️ Explicitly block dummy URLs before they trigger network decoding errors
+    if (cleanString.contains('profile/picture') || cleanString.contains('default-user')) {
+      return _buildPlaceholder(isDark);
+    }
+
+    if (cleanString.startsWith('http')) {
       if (kIsWeb) {
         return CircleAvatar(
           radius: 45,

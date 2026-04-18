@@ -234,7 +234,7 @@ class MessageBubble extends ConsumerWidget {
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.only(top: 4, right: 4, left: 4, bottom: 8), // Added bottom padding to accommodate reactions
+                        padding: const EdgeInsets.only(top: 4, right: 4, left: 4, bottom: 8), 
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -283,25 +283,46 @@ class MessageBubble extends ConsumerWidget {
 
   Widget _buildMediaContent(BuildContext context, WidgetRef ref) { 
     if (msg.type == 'image') {
+      
+      // 🛡️ BLOCK DUMMY URLS FROM CRASHING THE IMAGE RENDERER
+      final bool isInvalidUrl = msg.fileUrl != null && 
+        (msg.fileUrl!.toLowerCase().contains('profile/picture') || 
+         msg.fileUrl!.toLowerCase().contains('default-user'));
+
       return GestureDetector(
         onTap: () {
            if (isSelectionMode) {
              onToggleSelection(msg.id);
              return;
            }
-           if (msg.fileUrl != null) Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImage(imageUrl: msg.fileUrl!, heroTag: msg.id)));
+           if (msg.fileUrl != null && !isInvalidUrl) {
+             Navigator.push(context, MaterialPageRoute(builder: (_) => FullScreenImage(imageUrl: msg.fileUrl!, heroTag: msg.id)));
+           }
         },
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: msg.localBytes != null 
                   ? Image.memory(msg.localBytes!, fit: BoxFit.cover)
-                  : CachedNetworkImage(
-                      imageUrl: msg.fileUrl!, 
-                      placeholder: (c, u) => const SizedBox(height: 150, child: Center(child: CircularProgressIndicator())), 
-                      errorWidget: (c, u, e) => const Icon(Icons.broken_image)
-                    ),
+                  : (isInvalidUrl || msg.fileUrl == null)
+                      ? Container(
+                          width: 200,
+                          height: 150,
+                          color: isDark ? Colors.grey[800] : Colors.grey[300],
+                          child: const Icon(Icons.broken_image, color: Colors.grey, size: 40),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: msg.fileUrl!, 
+                          placeholder: (c, u) => const SizedBox(height: 150, width: 200, child: Center(child: CircularProgressIndicator())), 
+                          errorWidget: (c, u, e) => Container(
+                            width: 200,
+                            height: 150,
+                            color: isDark ? Colors.grey[800] : Colors.grey[300],
+                            child: const Icon(Icons.broken_image, color: Colors.grey, size: 40)
+                          )
+                        ),
             ),
             // ✅ SHOW UPLOAD PROGRESS FOR IMAGES
             if (uploadProgress != null && uploadProgress! < 1.0)
