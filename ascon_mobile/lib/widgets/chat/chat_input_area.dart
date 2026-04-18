@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../models/chat_objects.dart';
 
-class ChatInputArea extends StatelessWidget {
+class ChatInputArea extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool isDark;
@@ -47,41 +47,68 @@ class ChatInputArea extends StatelessWidget {
   });
 
   @override
+  State<ChatInputArea> createState() => _ChatInputAreaState();
+}
+
+class _ChatInputAreaState extends State<ChatInputArea> {
+  // ✅ ADDED: State to track and prevent double-taps
+  bool _isSending = false;
+
+  void _handleSend() {
+    if (_isSending || widget.controller.text.trim().isEmpty) return;
+
+    setState(() {
+      _isSending = true;
+    });
+
+    widget.onSendMessage();
+
+    // Re-enable the button after a short delay to prevent double submissions 
+    // while giving the parent UI time to process the message.
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // ✅ FIX: Use ValueListenableBuilder to react to text changes instantly
     return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: controller,
+      valueListenable: widget.controller,
       builder: (context, value, child) {
         final bool hasText = value.text.trim().isNotEmpty;
         // On Web, always show Send. On Mobile, show Send if text exists, otherwise Mic.
-        final bool showSend = hasText || isRecording || kIsWeb;
+        final bool showSend = hasText || widget.isRecording || kIsWeb;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // 1. Reply/Edit Preview
-            if (replyingTo != null || editingMessage != null)
+            if (widget.replyingTo != null || widget.editingMessage != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: isDark ? Colors.grey[850] : Colors.grey[100],
+                color: widget.isDark ? Colors.grey[850] : Colors.grey[100],
                 child: Row(
                   children: [
-                    Icon(editingMessage != null ? Icons.edit : Icons.reply, color: primaryColor, size: 20),
+                    Icon(widget.editingMessage != null ? Icons.edit : Icons.reply, color: widget.primaryColor, size: 20),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            editingMessage != null 
+                            widget.editingMessage != null 
                                 ? "Editing Message" 
-                                : "Replying to ${replyingTo!.senderId == myUserId ? 'Yourself' : (replyingTo!.senderName ?? 'User')}",
-                            style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor),
+                                : "Replying to ${widget.replyingTo!.senderId == widget.myUserId ? 'Yourself' : (widget.replyingTo!.senderName ?? 'User')}",
+                            style: TextStyle(fontWeight: FontWeight.bold, color: widget.primaryColor),
                           ),
                           Text(
-                            editingMessage != null 
-                                ? editingMessage!.text 
-                                : (replyingTo!.type == 'text' ? replyingTo!.text : "Media"),
+                            widget.editingMessage != null 
+                                ? widget.editingMessage!.text 
+                                : (widget.replyingTo!.type == 'text' ? widget.replyingTo!.text : "Media"),
                             maxLines: 1, 
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 12, color: Colors.grey),
@@ -91,7 +118,7 @@ class ChatInputArea extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, size: 20), 
-                      onPressed: editingMessage != null ? onCancelEdit : onCancelReply
+                      onPressed: widget.editingMessage != null ? widget.onCancelEdit : widget.onCancelReply
                     )
                   ],
                 ),
@@ -100,15 +127,15 @@ class ChatInputArea extends StatelessWidget {
             // 2. Main Input Row
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+              color: widget.isDark ? const Color(0xFF1E1E1E) : Colors.white,
               child: SafeArea(
                 child: Row(
                   children: [
                     // Attach Button
-                    if (!isRecording) 
+                    if (!widget.isRecording) 
                       IconButton(
-                        icon: Icon(Icons.add_circle_outline, color: primaryColor, size: 28), 
-                        onPressed: onAttachmentMenu,
+                        icon: Icon(Icons.add_circle_outline, color: widget.primaryColor, size: 28), 
+                        onPressed: widget.onAttachmentMenu,
                         tooltip: "Attach",
                       ),
                     const SizedBox(width: 4),
@@ -119,30 +146,30 @@ class ChatInputArea extends StatelessWidget {
                         constraints: const BoxConstraints(maxHeight: 100),
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.grey[900] : const Color(0xFFF2F4F5), 
+                          color: widget.isDark ? Colors.grey[900] : const Color(0xFFF2F4F5), 
                           borderRadius: BorderRadius.circular(24)
                         ),
-                        child: isRecording 
+                        child: widget.isRecording 
                           ? Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween, 
                               children: [
                                 const Icon(Icons.mic, color: Colors.red, size: 20), 
-                                Text("Recording... ${recordDuration ~/ 60}:${(recordDuration % 60).toString().padLeft(2, '0')}", style: const TextStyle(fontWeight: FontWeight.bold)), 
-                                TextButton(onPressed: onCancelRecording, child: const Text("Cancel", style: TextStyle(color: Colors.red)))
+                                Text("Recording... ${widget.recordDuration ~/ 60}:${(widget.recordDuration % 60).toString().padLeft(2, '0')}", style: const TextStyle(fontWeight: FontWeight.bold)), 
+                                TextButton(onPressed: widget.onCancelRecording, child: const Text("Cancel", style: TextStyle(color: Colors.red)))
                               ]
                             )
                           : TextField(
-                              controller: controller, 
-                              focusNode: focusNode,
+                              controller: widget.controller, 
+                              focusNode: widget.focusNode,
                               maxLines: null, // Allow multiline growth
                               minLines: 1,
-                              onChanged: onTyping,
-                              cursorColor: isDark ? const Color(0xFFD4AF37) : primaryColor,
-                              style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+                              onChanged: widget.onTyping,
+                              cursorColor: widget.isDark ? const Color(0xFFD4AF37) : widget.primaryColor,
+                              style: TextStyle(color: widget.isDark ? Colors.white : Colors.black87),
                               decoration: InputDecoration(
                                 hintText: "Message...", 
                                 border: InputBorder.none,
-                                hintStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey),
+                                hintStyle: TextStyle(color: widget.isDark ? Colors.white54 : Colors.grey),
                                 contentPadding: const EdgeInsets.symmetric(vertical: 14) // Better centering
                               ),
                               textCapitalization: TextCapitalization.sentences,
@@ -155,19 +182,21 @@ class ChatInputArea extends StatelessWidget {
                     // Send/Mic Button
                     Container(
                       decoration: BoxDecoration(
-                        color: primaryColor,
+                        color: _isSending ? Colors.grey : widget.primaryColor, // Visual feedback
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
-                        icon: Icon(showSend ? Icons.send : Icons.mic, color: Colors.white, size: 22),
-                        onPressed: () {
-                          if (isRecording) {
-                            onStopRecording();
+                        // Show a loading spinner if actively sending
+                        icon: _isSending 
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Icon(showSend ? Icons.send : Icons.mic, color: Colors.white, size: 22),
+                        onPressed: _isSending ? null : () {
+                          if (widget.isRecording) {
+                            widget.onStopRecording();
                           } else if (hasText) {
-                            // ✅ Now this will be TRUE because we are listening to the controller
-                            onSendMessage();
+                            _handleSend(); // ✅ Use the debouncer
                           } else if (!kIsWeb) {
-                            onStartRecording();
+                            widget.onStartRecording();
                           }
                         },
                         tooltip: showSend ? "Send" : "Record",

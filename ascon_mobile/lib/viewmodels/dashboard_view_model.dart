@@ -217,7 +217,12 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         });
       }
       
-      fetchedAlumni.shuffle(); 
+      // ✅ FIX: Prevent visual jitter. Only shuffle if the screen is currently empty, 
+      // or if the user explicitly pulled down to refresh.
+      if (state.topAlumni.isEmpty || isRefresh) {
+        fetchedAlumni.shuffle();
+      }
+      
       final topAlumni = fetchedAlumni.take(20).toList(); 
 
       // 5. Process Birthdays

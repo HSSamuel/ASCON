@@ -818,4 +818,35 @@ class DataService {
       return false;
     }
   }
+
+  // ==========================================
+  // 10. QR CODE VERIFICATION
+  // ==========================================
+  Future<Map<String, dynamic>?> verifyAlumniNative(String alumniId) async {
+    try {
+      final headers = await _getHeaders();
+      
+      // We will try to fetch the user by their ASCON ID
+      // If you don't have a specific /verify/ endpoint in your backend yet, 
+      // we can just use the directory endpoint with a search query.
+      final url = Uri.parse('${AppConfig.baseUrl}/api/directory?search=$alumniId');
+      final response = await http.get(url, headers: headers);
+      
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final data = decoded['data'];
+        
+        // If the search returned a match, grab the first user
+        if (data != null && data is List && data.isNotEmpty) {
+           return {'success': true, 'data': data[0]};
+        }
+        
+        return {'success': false, 'message': 'Alumni not found'};
+      }
+      return {'success': false, 'message': 'Failed to verify'};
+    } catch (e) {
+      debugPrint("Verification API Error: $e");
+      return null;
+    }
+  }
 }

@@ -139,10 +139,17 @@ class AlumniCard extends StatelessWidget {
   }
 
   Widget _buildAvatar(String? imagePath, bool isDark) {
-    // ✅ FIX: Broadened check to catch any number Google appends (e.g., picture/0, picture/1, etc.)
-    if (imagePath == null || imagePath.isEmpty || imagePath.contains('profile/picture/')) {
+    if (imagePath == null || imagePath.trim().isEmpty) {
       return _buildPlaceholder(isDark);
     }
+
+    // ✅ FIX: Make case-insensitive and catch broader default avatars
+    final cleanPath = imagePath.toLowerCase().trim();
+    if (cleanPath.contains('profile/picture') || cleanPath.contains('default-user')) {
+      return _buildPlaceholder(isDark);
+    }
+    
+    if (cleanPath.startsWith('http')) {
     
     if (imagePath.startsWith('http')) {
       return CachedNetworkImage(

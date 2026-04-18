@@ -75,10 +75,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  // ✅ FIX: Immediately reject if imagePath contains 'profile/picture/'
+  // ✅ FIX: Robust case-insensitive check for Google placeholders
   ImageProvider? getProfileImage(String? imagePath) {
-    if (imagePath == null || imagePath.isEmpty || imagePath.contains('profile/picture/')) return null;
-    if (imagePath.startsWith('http')) return NetworkImage(imagePath);
+    if (imagePath == null || imagePath.trim().isEmpty) return null;
+    
+    final cleanPath = imagePath.toLowerCase().trim();
+    if (cleanPath.contains('profile/picture') || cleanPath.contains('default-user')) {
+      return null;
+    }
+    
+    if (cleanPath.startsWith('http')) return NetworkImage(imagePath);
     try { return MemoryImage(base64Decode(imagePath)); } catch (e) { return null; }
   }
 

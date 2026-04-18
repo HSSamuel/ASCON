@@ -385,14 +385,18 @@ exports.googleLogin = asyncHandler(async (req, res) => {
     await userAuth.save();
 
     let safePicture = picture;
-    if (picture && picture.includes("profile/picture/0")) {
-      safePicture = null; // Set to null so the app uses the default fallback
+    // Broaden the check to catch other Google default formats
+    if (
+      picture &&
+      (picture.includes("profile/picture") || picture.includes("default-user"))
+    ) {
+      safePicture = null;
     }
 
     userProfile = new UserProfile({
       userId: userAuth._id,
       fullName: name,
-      profilePicture: picture,
+      profilePicture: safePicture, // ✅ FIX: Save safePicture instead
     });
     await userProfile.save();
 

@@ -93,3 +93,25 @@
 {"level":"info","message":"📞 Cleaned up 0 stuck calls.","timestamp":"2026-04-18 00:09:26"}
 {"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-04-18 00:09:26"}
 {"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-04-18 00:09:28"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-04-18 00:52:49"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-04-18 00:52:49"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-04-18 00:52:50"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-04-18 00:52:50"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-04-18 00:52:52"}
+{"level":"info","message":"📞 Cleaned up 0 stuck calls.","timestamp":"2026-04-18 00:52:54"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-04-18 00:52:54"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-04-18 01:59:08"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-04-18 01:59:08"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-04-18 01:59:12"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-04-18 01:59:12"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-04-18 01:59:15"}
+{"level":"info","message":"📞 Cleaned up 0 stuck calls.","timestamp":"2026-04-18 01:59:17"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-04-18 01:59:17"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-04-18 02:04:32"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-04-18 02:04:32"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-04-18 02:04:33"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-04-18 02:04:33"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-04-18 02:04:42"}
+{"level":"info","message":"📞 Cleaned up 0 stuck calls.","timestamp":"2026-04-18 02:04:45"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-04-18 02:04:45"}
+{"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-04-18 02:48:52"}

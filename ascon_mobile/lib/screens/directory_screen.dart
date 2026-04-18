@@ -60,10 +60,14 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
 
   // ✅ FOOLPROOF AVATAR HELPER
   ImageProvider? _getSafeImageProvider(String? imgUrl) {
-    if (imgUrl == null || imgUrl.isEmpty) return null;
+    if (imgUrl == null || imgUrl.trim().isEmpty) return null;
+    
+    final cleanUrl = imgUrl.toLowerCase().trim();
+    
     // Catch any variation of the Google profile placeholder
-    if (imgUrl.contains('googleusercontent.com') && imgUrl.contains('profile/picture/')) return null;
-    if (imgUrl.startsWith('http')) return CachedNetworkImageProvider(imgUrl);
+    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) return null;
+    
+    if (cleanUrl.startsWith('http')) return CachedNetworkImageProvider(imgUrl);
     return null;
   }
 

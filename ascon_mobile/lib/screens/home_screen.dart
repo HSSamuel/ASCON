@@ -19,6 +19,7 @@ import 'alumni_detail_screen.dart';
 import 'about_screen.dart';
 import 'admin/add_content_screen.dart'; 
 import 'welcome_dialog.dart'; 
+import 'qr_scanner_screen.dart';
 
 import '../widgets/celebration_card.dart'; 
 import '../widgets/chapter_card.dart';     
@@ -179,23 +180,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       },
       child: Scaffold(
         extendBody: true, 
-        appBar: showAppBar 
+       appBar: showAppBar 
           ? AppBar(
               title: Text("Dashboard", style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 18, color: isDark ? Colors.white : primaryColor)),
               backgroundColor: Theme.of(context).cardColor,
               elevation: 0,
               automaticallyImplyLeading: false,
               actions: [
+                // 1. Events Button
                 IconButton(
                   icon: Icon(Icons.event_note_rounded, color: isDark ? Colors.white : primaryColor, size: 22),
                   onPressed: () {
                     context.push('/events');
                   },
                 ),
+                
+                // ✅ 2. NEW QR Scanner Button added here
+                IconButton(
+                   icon: Icon(Icons.qr_code_scanner, color: isDark ? Colors.white : primaryColor, size: 22),
+                   tooltip: 'Scan Alumni ID',
+                   onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const QRScannerScreen()));
+                   }
+                ),
+
+                // 3. About / Info Button
                 IconButton(
                   icon: Icon(Icons.info_outline, color: isDark ? Colors.white : primaryColor, size: 22),
                   onPressed: () => context.push('/about'),
                 ),
+
+                // 4. Theme Switcher (Padding)
                 Padding(
                   padding: const EdgeInsets.only(right: 12.0),
                   child: IconButton(
@@ -300,11 +315,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   }
 
   Widget _buildNavProfileIcon(String? imageUrl, bool isSelected, Color color, IconData icon, IconData activeIcon) {
-    if (imageUrl == null || imageUrl.isEmpty || imageUrl.contains('profile/picture/1')) {
+    // 1. Explicit null check promotes imageUrl to a non-nullable String
+    if (imageUrl == null || imageUrl.trim().isEmpty) {
+      return Icon(isSelected ? activeIcon : icon, color: isSelected ? color : Colors.grey[400], size: 20);
+    }
+
+    // 2. Safe to use case-insensitive checks
+    final cleanUrl = imageUrl.toLowerCase().trim();
+    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) {
       return Icon(isSelected ? activeIcon : icon, color: isSelected ? color : Colors.grey[400], size: 20);
     }
 
     Widget imageWidget;
+    // 3. imageUrl is now safely recognized as a non-null String by the compiler
     if (kIsWeb && imageUrl.startsWith('http')) {
       imageWidget = Image.network(
         imageUrl, 
@@ -536,15 +559,25 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
   }
 
   Widget _buildSafeImage(String? imageUrl, {IconData fallbackIcon = Icons.image, BoxFit fit = BoxFit.cover}) {
-    if (imageUrl == null || imageUrl.isEmpty) return _buildPlaceholder(fallbackIcon);
-    if (imageUrl.contains('profile/picture/1')) return _buildPlaceholder(fallbackIcon); 
+    // 1. Explicit null check
+    if (imageUrl == null || imageUrl.trim().isEmpty) {
+      return _buildPlaceholder(fallbackIcon);
+    }
+
+    // 2. Safe check
+    final cleanUrl = imageUrl.toLowerCase().trim();
+    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) {
+      return _buildPlaceholder(fallbackIcon);
+    } 
     
+    // 3. imageUrl is now promoted to non-null String
     if (kIsWeb && imageUrl.startsWith('http')) {
        return Image.network(
          imageUrl, fit: fit, errorBuilder: (context, error, stackTrace) => _buildPlaceholder(Icons.broken_image_rounded),
          loadingBuilder: (context, child, loadingProgress) => loadingProgress == null ? child : Container(color: Colors.grey[200]),
        );
     }
+    
     if (imageUrl.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: imageUrl, fit: fit, memCacheWidth: 300, 
@@ -552,6 +585,7 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
         errorWidget: (context, url, error) => _buildPlaceholder(Icons.broken_image),
       );
     }
+    
     try {
       if (imageUrl.length > 100 && !imageUrl.startsWith('http')) {
         String cleanBase64 = imageUrl;
@@ -559,6 +593,7 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
         return Image.memory(base64Decode(cleanBase64), fit: fit, gaplessPlayback: true, errorBuilder: (c, e, s) => _buildPlaceholder(Icons.broken_image));
       }
     } catch (e) {}
+    
     return _buildPlaceholder(fallbackIcon);
   }
 

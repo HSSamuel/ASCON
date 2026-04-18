@@ -349,8 +349,9 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
 
   void _showCreatePostSheet() {
     final TextEditingController textController = TextEditingController();
-    // ✅ CHANGED: Support multiple images
     List<XFile> selectedImages = []; 
+    // ✅ ADDED: Local state to handle UI and debounce inside the BottomSheet Builder
+    bool isPostingLocal = false; 
     
     showModalBottomSheet(
       context: context,
@@ -360,9 +361,7 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            final isPosting = ref.watch(updatesProvider).isPosting;
 
-            // ✅ Pick multiple images
             Future<void> pickImages() async {
               final picker = ImagePicker();
               final pickedFiles = await picker.pickMultiImage(imageQuality: 70);
@@ -379,13 +378,20 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
 
             Future<void> submitPost() async {
               if (textController.text.trim().isEmpty && selectedImages.isEmpty) return;
+              if (isPostingLocal) return; // 🛑 Block accidental double taps
+
+              setSheetState(() => isPostingLocal = true); // Instantly update UI
+
               final error = await ref.read(updatesProvider.notifier).createPost(textController.text.trim(), selectedImages);
               
               if (error == null) {
                 Navigator.pop(sheetContext);
                 if (mounted) ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text("Update posted! 🚀"), backgroundColor: Colors.green));
               } else {
-                if (mounted) ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text(error), backgroundColor: Colors.red));
+                if (mounted) {
+                  setSheetState(() => isPostingLocal = false); // Re-enable button
+                  ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text(error), backgroundColor: Colors.red));
+                }
               }
             }
 
@@ -399,7 +405,8 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text("New Update", style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold)),
-                      isPosting 
+                      // ✅ UPDATED: Used local boolean for instant visual response
+                      isPostingLocal 
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                         : TextButton(
                             onPressed: submitPost,
@@ -417,7 +424,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
                     decoration: const InputDecoration(hintText: "Share news, achievements...", border: InputBorder.none),
                   ),
                   
-                  // ✅ MULTIPLE IMAGE PREVIEW
                   if (selectedImages.isNotEmpty)
                     SizedBox(
                       height: 120,
@@ -656,7 +662,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
     final bool canDelete = isAdmin || isMyPost;
     final bool canEdit = isMyPost;
 
-    // ✅ MULTIPLE IMAGE PARSING
     List<String> images = [];
     if (post['mediaUrls'] != null && post['mediaUrls'] is List && post['mediaUrls'].isNotEmpty) {
       images = List<String>.from(post['mediaUrls']);
@@ -755,7 +760,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
               ),
             ),
 
-          // ✅ RENDER MULTIPLE IMAGES
           if (images.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), 
@@ -831,7 +835,6 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
   }
 }
 
-// ✅ NEW WIDGET: Swipable Image Gallery for Posts
 class PostImageGallery extends StatefulWidget {
   final List<String> images;
   final bool isDark;

@@ -2,7 +2,7 @@ name: ascon_mobile
 description: "ASCON Alumni Connect Mobile App."
 publish_to: "none"
 
-version: 2.0.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ^3.0.0
@@ -12,6 +12,7 @@ dependencies:
     sdk: flutter
   # ✅ State Management (v2.x is stable)
   flutter_riverpod: ^2.6.1
+  mobile_scanner: ^4.0.1
 
   # ✅ UI & Utility
   cupertino_icons: ^1.0.8

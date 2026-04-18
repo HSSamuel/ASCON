@@ -276,6 +276,9 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
   }
 
   Future<String?> createPost(String text, List<XFile>? images) async {
+    // ✅ ADDED: Prevent duplicate submission at the logic level
+    if (state.isPosting) return null; 
+
     state = state.copyWith(isPosting: true);
     try {
       final token = await _authService.getToken();
