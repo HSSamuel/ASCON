@@ -63,8 +63,8 @@ const initializeSocket = async (server) => {
       methods: ["GET", "POST"],
       credentials: true,
     },
-    pingTimeout: 10000,
-    pingInterval: 5000,
+    pingTimeout: 60000, // 60 seconds: Wait much longer before assuming the mobile client is dead
+    pingInterval: 25000, // 25 seconds: Send heartbeats less frequently to save battery
   };
 
   io = new Server(server, ioConfig);

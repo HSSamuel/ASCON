@@ -19,7 +19,6 @@ import 'alumni_detail_screen.dart';
 import 'about_screen.dart';
 import 'admin/add_content_screen.dart'; 
 import 'welcome_dialog.dart'; 
-import 'qr_scanner_screen.dart';
 
 import '../widgets/celebration_card.dart'; 
 import '../widgets/chapter_card.dart';     
@@ -195,22 +194,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   },
                 ),
                 
-                // ✅ 2. NEW QR Scanner Button added here
-                IconButton(
-                   icon: Icon(Icons.qr_code_scanner, color: isDark ? Colors.white : primaryColor, size: 22),
-                   tooltip: 'Scan Alumni ID',
-                   onPressed: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const QRScannerScreen()));
-                   }
-                ),
-
-                // 3. About / Info Button
+                // 2. About / Info Button
                 IconButton(
                   icon: Icon(Icons.info_outline, color: isDark ? Colors.white : primaryColor, size: 22),
                   onPressed: () => context.push('/about'),
                 ),
 
-                // 4. Theme Switcher (Padding)
+                // 3. Theme Switcher (Padding)
                 Padding(
                   padding: const EdgeInsets.only(right: 12.0),
                   child: IconButton(

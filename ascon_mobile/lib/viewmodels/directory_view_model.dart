@@ -280,7 +280,8 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   Map<String, List<dynamic>> _groupUsersByYear(List<dynamic> users) {
     Map<String, List<dynamic>> groups = {};
     for (var user in users) {
-      String year = user['yearOfAttendance']?.toString() ?? 'Others';
+      String year = user['yearOfAttendance']?.toString() ?? 'General';
+      if (year.trim().isEmpty || year == 'null') year = 'General'; // Catch empty/null string cases
       if (!groups.containsKey(year)) groups[year] = [];
       groups[year]!.add(user);
     }

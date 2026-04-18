@@ -191,7 +191,7 @@ class _DirectoryTabState extends State<DirectoryTab> {
             decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), shape: BoxShape.circle),
             child: Icon(Icons.school, color: primaryColor, size: 20),
           ),
-          title: Text(year == 'Others' ? "Other Alumni" : "Class of $year", style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : primaryColor)),
+          title: Text((year == 'Others' || year == 'General') ? "General Alumni" : "Class of $year", style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : primaryColor)),
           subtitle: Text("${classMembers.length} ${classMembers.length == 1 ? 'Member' : 'Members'}", style: GoogleFonts.lato(color: Theme.of(context).textTheme.bodyMedium?.color, fontSize: 13)),
           childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
           children: classMembers.map((user) => AlumniCard(user: user)).toList(),
@@ -264,7 +264,9 @@ class _DirectoryTabState extends State<DirectoryTab> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          "Class of ${user['yearOfAttendance']}",
+                          (user['yearOfAttendance'] != null && user['yearOfAttendance'].toString().isNotEmpty && user['yearOfAttendance'].toString() != 'Others' && user['yearOfAttendance'].toString() != 'null')
+                              ? "Class of ${user['yearOfAttendance']}"
+                              : "Alumni Member",
                           style: GoogleFonts.lato(fontSize: 10, color: primaryColor, fontWeight: FontWeight.w600),
                           overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
                         )

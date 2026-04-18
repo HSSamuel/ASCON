@@ -582,9 +582,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   ImageProvider? _getImageProvider(String? source) {
-    if (source == null || source.isEmpty || source.contains('profile/picture/')) return null;
+    if (source == null || source.trim().isEmpty) return null;
     
-    if (source.startsWith('http')) return CachedNetworkImageProvider(source);
+    final cleanSource = source.toLowerCase().trim();
+    
+    // 🛡️ Explicitly block dummy URLs before they trigger network decoding errors
+    if (cleanSource.contains('profile/picture') || cleanSource.contains('default-user')) return null;
+    
+    if (cleanSource.startsWith('http')) return CachedNetworkImageProvider(source);
     try {
       return MemoryImage(base64Decode(source));
     } catch (_) {

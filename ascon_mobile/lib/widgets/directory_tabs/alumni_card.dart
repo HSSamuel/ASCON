@@ -22,17 +22,22 @@ class AlumniCard extends StatelessWidget {
     final bool isMentor = user['isOpenToMentorship'] == true;
     final bool isOnline = user['isOnline'] == true;
 
-    String subtitle = "Alumnus";
-    if (user['jobTitle'] != null && user['jobTitle'].toString().isNotEmpty) {
+    // ✅ UPDATED: Professional Fallback
+    String subtitle = "Alumni Member";
+    if (user['jobTitle'] != null && user['jobTitle'].toString().trim().isNotEmpty) {
       subtitle = "${user['jobTitle']} ${user['organization'] != null ? '• ${user['organization']}' : ''}";
-    } else if (user['programmeTitle'] != null && user['programmeTitle'].toString().isNotEmpty) {
+    } else if (user['programmeTitle'] != null && user['programmeTitle'].toString().trim().isNotEmpty) {
       subtitle = user['programmeTitle'];
     }
 
+    // ✅ UPDATED: Safe Year Formatting (Prevents "'hers" or "'neral" from showing)
     String yearDisplay = "";
     if (user['yearOfAttendance'] != null) {
-      String yStr = user['yearOfAttendance'].toString();
-      yearDisplay = yStr.length >= 2 ? "'${yStr.substring(2)}" : yStr;
+      String yStr = user['yearOfAttendance'].toString().trim();
+      if (yStr.isNotEmpty && yStr != 'Others' && yStr != 'General' && yStr != 'null') {
+        // If it's a 4-digit year (e.g., "2024"), abbreviate to "'24". Otherwise, print as is.
+        yearDisplay = (yStr.length == 4 && int.tryParse(yStr) != null) ? "'${yStr.substring(2)}" : yStr;
+      }
     }
 
     return Container(

@@ -273,7 +273,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     final String phone = _currentAlumniData['phoneNumber'] ?? '';
     final String linkedin = _currentAlumniData['linkedin'] ?? '';
     final String email = _currentAlumniData['email'] ?? '';
-    final String year = _currentAlumniData['yearOfAttendance']?.toString() ?? 'Unknown';
+    final String year = _currentAlumniData['yearOfAttendance']?.toString() ?? '';
     final String imageString = _currentAlumniData['profilePicture'] ?? '';
     
     final String zoomHeroTag = "zoom_profile_${_currentAlumniData['_id'] ?? DateTime.now().millisecondsSinceEpoch}";
@@ -517,7 +517,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                             ),
                           ),
 
-                        Container(
+                       Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
                             color: const Color(0xFFD4AF37).withOpacity(0.1),
@@ -525,7 +525,9 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                             border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
                           ),
                           child: Text(
-                            "Class of $year",
+                            (year.isNotEmpty && year != 'Others' && year != 'null') 
+                                ? "Class of $year" 
+                                : "Alumni Member",
                             style: GoogleFonts.lato(color: const Color(0xFFB8860B), fontWeight: FontWeight.bold, fontSize: 12),
                           ),
                         ),

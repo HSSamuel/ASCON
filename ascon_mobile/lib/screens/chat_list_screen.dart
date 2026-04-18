@@ -69,9 +69,20 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     return {'fullName': 'Unknown User', 'profilePicture': ''};
   }
 
-  // ✅ NEW: Robust Avatar Builder to catch Google's invalid "picture/0" URLs
+ // ✅ NEW: Robust Avatar Builder to catch Google's invalid "picture/0" URLs
   Widget _buildRobustAvatar(String? imageUrl, double radius) {
-    if (imageUrl == null || imageUrl.isEmpty || imageUrl.contains('profile/picture/')) {
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Colors.grey[200],
+        child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
+      );
+    }
+    
+    final cleanUrl = imageUrl.toLowerCase().trim();
+
+    // 🛡️ Explicitly block dummy URLs before they trigger network decoding errors
+    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) {
       return CircleAvatar(
         radius: radius,
         backgroundColor: Colors.grey[200],

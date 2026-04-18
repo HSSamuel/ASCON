@@ -76,9 +76,9 @@ class SocketService with WidgetsBindingObserver {
       debugPrint("🔌 Socket Connecting to: $socketUrl as User: $_currentUserId");
 
       socket = IO.io(socketUrl, <String, dynamic>{
-        'transports': ['websocket'],
+        'transports': ['websocket', 'polling'], // Allow polling fallback for strict networks
         'autoConnect': false,
-        'timeout': AppConfig.socketTimeoutMs,
+        'timeout': 20000, // Explicitly give the initial connection 20 seconds
         'reconnection': true,
         'reconnectionDelay': AppConfig.socketReconnectionDelayMs,
         'auth': {'token': token},
@@ -152,7 +152,10 @@ class SocketService with WidgetsBindingObserver {
     });
 
     socket!.onDisconnect((_) => debugPrint('❌ Socket Disconnected'));
-    socket!.onError((data) => debugPrint('⚠️ Socket Error: $data'));
+    socket!.onError((data) {
+      if (data.toString().contains('timeout')) return; // Ignore expected mobile background timeouts
+      debugPrint('⚠️ Socket Error: $data');
+    });
   }
 
   void markMessagesAsRead(String chatId, List<String> messageIds, String userId) {
