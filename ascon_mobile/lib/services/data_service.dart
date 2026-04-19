@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http_parser/http_parser.dart'; 
 import '../config.dart';
 import '../main.dart'; 
-import '../screens/login_screen.dart'; 
 import 'auth_service.dart'; 
 
 class DataService {
@@ -50,38 +49,30 @@ class DataService {
     }
   }
 
+  // ✅ FIX: Safely route out of the app using AuthService and go_router
   Future<void> _forceLogout({String message = "Session expired."}) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); 
-    
-    final context = navigatorKey.currentState?.context;
-    
-    if (context != null && context.mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false, 
-        builder: (ctx) => AlertDialog(
-          title: const Text("Access Denied"),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx); 
-                navigatorKey.currentState?.pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (route) => false,
-                );
-              },
-              child: const Text("OK", style: TextStyle(fontWeight: FontWeight.bold)),
-            )
-          ],
-        ),
-      );
-    } else {
-      navigatorKey.currentState?.pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear(); 
+      
+      // Delegate to AuthService to handle all cache clearing and go_router redirection
+      await AuthService().logout(clearBiometrics: false);
+      
+      // Show the snackbar using the global navigatorKey context
+      final context = navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        });
+      }
+    } catch (e) {
+      debugPrint("⚠️ Force logout error: $e");
     }
   }
 
@@ -363,8 +354,6 @@ class DataService {
     }
   }
 
-  // ✅ Renamed from fetchGroupInfo to match ChatScreen usage (or aliased)
-  // This ensures the header data loading works
   Future<Map<String, dynamic>?> fetchGroupDetails(String groupId) async {
     return await fetchGroupInfo(groupId);
   }
@@ -826,9 +815,6 @@ class DataService {
     try {
       final headers = await _getHeaders();
       
-      // We will try to fetch the user by their ASCON ID
-      // If you don't have a specific /verify/ endpoint in your backend yet, 
-      // we can just use the directory endpoint with a search query.
       final url = Uri.parse('${AppConfig.baseUrl}/api/directory?search=$alumniId');
       final response = await http.get(url, headers: headers);
       
@@ -836,7 +822,6 @@ class DataService {
         final decoded = jsonDecode(response.body);
         final data = decoded['data'];
         
-        // If the search returned a match, grab the first user
         if (data != null && data is List && data.isNotEmpty) {
            return {'success': true, 'data': data[0]};
         }

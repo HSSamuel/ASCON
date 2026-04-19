@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../services/data_service.dart';
 import '../services/auth_service.dart';
@@ -17,7 +16,7 @@ class ProfileState {
 
   const ProfileState({
     this.userProfile,
-    this.isLoading = true,
+    this.isLoading = false, // ✅ FIX: Start false so cache paints instantly without a spinner frame
     this.isOnline = false,
     this.lastSeen,
     this.completionPercent = 0.0,
@@ -43,27 +42,20 @@ class ProfileState {
 class ProfileNotifier extends StateNotifier<ProfileState> {
   final DataService _dataService = DataService();
   final AuthService _authService = AuthService();
-
-  // ✅ Reference the fast local database
   final Box _cacheBox = Hive.box('ascon_cache');
 
   ProfileNotifier() : super(const ProfileState()) {
     loadProfile();
   }
 
-  // =========================================================================
-  // ✅ OFFLINE-FIRST PROFILE LOADING (OPTIMIZED)
-  // =========================================================================
   Future<void> loadProfile({bool isRefresh = false, bool showSkeleton = false}) async {
     const String cacheKey = 'user_profile_cache';
 
-    // Show skeleton immediately if requested (e.g., returning from Edit Screen)
     if (showSkeleton && mounted) {
       state = state.copyWith(isLoading: true);
     }
 
     // 1. MILLISECOND 0: Check Local Cache First 
-    // (Only if it's a natural load, NOT an explicit refresh)
     if (!isRefresh && !showSkeleton) {
       final String? cachedProfileStr = _cacheBox.get(cacheKey);
       if (cachedProfileStr != null) {
@@ -74,10 +66,9 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
               userProfile: cachedProfile,
               isLoading: false,
               isOnline: cachedProfile['isOnline'] == true,
-              lastSeen: cachedProfile['lastSeen'],
+              lastSeen: cachedProfile['lastSeen']?.toString(),
               completionPercent: _calculateCompletion(cachedProfile),
             );
-            debugPrint("⚡ Loaded Profile instantly from cache.");
           }
         } catch (e) {
           debugPrint("Profile Cache read error: $e");
@@ -88,32 +79,33 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     }
 
     // 2. BACKGROUND NETWORK FETCH 
-    // (Removed Connectivity() blocker to speed up execution by ~2 seconds)
     try {
       final profile = await _dataService.fetchProfile();
       
-      final isOnline = profile?['isOnline'] == true;
-      final lastSeen = profile?['lastSeen'];
-      final percent = _calculateCompletion(profile ?? {});
-
-      // 3. OVERWRITE CACHE WITH FRESH DATA
       if (profile != null) {
-        await _cacheBox.put(cacheKey, jsonEncode(profile));
-      }
+        final isOnline = profile['isOnline'] == true;
+        final lastSeen = profile['lastSeen']?.toString();
+        final percent = _calculateCompletion(profile);
 
-      // 4. SILENTLY UPDATE UI
-      if (mounted) {
-        state = state.copyWith(
-          userProfile: profile,
-          isLoading: false,
-          isOnline: isOnline,
-          lastSeen: lastSeen,
-          completionPercent: percent
-        );
-      }
-      
-      if (profile?['_id'] != null) {
-        _listenToSocket(profile!['_id']);
+        // 3. OVERWRITE CACHE WITH FRESH DATA
+        await _cacheBox.put(cacheKey, jsonEncode(profile));
+
+        // 4. SILENTLY UPDATE UI
+        if (mounted) {
+          state = state.copyWith(
+            userProfile: profile,
+            isLoading: false,
+            isOnline: isOnline,
+            lastSeen: lastSeen,
+            completionPercent: percent
+          );
+        }
+        
+        if (profile['_id'] != null) {
+          _listenToSocket(profile['_id']);
+        }
+      } else {
+        if (mounted) state = state.copyWith(isLoading: false);
       }
     } catch (e) {
       debugPrint("Network fetch failed, relying on cache: $e");
@@ -127,7 +119,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       if (data['userId'] == userId && mounted) {
         state = state.copyWith(
           isOnline: data['isOnline'],
-          lastSeen: data['isOnline'] ? null : data['lastSeen']
+          lastSeen: data['isOnline'] ? null : data['lastSeen']?.toString()
         );
       }
     });

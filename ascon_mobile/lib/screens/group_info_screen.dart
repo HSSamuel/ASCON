@@ -9,7 +9,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http; 
 import 'package:url_launcher/url_launcher.dart'; 
 
-// ✅ IMPORT RIVERPOD & PROFILE VIEW MODEL
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../viewmodels/profile_view_model.dart';
 
@@ -19,11 +18,10 @@ import '../services/auth_service.dart';
 import '../services/api_client.dart'; 
 import '../services/socket_service.dart'; 
 import 'alumni_detail_screen.dart';
-import 'call_screen.dart'; // ✅ RESTORED: Import Call Screen
+import 'call_screen.dart'; 
 import 'polls_screen.dart'; 
 import '../widgets/full_screen_image.dart'; 
 
-// ✅ CHANGED TO ConsumerStatefulWidget
 class GroupInfoScreen extends ConsumerStatefulWidget {
   final String groupId;
   final String groupName;
@@ -54,8 +52,15 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   @override
   void initState() {
     super.initState();
-    _loadGroupInfo();
     _setupSocketListener();
+    
+    // ✅ MASSIVE PERFORMANCE FIX: Defer data loading until AFTER the screen 
+    // finishes its slide-in animation. This prevents the UI from freezing!
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 250), () {
+        if (mounted) _loadGroupInfo();
+      });
+    });
   }
 
   @override
@@ -93,7 +98,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     });
   }
 
- Future<void> _loadGroupInfo() async {
+  Future<void> _loadGroupInfo() async {
     _myUserId = await AuthService().currentUserId;
     final result = await _dataService.fetchGroupInfo(widget.groupId);
     
@@ -118,6 +123,16 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  // ✅ FOOLPROOF AVATAR HELPER
+  // Prevents invalid images or raw Base64 strings from crashing the main thread
+  ImageProvider? _getSafeImageProvider(String? imgUrl) {
+    if (imgUrl == null || imgUrl.trim().isEmpty) return null;
+    final cleanUrl = imgUrl.toLowerCase().trim();
+    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) return null;
+    if (cleanUrl.startsWith('http')) return CachedNetworkImageProvider(imgUrl);
+    return null;
   }
 
   void _filterMembers(String query) {
@@ -182,9 +197,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
-  // ==========================================
-  // 📞 GROUP CALL LOGIC
-  // ==========================================
   void _initiateGroupCall() {
     String uniqueChannel = "call_${DateTime.now().millisecondsSinceEpoch}";
     
@@ -192,7 +204,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final currentUserName = userProfile?['fullName'] ?? "Alumni User";
     final currentUserAvatar = userProfile?['profilePicture'];
 
-    // Extract member IDs, excluding self
     List<String> targets = _allMembers
         .map((m) => m['_id'].toString())
         .where((id) => id != _myUserId)
@@ -209,11 +220,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       MaterialPageRoute(
         builder: (context) => CallScreen(
           isGroupCall: true, 
-          targetIds: targets, // ✅ Pass group members
-          remoteName: widget.groupName, // Display Group Name
+          targetIds: targets, 
+          remoteName: widget.groupName, 
           remoteId: null, 
           channelName: uniqueChannel,
-          remoteAvatar: _groupData?['icon'], // Pass Group Icon
+          remoteAvatar: _groupData?['icon'], 
           isIncoming: false, 
           currentUserName: currentUserName,      
           currentUserAvatar: currentUserAvatar,  
@@ -222,9 +233,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
-  // ==========================================
-  // 📊 POLLS LOGIC
-  // ==========================================
   void _openPolls() {
     Navigator.push(
       context, 
@@ -234,9 +242,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
-  // ==========================================
-  // 📄 DOCS LOGIC (Web Compatible)
-  // ==========================================
   void _openDocsSheet() {
     final theme = Theme.of(context);
     showModalBottomSheet(
@@ -422,9 +427,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
-  // ==========================================
-  // 📢 NOTICE BOARD LOGIC
-  // ==========================================
   void _openNoticeBoard() {
     final theme = Theme.of(context);
     
@@ -650,7 +652,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // 1. IMAGE LAYER (Bottom)
                           if (iconUrl != null && iconUrl.isNotEmpty)
                             GestureDetector(
                               onTap: () {
@@ -672,7 +673,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                           else
                             Container(color: Colors.teal.shade100, child: const Icon(Icons.groups, size: 80, color: Colors.teal)),
                           
-                          // 2. GRADIENT LAYER (Middle)
                           IgnorePointer(
                             child: Container(
                               decoration: BoxDecoration(
@@ -684,7 +684,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                             ),
                           ),
                           
-                          // 3. TEXT LAYER (Top)
                           Positioned(
                             bottom: 20, left: 20, right: 80,
                             child: Column(
@@ -710,7 +709,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                     ),
                   ),
 
-                  // ✅ UPDATED ACTION BUTTONS: 4 Buttons neatly fitted
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
@@ -778,12 +776,16 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                         final m = _filteredMembers[index];
                         final bool isAdmin = m['isAdmin'] ?? false;
                         final bool isMe = m['_id'] == _myUserId;
+                        
+                        final imgProvider = _getSafeImageProvider(m['profilePicture']);
 
                         return ListTile(
                           onTap: () => _viewProfile(m['_id']),
+                          // ✅ FIXED: Safely render member avatars without freezing
                           leading: CircleAvatar(
-                            backgroundImage: (m['profilePicture'] != null && m['profilePicture'] != "") ? CachedNetworkImageProvider(m['profilePicture']) : null,
-                            child: (m['profilePicture'] == null || m['profilePicture'] == "") ? const Icon(Icons.person) : null,
+                            backgroundColor: Colors.grey[200],
+                            backgroundImage: imgProvider,
+                            child: imgProvider == null ? const Icon(Icons.person, color: Colors.grey) : null,
                           ),
                           title: Text(isMe ? "You" : m['fullName'], style: const TextStyle(fontWeight: FontWeight.w600)),
                           subtitle: Text(m['jobTitle'] ?? "Member"),
@@ -829,7 +831,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
-  // ✅ UPDATED Action Button to comfortably fit 4 items
   Widget _buildActionBtn(IconData icon, String label, VoidCallback onTap, Color color) {
     return Expanded(
       child: Padding(

@@ -88,13 +88,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     try { return MemoryImage(base64Decode(imagePath)); } catch (e) { return null; }
   }
 
-  String _formatLastSeen(String? dateString) {
-    if (dateString == null) return "Offline";
-    final formatted = PresenceFormatter.format(dateString);
-    if (formatted == "Just now" || formatted == "Active just now") return "Active just now";
-    return "Last seen $formatted";
-  }
-
   String _formatPhoneNumber(String? phone) {
     if (phone == null || phone.isEmpty) return 'Add Phone Number';
     return phone; 
@@ -126,7 +119,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final String phone = _formatPhoneNumber(userProfile?['phoneNumber']);
     final String bio = userProfile?['bio'] ?? '';
     
-    final String statusText = profileState.isOnline ? "Online" : _formatLastSeen(profileState.lastSeen);
+    // ✅ FIX: Using the centralized unified PresenceFormatter
+    final String statusText = PresenceFormatter.getStatusText(
+      isOnline: profileState.isOnline, 
+      lastSeen: profileState.lastSeen
+    );
+    final Color statusColor = PresenceFormatter.getStatusColor(profileState.isOnline);
     
     final String? profilePicString = userProfile?['profilePicture'];
 
@@ -242,12 +240,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       children: [
                         Container(
                           width: 8, height: 8,
-                          decoration: BoxDecoration(color: profileState.isOnline ? Colors.green : Colors.grey[400], shape: BoxShape.circle),
+                          decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
                         ),
                         const SizedBox(width: 6),
                         Text(
                           statusText, 
-                          style: TextStyle(color: profileState.isOnline ? Colors.green[700] : Colors.grey[600], fontSize: 12, fontWeight: FontWeight.w600),
+                          style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),

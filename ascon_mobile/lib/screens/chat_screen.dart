@@ -147,7 +147,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (!mounted) return;
       if (data['userId'] == widget.receiverId) {
         setState(() {
-          // ✅ FIX: Ensure boolean safety and accurately extract the string value for the timestamp
           _realtimeIsOnline = data['isOnline'] == true;
           if (data['lastSeen'] != null) {
             _realtimeLastSeen = data['lastSeen'].toString(); 
@@ -564,23 +563,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  // ✅ FIX: Cleanly formats the presence status avoiding "Last seen Offline"
-  String _getStatusText(bool isTyping, bool isOnline, String? lastSeen) {
-    if (widget.isGroup) {
-      return _groupParticipants; 
-    }
-    if (isTyping) return "Typing...";
-    if (isOnline) return "Online"; 
-    if (lastSeen == null || lastSeen.isEmpty) return "Offline";
-
-    final formatted = PresenceFormatter.format(lastSeen);
-    
-    if (formatted == "Offline") return "Offline";
-    if (formatted.toLowerCase().contains("just now")) return "Active just now";
-    
-    return "Last seen $formatted";
-  }
-
   ImageProvider? _getImageProvider(String? source) {
     if (source == null || source.trim().isEmpty) return null;
     
@@ -701,13 +683,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(_displayReceiverName, overflow: TextOverflow.ellipsis, style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.bold)),
+                        // ✅ FIX: Using the centralized formatter for text and color
                         Text(
-                          _getStatusText(state.isPeerTyping, _realtimeIsOnline, _realtimeLastSeen), 
+                          PresenceFormatter.getStatusText(
+                            isOnline: _realtimeIsOnline,
+                            lastSeen: _realtimeLastSeen,
+                            isTyping: state.isPeerTyping,
+                            isGroup: widget.isGroup,
+                            groupParticipants: _groupParticipants,
+                          ), 
                           style: TextStyle(
                             fontSize: 11, 
-                            color: (widget.isGroup) 
-                                ? Colors.grey 
-                                : (_realtimeIsOnline ? Colors.green : Colors.grey),
+                            color: widget.isGroup ? Colors.grey : PresenceFormatter.getStatusColor(_realtimeIsOnline),
                             overflow: TextOverflow.ellipsis,
                           ),
                           maxLines: 1,

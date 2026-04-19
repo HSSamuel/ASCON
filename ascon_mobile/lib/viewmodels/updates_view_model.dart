@@ -1,11 +1,11 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../config.dart';
 import '../services/api_client.dart';
@@ -27,7 +27,7 @@ class UpdatesState {
     this.posts = const [],
     this.filteredPosts = const [],
     this.highlights = const [],
-    this.isLoading = false, 
+    this.isLoading = true, // Start true, but cache will instantly override it
     this.isPosting = false,
     this.isAdmin = false,
     this.currentUserId,
@@ -65,27 +65,26 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
   final AuthService _authService = AuthService();
   final ApiClient _api = ApiClient();
   
-  // ✅ Reference the fast local database
   final Box _cacheBox = Hive.box('ascon_cache');
 
   UpdatesNotifier() : super(const UpdatesState()) {
     init();
   }
 
-  Future<void> init() async {
-    await _checkPermissions();
-    await loadData();
+  // ✅ FIX 1: Fire-and-forget initialization. No more blocking the UI!
+  void init() {
+    _checkPermissions();
+    loadData();
   }
 
   Future<void> _checkPermissions() async {
     final adminStatus = await _authService.isAdmin;
     final userId = await _authService.currentUserId;
-    state = state.copyWith(isAdmin: adminStatus, currentUserId: userId);
+    if (mounted) {
+      state = state.copyWith(isAdmin: adminStatus, currentUserId: userId);
+    }
   }
 
-  // =========================================================================
-  // ✅ OFFLINE-FIRST UPDATES LOADING
-  // =========================================================================
   Future<void> loadData({bool silent = false}) async {
     const String updatesCacheKey = 'updates_feed_cache';
     const String highlightsCacheKey = 'updates_highlights_cache';
@@ -102,59 +101,49 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
           
           if (mounted) {
             state = state.copyWith(
-              isLoading: false, // Turn off spinner immediately if cache exists
+              isLoading: false, // Turn off spinner immediately!
               posts: feed,
               filteredPosts: state.showMediaOnly ? feed.where((p) => p['mediaType'] == 'image').toList() : feed,
               highlights: highlights,
+              errorMessage: null,
             );
           }
         } catch (e) {
           debugPrint("Updates Cache read error: $e");
         }
-      } else if (state.posts.isEmpty) {
-        state = state.copyWith(isLoading: true, errorMessage: null);
       }
     }
 
-    // 2. CHECK CONNECTIVITY (Fail Fast)
-    final connectivityResult = await (Connectivity().checkConnectivity());
-    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
-    
-    if (isOffline) {
-      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
-      return; 
-    }
-
-    // 3. BACKGROUND NETWORK FETCH (Concurrent & Timeout Enforced)
+    // 2. BACKGROUND NETWORK FETCH (Concurrent & Timeout Enforced)
     try {
-      // ✅ FIX: Run simultaneously and force a 10-second timeout so the spinner doesn't hang for minutes
       final results = await Future.wait([
-        _dataService.fetchUpdates().timeout(const Duration(seconds: 10)),
-        _authService.getProgrammes().timeout(const Duration(seconds: 10))
+        _dataService.fetchUpdates().timeout(const Duration(seconds: 15)),
+        _authService.getProgrammes().timeout(const Duration(seconds: 15))
       ]);
 
-      final feed = results[0];
-      final programmes = results[1];
+      final feed = results[0] is List ? List.from(results[0]) : <dynamic>[];
+      final programmes = results[1] is List ? List.from(results[1]) : <dynamic>[];
 
-      // 4. OVERWRITE CACHE WITH FRESH DATA
+      // 3. OVERWRITE CACHE WITH FRESH DATA
       await _cacheBox.put(updatesCacheKey, jsonEncode(feed));
       await _cacheBox.put(highlightsCacheKey, jsonEncode(programmes));
 
-      // 5. SILENTLY UPDATE UI
+      // 4. SILENTLY UPDATE UI
       if (mounted) {
         state = state.copyWith(
           isLoading: false,
           posts: feed,
           filteredPosts: state.showMediaOnly ? feed.where((p) => p['mediaType'] == 'image').toList() : feed,
           highlights: programmes,
+          errorMessage: null,
         );
       }
     } catch (e) {
-      // Catch timeouts and socket exceptions immediately
+      debugPrint("Updates fetch error: $e");
       if (mounted && state.posts.isEmpty) {
         state = state.copyWith(isLoading: false, errorMessage: "Failed to connect. Please check your network.");
       } else if (mounted) {
-        state = state.copyWith(isLoading: false); // Ensure spinner turns off!
+        state = state.copyWith(isLoading: false); 
       }
     }
   }
@@ -165,7 +154,7 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
     } else {
       final filtered = state.posts.where((post) {
         final text = (post['text'] ?? "").toString().toLowerCase();
-        final author = (post['author']['fullName'] ?? "").toString().toLowerCase();
+        final author = (post['author']?['fullName'] ?? "").toString().toLowerCase();
         return text.contains(query.toLowerCase()) || author.contains(query.toLowerCase());
       }).toList();
       state = state.copyWith(filteredPosts: filtered);
@@ -203,17 +192,10 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
   Future<List<dynamic>> fetchComments(String postId) async {
     try {
       final res = await _api.get('/api/updates/$postId');
-      
       if (res['success'] == true) {
         dynamic postData = res['data'];
-
-        if (postData is Map && postData.containsKey('data')) {
-          postData = postData['data'];
-        }
-
-        if (postData is Map && postData['comments'] != null) {
-          return List.from(postData['comments']);
-        }
+        if (postData is Map && postData.containsKey('data')) postData = postData['data'];
+        if (postData is Map && postData['comments'] != null) return List.from(postData['comments']);
       }
     } catch (e) {
       debugPrint("Fetch Comments Error: $e");
@@ -224,15 +206,9 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
   Future<List<dynamic>> fetchLikers(String postId) async {
     try {
       final res = await _api.get('/api/updates/$postId/likes');
-      
       if (res['success'] == true) {
-        if (res['data'] is List) {
-          return List.from(res['data']);
-        } 
-        
-        if (res['data'] is Map && res['data']['data'] is List) {
-          return List.from(res['data']['data']);
-        }
+        if (res['data'] is List) return List.from(res['data']);
+        if (res['data'] is Map && res['data']['data'] is List) return List.from(res['data']['data']);
       }
     } catch (e) {
       debugPrint("Fetch Likers Error: $e");
@@ -274,9 +250,7 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
 
     try {
       await _api.put('/api/updates/$postId/like', {});
-    } catch (e) {
-      // Revert if needed
-    }
+    } catch (e) {}
   }
 
   Future<String?> createPost(String text, List<XFile>? images) async {
@@ -300,14 +274,10 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
         }
       }
 
-      // ✅ FIX 1: Enforce a strict 30-second timeout to prevent indefinite hanging
       var response = await request.send().timeout(const Duration(seconds: 30));
-      
       state = state.copyWith(isPosting: false);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        // ✅ FIX 2: Removed 'await'. This tells the app to refresh the feed in the 
-        // background, allowing the UI to return 'null' and close the sheet instantly.
         loadData(silent: true);
         return null; 
       } else {
@@ -315,9 +285,7 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
       }
     } catch (e) {
       state = state.copyWith(isPosting: false);
-      if (e.toString().contains('Timeout')) {
-        return "Request timed out. Please check your network.";
-      }
+      if (e.toString().contains('Timeout')) return "Request timed out. Please check your network.";
       return "Connection error.";
     }
   }
@@ -327,7 +295,6 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
     try {
       await _api.delete('/api/updates/$postId');
       
-      // Remove from cache directly to make it snappy
       final updatedPosts = state.posts.where((p) => p['_id'] != postId).toList();
       await _cacheBox.put('updates_feed_cache', jsonEncode(updatedPosts));
 

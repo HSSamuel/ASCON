@@ -144,31 +144,58 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         );
       } 
       else {
+        // ✅ MASSIVE PERFORMANCE FIX: FLATTENING THE LIST
+        // Convert the 2D Grouped Map into a flat 1D list so ListView.builder 
+        // can lazily render ONLY the cards currently visible on screen.
+        List<Map<String, dynamic>> flattenedList = [];
+        
+        for (String year in sortedKeys) {
+          // Add the Header item
+          flattenedList.add({
+            'type': 'header', 
+            'year': year, 
+            'count': state.groupedAlumni[year]?.length ?? 0
+          });
+          
+          // If this year is expanded, add its users as individual items
+          if (_expandedSections.contains(year)) {
+            final users = state.groupedAlumni[year] ?? [];
+            for (var user in users) {
+              flattenedList.add({
+                'type': 'user', 
+                'data': user
+              });
+            }
+          }
+        }
+
         content = RefreshIndicator(
           onRefresh: () async => await notifier.loadDirectory(),
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 40),
-            itemCount: sortedKeys.length,
+            itemCount: flattenedList.length, // Use the flat list length
             itemBuilder: (context, index) {
-              final year = sortedKeys[index];
-              final users = state.groupedAlumni[year] ?? [];
-              final isExpanded = _expandedSections.contains(year);
-              
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildYearHeader(year, users.length, primaryColor, isDark, isExpanded),
-                  if (isExpanded)
-                    ...users.map((rawUser) {
-                      final userMap = rawUser is Map ? Map<String, dynamic>.from(rawUser) : <String, dynamic>{};
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: _buildAlumniCard(userMap, context, isDark, primaryColor),
-                      );
-                    }),
-                ],
-              );
+              final item = flattenedList[index];
+
+              // Render Header
+              if (item['type'] == 'header') {
+                return _buildYearHeader(
+                  item['year'], 
+                  item['count'], 
+                  primaryColor, 
+                  isDark, 
+                  _expandedSections.contains(item['year'])
+                );
+              } 
+              // Render individual User Card
+              else {
+                final userMap = item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{};
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: _buildAlumniCard(userMap, context, isDark, primaryColor),
+                );
+              }
             },
           ),
         );
@@ -296,9 +323,9 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     final String city = user['city'] ?? "";
     final String state = user['state'] ?? "";
     final bool isMentor = user['isOpenToMentorship'] == true;
-    final String userId = user['userId'] ?? user['_id'];
+    final String userId = user['userId'] ?? user['_id'] ?? '';
     
-    if (userId == _myUserId) return const SizedBox.shrink();
+    if (userId == _myUserId || userId.isEmpty) return const SizedBox.shrink();
 
     final imageProvider = _getSafeImageProvider(img);
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -80,17 +81,12 @@ class DashboardState {
 class DashboardNotifier extends StateNotifier<DashboardState> {
   final DataService _dataService = DataService();
   final AuthService _authService = AuthService();
-  
-  // ✅ Reference the fast local database
   final Box _cacheBox = Hive.box('ascon_cache');
 
   DashboardNotifier() : super(const DashboardState()) {
     loadData();
   }
 
-  // =========================================================================
-  // ✅ OFFLINE-FIRST DASHBOARD LOADING (RESILIENT)
-  // =========================================================================
   Future<void> loadData({bool isRefresh = false}) async {
     const String cacheKey = 'dashboard_data_cache';
     
@@ -98,12 +94,16 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     String localAlumniID = prefs.getString('alumni_id') ?? "PENDING";
     String cachedName = prefs.getString('user_name') ?? state.fullName;
 
-    // ✅ FIX 1: Pull the programme title instantly from the login session cache
-    final userMap = await _authService.getCachedUser();
-    String localProgramme = userMap?['programmeTitle'] ?? "Member";
+    // Safely fetch cache (prevents keystore crash)
+    Map<String, dynamic>? userMap;
+    try {
+      userMap = await _authService.getCachedUser();
+    } catch (_) {}
+
+    String localProgramme = userMap?['programmeTitle']?.toString() ?? "Member";
     if (localProgramme.trim().isEmpty) localProgramme = "Member";
 
-    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
+    // 1. Check Local Cache First
     if (!isRefresh) {
       final String? cachedDataStr = _cacheBox.get(cacheKey);
       if (cachedDataStr != null) {
@@ -121,19 +121,16 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
               topAlumni: cachedData['topAlumni'] ?? [],
               birthdays: cachedData['birthdays'] ?? [],
               profileImage: cachedData['profileImage'] ?? "",
-              // Fallback to the login session cache to prevent widget disappearing
               programme: cachedData['programme'] ?? localProgramme, 
               year: cachedData['year'] ?? "....",
               profileCompletionPercent: (cachedData['profileCompletionPercent'] ?? 0.0).toDouble(),
               isProfileComplete: cachedData['isProfileComplete'] ?? false,
             );
-            debugPrint("⚡ Loaded Dashboard instantly from cache.");
           }
         } catch (e) {
           debugPrint("Dashboard Cache read error: $e");
         }
       } else {
-        // Feed the local auth cache immediately on fresh login so the ChapterCard renders instantly
         state = state.copyWith(
           isLoading: true, 
           errorMessage: null, 
@@ -146,12 +143,11 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
       state = state.copyWith(fullName: cachedName, errorMessage: null);
     }
 
-    // 2. CHECK CONNECTIVITY (Fail Fast)
+    // 2. CHECK CONNECTIVITY 
     final connectivityResult = await (Connectivity().checkConnectivity());
     bool isOffline = connectivityResult.contains(ConnectivityResult.none);
     
     if (isOffline) {
-      debugPrint("🚫 Offline. Relying entirely on dashboard cache.");
       if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
       return; 
     }
@@ -160,91 +156,91 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     try {
       final String? myId = await _authService.currentUserId;
 
-      // ✅ FIX 2: Circuit Breakers applied to Future.wait
-      // If one API fails, it catches the error and returns a safe empty value,
-      // allowing the rest of the dashboard (like the profile) to load successfully.
       final results = await Future.wait([
-        _dataService.fetchEvents().catchError((e) { debugPrint("Events Error: $e"); return <dynamic>[]; }),
-        _authService.getProgrammes().catchError((e) { debugPrint("Programmes Error: $e"); return <dynamic>[]; }),
-        _dataService.fetchProfile().catchError((e) { debugPrint("Profile Error: $e"); return null; }),
-        _dataService.fetchDirectory(query: "").catchError((e) { debugPrint("Dir Error: $e"); return <dynamic>[]; }),
-        _dataService.fetchCelebrants().catchError((e) { debugPrint("Celebrants Error: $e"); return []; }),
-      ]).timeout(const Duration(seconds: 10));
+        _dataService.fetchEvents().catchError((e) => <dynamic>[]),
+        _authService.getProgrammes().catchError((e) => <dynamic>[]),
+        _dataService.fetchProfile().catchError((e) => null),
+        _dataService.fetchDirectory(query: "").catchError((e) => <dynamic>[]),
+        _dataService.fetchCelebrants().catchError((e) => []),
+      ]).timeout(const Duration(seconds: 25));
 
-      // 1. Process Events
-      var fetchedEvents = List.from(results[0] as List);
+      // 🚨 FIX: Safe Data Casting without `as`
+      var fetchedEvents = results[0] is List ? List.from(results[0]) : <dynamic>[];
       fetchedEvents.sort((a, b) {
-        final idA = a['_id'] ?? a['id'] ?? '';
-        final idB = b['_id'] ?? b['id'] ?? '';
-        return idB.toString().compareTo(idA.toString());
+        final idA = (a is Map) ? (a['_id'] ?? a['id'] ?? '').toString() : '';
+        final idB = (b is Map) ? (b['_id'] ?? b['id'] ?? '').toString() : '';
+        return idB.compareTo(idA);
       });
 
-      // 2. Process Programmes
-      var fetchedProgrammes = List.from(results[1] as List);
+      var fetchedProgrammes = results[1] is List ? List.from(results[1]) : <dynamic>[];
       fetchedProgrammes.sort((a, b) {
-        final idA = a['_id'] ?? a['id'] ?? '';
-        final idB = b['_id'] ?? b['id'] ?? '';
-        return idB.toString().compareTo(idA.toString());
+        final idA = (a is Map) ? (a['_id'] ?? a['id'] ?? '').toString() : '';
+        final idB = (b is Map) ? (b['_id'] ?? b['id'] ?? '').toString() : '';
+        return idB.compareTo(idA);
       });
 
-      // 3. Process Profile (Safely fallback to current state)
       String profileImage = state.profileImage;
       String programme = state.programme;
       String year = state.year;
-      
       String fullName = cachedName; 
-      String firstName = fullName.split(" ")[0]; 
-      
+      String firstName = fullName.split(" ").isNotEmpty ? fullName.split(" ")[0] : "Alumni"; 
       String alumniID = localAlumniID;
       double profileCompletionPercent = state.profileCompletionPercent;
       bool isProfileComplete = state.isProfileComplete;
 
-      final profile = results[2] as Map<String, dynamic>?;
+      // 🚨 FIX: Safe Map Casting
+      final profile = results[2] is Map ? results[2] as Map<dynamic, dynamic> : null;
+      
       if (profile != null) {
-        // Only overwrite if the backend explicitly provides valid data
-        profileImage = profile['profilePicture'] ?? state.profileImage;
-        
-        String incomingProgramme = profile['programmeTitle'] ?? "";
+        profileImage = profile['profilePicture']?.toString() ?? state.profileImage;
+        String incomingProgramme = profile['programmeTitle']?.toString() ?? "";
         programme = incomingProgramme.isNotEmpty ? incomingProgramme : state.programme;
-        
         year = profile['yearOfAttendance']?.toString() ?? state.year;
         
         if (profile['fullName'] != null && profile['fullName'].toString().trim().isNotEmpty) {
-          fullName = profile['fullName'];
+          fullName = profile['fullName'].toString();
           firstName = fullName.split(" ")[0];
           prefs.setString('user_name', fullName); 
         }
 
-        String? apiId = profile['alumniId'];
+        String? apiId = profile['alumniId']?.toString();
         if (apiId != null && apiId.isNotEmpty && apiId != "PENDING") {
           alumniID = apiId;
           await prefs.setString('alumni_id', apiId);
         }
 
-        if (profile.containsKey('profileCompletionPercent')) {
-          profileCompletionPercent = (profile['profileCompletionPercent'] as num).toDouble();
-          isProfileComplete = profile['isProfileComplete'] ?? false;
+        // 🚨 FIX: Safe Number/String Parsing
+        var rawPercent = profile['profileCompletionPercent'];
+        if (rawPercent != null) {
+          if (rawPercent is num) {
+            profileCompletionPercent = rawPercent.toDouble();
+          } else if (rawPercent is String) {
+            profileCompletionPercent = double.tryParse(rawPercent) ?? 0.0;
+          }
+        }
+        
+        var rawIsComplete = profile['isProfileComplete'];
+        if (rawIsComplete is bool) {
+          isProfileComplete = rawIsComplete;
+        } else if (rawIsComplete is String) {
+          isProfileComplete = rawIsComplete.toLowerCase() == 'true';
         }
       }
 
-      // 4. Process Directory (Top Alumni)
-      var fetchedAlumni = List.from(results[3] as List);
+      var fetchedAlumni = results[3] is List ? List.from(results[3]) : <dynamic>[];
       if (myId != null) {
         fetchedAlumni.removeWhere((user) {
+          if (user is! Map) return false;
           final id = user['_id'] ?? user['userId'];
           return id.toString() == myId;
         });
       }
       
-      // Prevent visual jitter. Only shuffle if the screen is currently empty, 
-      // or if the user explicitly pulled down to refresh.
       if (state.topAlumni.isEmpty || isRefresh) {
         fetchedAlumni.shuffle();
       }
-      
       final topAlumni = fetchedAlumni.take(20).toList(); 
 
-      // 5. Process Birthdays
       List<dynamic> fetchedBirthdays = [];
       final celebrationResult = results[4];
       if (celebrationResult is Map) {
@@ -253,7 +249,6 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         fetchedBirthdays = celebrationResult;
       }
 
-      // 4. OVERWRITE CACHE WITH FRESH DATA
       await _cacheBox.put(cacheKey, jsonEncode({
         'events': fetchedEvents,
         'programmes': fetchedProgrammes,
@@ -266,7 +261,6 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         'isProfileComplete': isProfileComplete,
       }));
 
-      // 5. SILENTLY UPDATE UI
       if (mounted) {
         state = state.copyWith(
           isLoading: false,
@@ -289,25 +283,17 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     } catch (e) {
       debugPrint("⚠️ Error loading dashboard data: $e");
       
-      String readableError = "Something went wrong. Please try again.";
+      // ✅ Friendly fallback message instead of "Something went wrong"
+      String readableError = "Unable to sync data. Please pull down to refresh.";
       
-      if (e is ApiException) {
-        if (e.statusCode == 0) {
-          readableError = "No internet connection. Please check your network.";
-        } else if (e.statusCode == 500) {
-          readableError = "Server error. We're working on it.";
-        } else {
-          readableError = e.message;
-        }
-      } else if (e.toString().contains("SocketException")) {
+      if (e is TimeoutException) {
+        readableError = "Network timeout. Your connection might be slow.";
+      } else if (e.toString().contains("SocketException") || e.toString().contains("ClientException")) {
         readableError = "Network error. Please check your connection.";
       }
 
       if (mounted && state.events.isEmpty) {
-        state = state.copyWith(
-          isLoading: false,
-          errorMessage: readableError,
-        );
+        state = state.copyWith(isLoading: false, errorMessage: readableError);
       } else if (mounted) {
         state = state.copyWith(isLoading: false);
       }

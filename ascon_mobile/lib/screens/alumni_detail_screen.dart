@@ -234,17 +234,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     );
   }
 
-  // ✅ FIX: Cleanly format the Last Seen string for the detail screen
-  String _formatLastSeen(String? dateString) {
-    if (dateString == null || dateString.isEmpty) return "Offline";
-    
-    final formatted = PresenceFormatter.format(dateString);
-    if (formatted == "Offline") return "Offline";
-    if (formatted.toLowerCase().contains("just now")) return "Active just now";
-    
-    return "Last seen $formatted";
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -268,7 +257,8 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     final bool showPhone = _currentAlumniData['isPhoneVisible'] == true;
     final bool isMentor = _currentAlumniData['isOpenToMentorship'] == true;
     
-    final String statusText = _isOnline ? "Active Now" : _formatLastSeen(_lastSeen);
+    // ✅ FIX: Unified formatting directly from PresenceFormatter
+    final String statusText = PresenceFormatter.getStatusText(isOnline: _isOnline, lastSeen: _lastSeen);
 
     final String phone = _currentAlumniData['phoneNumber'] ?? '';
     final String linkedin = _currentAlumniData['linkedin'] ?? '';
@@ -479,7 +469,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                               Container(
                                 width: 8, height: 8,
                                 decoration: BoxDecoration(
-                                  color: _isOnline ? Colors.green : Colors.grey[400],
+                                  color: PresenceFormatter.getStatusColor(_isOnline), // ✅ FIX
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -487,7 +477,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                               Text(
                                 statusText, 
                                 style: GoogleFonts.lato(
-                                  color: _isOnline ? Colors.green[700] : Colors.grey[600],
+                                  color: PresenceFormatter.getStatusColor(_isOnline), // ✅ FIX
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600
                                 ),
