@@ -18,7 +18,7 @@ const disconnectTimers = new Map();
 // ✅ COST SAFEGUARD TIMERS
 const activeCallTimers = new Map();
 const MAX_RING_TIME = 60 * 1000; // 60 Seconds
-const MAX_CALL_DURATION = 45 * 60 * 1000; // 45 Minutes
+const MAX_CALL_DURATION = 45 * 60 * 1000; // 45 Minutes (Kept as fallback/reference if needed elsewhere)
 
 const addSocketToUser = async (userId, socketId) => {
   if (redisClient && redisClient.isOpen) {
@@ -335,8 +335,6 @@ const initializeSocket = async (server) => {
     // ==========================================
     // --- CALL HEARTBEAT & STUCK CALL FIX ---
     // ==========================================
-
-    // Modify your existing answer_call to initiate the heartbeat expectation
     socket.on("answer_call", async ({ targetUserId, channelName }) => {
       try {
         await CallLog.findOneAndUpdate(
@@ -352,7 +350,7 @@ const initializeSocket = async (server) => {
       const callData = activeCallTimers.get(channelName);
       if (callData) clearTimeout(callData.timer);
 
-      // Start the strict heartbeat timer instead of a flat 45-minute limit
+      // ✅ Start the strict 25-second heartbeat timer
       const heartbeatTimer = setTimeout(async () => {
         logger.warn(
           `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
@@ -367,7 +365,7 @@ const initializeSocket = async (server) => {
           { status: "ended", endTime: new Date() },
         );
         activeCallTimers.delete(channelName);
-      }, 25000); // 25 seconds grace period before killing the call
+      }, 25000);
 
       activeCallTimers.set(channelName, {
         timer: heartbeatTimer,
@@ -376,7 +374,7 @@ const initializeSocket = async (server) => {
       });
     });
 
-    // Add the new heartbeat listener
+    // ✅ New Heartbeat Listener from Mobile Client
     socket.on("call_heartbeat", ({ channelName }) => {
       const callData = activeCallTimers.get(channelName);
 
@@ -479,7 +477,7 @@ const initializeSocket = async (server) => {
     socket.on("disconnect", async () => {
       await handleDisconnect(socket, userId);
     });
-  };);
+  });
 
   return io;
 };

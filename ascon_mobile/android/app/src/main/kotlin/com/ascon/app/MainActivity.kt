@@ -1,4 +1,4 @@
-package com.ascon.connect
+package com.ascon.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity // ✅ Correct import
 

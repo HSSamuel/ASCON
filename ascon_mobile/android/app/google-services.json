@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:826004672204:android:36886b30e40dbfd968fc69",
+        "mobilesdk_app_id": "1:826004672204:android:6d087247d416775f68fc69",
         "android_client_info": {
-          "package_name": "com.ascon.connect"
+          "package_name": "com.ascon.app"
         }
       },
       "oauth_client": [],
