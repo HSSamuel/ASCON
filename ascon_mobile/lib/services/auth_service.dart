@@ -363,27 +363,41 @@ class AuthService {
   }
 
   Future<void> logout({bool clearBiometrics = false}) async {
-    // ✅ Fire backend API to revoke the Refresh Token
+    // 1. ATTEMPT REMOTE CLEANUP WITH A STRICT 3-SECOND TIMEOUT
     try {
-      final String? fcmToken = await _getFcmToken();
-      final String? refreshToken = await _secureStorage.read(key: 'refresh_token');
-      final String? userId = await currentUserId;
+      await Future(() async {
+        // Fetch FCM token with its own 1-second fallback so it doesn't hold up the API call
+        final String? fcmToken = await _getFcmToken().timeout(const Duration(seconds: 1), onTimeout: () => null);
+        final String? refreshToken = await _secureStorage.read(key: 'refresh_token');
+        final String? userId = await currentUserId;
 
-      if (userId != null) {
-        await http.post(
-          Uri.parse('${AppConfig.baseUrl}/api/auth/logout'),
-          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ${_tokenCache ?? ""}'},
-          body: jsonEncode({
-            'userId': userId,
-            'fcmToken': fcmToken ?? "",
-            'refreshToken': refreshToken ?? ""
-          }),
-        ).timeout(const Duration(seconds: 2)); // 👈 Prevents the UI from hanging on slow networks
-      }
+        if (userId != null) {
+          await http.post(
+            Uri.parse('${AppConfig.baseUrl}/api/auth/logout'),
+            headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ${_tokenCache ?? ""}'},
+            body: jsonEncode({
+              'userId': userId,
+              'fcmToken': fcmToken ?? "",
+              'refreshToken': refreshToken ?? ""
+            }),
+          );
+        }
+
+        // Fire Google disconnects (These are notorious for hanging on bad networks)
+        if (googleSignIn.currentUser != null) {
+          await googleSignIn.disconnect();
+        }
+        await googleSignIn.signOut();
+        
+        // Disconnect Socket
+        SocketService().disconnect();
+
+      }).timeout(const Duration(seconds: 3)); // 👈 Forces the entire block to fail fast after 3 seconds
     } catch (e) {
-      debugPrint("⚠️ API Logout Error: $e");
+      debugPrint("⚠️ Remote cleanup timed out or failed: $e. Proceeding to local cleanup.");
     }
 
+    // 2. INSTANT LOCAL CLEANUP (Always executes immediately if network fails)
     try {
       providerContainer.read(chatProvider.notifier).clearState();
       providerContainer.read(directoryProvider.notifier).clearState();
@@ -391,17 +405,6 @@ class AuthService {
     } catch (e) {
       debugPrint("⚠️ Memory sweep error: $e");
     }
-
-    try {
-      SocketService().disconnect();
-    } catch (_) {}
-
-    try {
-      if (googleSignIn.currentUser != null) {
-        await googleSignIn.disconnect();
-      }
-      await googleSignIn.signOut();
-    } catch (_) {}
 
     try {
       _tokenCache = null;
@@ -423,6 +426,7 @@ class AuthService {
 
     if (kIsWeb) await Future.delayed(const Duration(milliseconds: 200));
 
+    // 3. REDIRECT VIA GLOBAL ROUTER
     appRouter.go('/login');
   }
 

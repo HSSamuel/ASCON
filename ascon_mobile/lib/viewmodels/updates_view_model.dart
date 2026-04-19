@@ -102,13 +102,11 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
           
           if (mounted) {
             state = state.copyWith(
-              isLoading: false,
+              isLoading: false, // Turn off spinner immediately if cache exists
               posts: feed,
-              // Apply existing media filter if active
               filteredPosts: state.showMediaOnly ? feed.where((p) => p['mediaType'] == 'image').toList() : feed,
               highlights: highlights,
             );
-            debugPrint("⚡ Loaded ${feed.length} updates instantly from cache.");
           }
         } catch (e) {
           debugPrint("Updates Cache read error: $e");
@@ -123,15 +121,20 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
     bool isOffline = connectivityResult.contains(ConnectivityResult.none);
     
     if (isOffline) {
-      debugPrint("🚫 Offline. Relying entirely on updates cache.");
       if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
       return; 
     }
 
-    // 3. BACKGROUND NETWORK FETCH
+    // 3. BACKGROUND NETWORK FETCH (Concurrent & Timeout Enforced)
     try {
-      final feed = await _dataService.fetchUpdates();
-      final programmes = await _authService.getProgrammes();
+      // ✅ FIX: Run simultaneously and force a 10-second timeout so the spinner doesn't hang for minutes
+      final results = await Future.wait([
+        _dataService.fetchUpdates().timeout(const Duration(seconds: 10)),
+        _authService.getProgrammes().timeout(const Duration(seconds: 10))
+      ]);
+
+      final feed = results[0];
+      final programmes = results[1];
 
       // 4. OVERWRITE CACHE WITH FRESH DATA
       await _cacheBox.put(updatesCacheKey, jsonEncode(feed));
@@ -147,10 +150,11 @@ class UpdatesNotifier extends StateNotifier<UpdatesState> {
         );
       }
     } catch (e) {
+      // Catch timeouts and socket exceptions immediately
       if (mounted && state.posts.isEmpty) {
         state = state.copyWith(isLoading: false, errorMessage: "Failed to connect. Please check your network.");
       } else if (mounted) {
-        state = state.copyWith(isLoading: false);
+        state = state.copyWith(isLoading: false); // Ensure spinner turns off!
       }
     }
   }

@@ -41,7 +41,7 @@ const updatePostSchema = new mongoose.Schema(
   },
 );
 
-updatePostSchema.index({ createdAt: -1 });
+updatePostSchema.index({ isBlocked: 1, createdAt: -1 });
 updatePostSchema.index({ authorId: 1 });
 
 module.exports = mongoose.model("UpdatePost", updatePostSchema);
