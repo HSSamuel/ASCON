@@ -78,9 +78,7 @@ void main() async {
     ));
     
   }, (error, stack) {
-    String errorText = error.toString();
-    if (errorText.contains("Future already completed")) return;
-    debugPrint("🔴 Uncaught Zone Error: $error");
+    debugPrint("🔴 Uncaught Zone Error: $error\n$stack"); // Print the stack trace!
   });
 }
 
@@ -110,20 +108,32 @@ class _MyAppState extends State<MyApp> {
             ? (data['callerData']?['groupName'] ?? "Group Call") 
             : (data['callerData']?['callerName'] ?? "Alumni User");
 
-        if (navigatorKey.currentContext != null) {
-          Navigator.of(navigatorKey.currentContext!, rootNavigator: true).push(
-            MaterialPageRoute(
-              builder: (context) => CallScreen(
-                isGroupCall: isGroup, 
-                isVideoCall: data['callerData']?['isVideoCall'] ?? false, 
-                remoteName: displayRemoteName,
-                remoteId: data['callerId'] ?? "", 
-                channelName: data['channelName'] ?? "",
-                remoteAvatar: data['callerData']?['callerAvatar'], 
-                isIncoming: true, 
-              ),
-            ),
-          );
+        // 1. Get the current active route from GoRouter
+        final currentPath = appRouter.routerDelegate.currentConfiguration.uri.path;
+        
+        // 2. Define blocked states
+        final isAuthScreen = currentPath == '/' || currentPath == '/login';
+        final isAlreadyInCall = currentPath == '/call';
+
+        // 3. Evaluate context before acting
+        if (!isAuthScreen && !isAlreadyInCall) {
+          // Safe to show the call using GoRouter's internal stack
+          appRouter.push('/call', extra: {
+            'isGroupCall': isGroup, 
+            'isVideoCall': data['callerData']?['isVideoCall'] ?? false, 
+            'remoteName': displayRemoteName,
+            'remoteId': data['callerId'] ?? "", 
+            'channelName': data['channelName'] ?? "",
+            'remoteAvatar': data['callerData']?['callerAvatar'], 
+            'isIncoming': true, 
+          });
+        } else if (isAlreadyInCall) {
+          // 4. Automatically reject secondary incoming calls to prevent UI crashes
+          SocketService().socket?.emit('reject_call', {
+            'targetUserId': data['callerId'],
+            'reason': 'user_busy'
+          });
+          debugPrint('Rejected background call from ${data['callerId']} because user is busy.');
         }
       }
     });

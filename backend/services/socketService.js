@@ -332,6 +332,11 @@ const initializeSocket = async (server) => {
       },
     );
 
+    // ==========================================
+    // --- CALL HEARTBEAT & STUCK CALL FIX ---
+    // ==========================================
+
+    // Modify your existing answer_call to initiate the heartbeat expectation
     socket.on("answer_call", async ({ targetUserId, channelName }) => {
       try {
         await CallLog.findOneAndUpdate(
@@ -347,27 +352,55 @@ const initializeSocket = async (server) => {
       const callData = activeCallTimers.get(channelName);
       if (callData) clearTimeout(callData.timer);
 
-      const ongoingTimer = setTimeout(async () => {
+      // Start the strict heartbeat timer instead of a flat 45-minute limit
+      const heartbeatTimer = setTimeout(async () => {
         logger.warn(
-          `Max call duration reached for ${channelName}. Force terminating.`,
+          `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
         );
 
         io.to(targetUserId)
           .to(userId)
-          .emit("call_ended", { channelName, reason: "Max Duration Reached" });
+          .emit("call_ended", { channelName, reason: "Connection Lost" });
 
         await CallLog.updateOne(
           { channelName: channelName, status: "ongoing" },
           { status: "ended", endTime: new Date() },
         );
         activeCallTimers.delete(channelName);
-      }, MAX_CALL_DURATION);
+      }, 25000); // 25 seconds grace period before killing the call
 
       activeCallTimers.set(channelName, {
-        timer: ongoingTimer,
+        timer: heartbeatTimer,
         caller: userId,
         receiver: targetUserId,
       });
+    });
+
+    // Add the new heartbeat listener
+    socket.on("call_heartbeat", ({ channelName }) => {
+      const callData = activeCallTimers.get(channelName);
+
+      if (callData) {
+        clearTimeout(callData.timer);
+
+        // Reset the strict 25-second countdown
+        const newTimer = setTimeout(async () => {
+          logger.warn(
+            `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
+          );
+          io.to(callData.receiver)
+            .to(callData.caller)
+            .emit("call_ended", { channelName, reason: "Connection Lost" });
+
+          await CallLog.updateOne(
+            { channelName: channelName, status: "ongoing" },
+            { status: "ended", endTime: new Date() },
+          );
+          activeCallTimers.delete(channelName);
+        }, 25000);
+
+        callData.timer = newTimer;
+      }
     });
 
     socket.on("end_call", async ({ targetUserId, channelName }) => {
@@ -446,7 +479,7 @@ const initializeSocket = async (server) => {
     socket.on("disconnect", async () => {
       await handleDisconnect(socket, userId);
     });
-  });
+  };);
 
   return io;
 };
