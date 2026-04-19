@@ -254,28 +254,30 @@ class AuthService {
         }
       } else {
         // ==============================================================
-        // 🚨 THE HARD FALLBACK LAYER (Refresh Token Expired/Revoked)
+        // 🚨 THE HARD FALLBACK LAYER 
         // ==============================================================
         
-        // 1. Try Google Silent Auth First
-        try {
-          if (await googleSignIn.isSignedIn()) {
-            final googleUser = await googleSignIn.signInSilently();
-            if (googleUser != null) {
-              final auth = await googleUser.authentication;
-              final res = await googleLogin(auth.idToken ?? auth.accessToken);
-              if (res['success']) {
-                _refreshCompleter?.complete(_tokenCache);
-                return _tokenCache;
+        // 1. Try Google Silent Auth First (ONLY IF NOT ON WEB)
+        if (!kIsWeb) {
+          try {
+            if (await googleSignIn.isSignedIn()) {
+              final googleUser = await googleSignIn.signInSilently();
+              if (googleUser != null) {
+                final auth = await googleUser.authentication;
+                final res = await googleLogin(auth.idToken ?? auth.accessToken);
+                if (res['success']) {
+                  _refreshCompleter?.complete(_tokenCache);
+                  return _tokenCache;
+                }
               }
             }
+          } catch (e) {
+             debugPrint("Silent Google Auth failed: $e");
           }
-        } catch (e) {
-           debugPrint("Silent Google Auth failed: $e");
         }
 
-        // 2. If refresh token is expired, user MUST type their password again. 
-        // We force logout to prompt for credentials.
+        // 2. Refresh failed. Purge session and kick to login.
+        debugPrint("Token refresh failed. Forcing logout.");
         await logout();
         _refreshCompleter?.complete(null);
         return null;

@@ -89,7 +89,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
   }
 
   // =========================================================================
-  // ✅ OFFLINE-FIRST DASHBOARD LOADING
+  // ✅ OFFLINE-FIRST DASHBOARD LOADING (RESILIENT)
   // =========================================================================
   Future<void> loadData({bool isRefresh = false}) async {
     const String cacheKey = 'dashboard_data_cache';
@@ -97,6 +97,11 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     final prefs = await SharedPreferences.getInstance();
     String localAlumniID = prefs.getString('alumni_id') ?? "PENDING";
     String cachedName = prefs.getString('user_name') ?? state.fullName;
+
+    // ✅ FIX 1: Pull the programme title instantly from the login session cache
+    final userMap = await _authService.getCachedUser();
+    String localProgramme = userMap?['programmeTitle'] ?? "Member";
+    if (localProgramme.trim().isEmpty) localProgramme = "Member";
 
     // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
     if (!isRefresh) {
@@ -116,7 +121,8 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
               topAlumni: cachedData['topAlumni'] ?? [],
               birthdays: cachedData['birthdays'] ?? [],
               profileImage: cachedData['profileImage'] ?? "",
-              programme: cachedData['programme'] ?? "Member",
+              // Fallback to the login session cache to prevent widget disappearing
+              programme: cachedData['programme'] ?? localProgramme, 
               year: cachedData['year'] ?? "....",
               profileCompletionPercent: (cachedData['profileCompletionPercent'] ?? 0.0).toDouble(),
               isProfileComplete: cachedData['isProfileComplete'] ?? false,
@@ -127,7 +133,14 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
           debugPrint("Dashboard Cache read error: $e");
         }
       } else {
-        state = state.copyWith(isLoading: true, errorMessage: null, fullName: cachedName, alumniID: localAlumniID);
+        // Feed the local auth cache immediately on fresh login so the ChapterCard renders instantly
+        state = state.copyWith(
+          isLoading: true, 
+          errorMessage: null, 
+          fullName: cachedName, 
+          alumniID: localAlumniID, 
+          programme: localProgramme
+        );
       }
     } else {
       state = state.copyWith(fullName: cachedName, errorMessage: null);
@@ -147,13 +160,16 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     try {
       final String? myId = await _authService.currentUserId;
 
+      // ✅ FIX 2: Circuit Breakers applied to Future.wait
+      // If one API fails, it catches the error and returns a safe empty value,
+      // allowing the rest of the dashboard (like the profile) to load successfully.
       final results = await Future.wait([
-        _dataService.fetchEvents(),                  
-        _authService.getProgrammes(),                
-        _dataService.fetchProfile(),                 
-        _dataService.fetchDirectory(query: ""),
-        _dataService.fetchCelebrants(),      
-      ]);
+        _dataService.fetchEvents().catchError((e) { debugPrint("Events Error: $e"); return <dynamic>[]; }),
+        _authService.getProgrammes().catchError((e) { debugPrint("Programmes Error: $e"); return <dynamic>[]; }),
+        _dataService.fetchProfile().catchError((e) { debugPrint("Profile Error: $e"); return null; }),
+        _dataService.fetchDirectory(query: "").catchError((e) { debugPrint("Dir Error: $e"); return <dynamic>[]; }),
+        _dataService.fetchCelebrants().catchError((e) { debugPrint("Celebrants Error: $e"); return []; }),
+      ]).timeout(const Duration(seconds: 10));
 
       // 1. Process Events
       var fetchedEvents = List.from(results[0] as List);
@@ -171,7 +187,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         return idB.toString().compareTo(idA.toString());
       });
 
-      // 3. Process Profile (Safely fallback to current state instead of hardcoded strings)
+      // 3. Process Profile (Safely fallback to current state)
       String profileImage = state.profileImage;
       String programme = state.programme;
       String year = state.year;
@@ -220,7 +236,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         });
       }
       
-      // ✅ FIX: Prevent visual jitter. Only shuffle if the screen is currently empty, 
+      // Prevent visual jitter. Only shuffle if the screen is currently empty, 
       // or if the user explicitly pulled down to refresh.
       if (state.topAlumni.isEmpty || isRefresh) {
         fetchedAlumni.shuffle();
