@@ -288,28 +288,31 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isGoogleLoading = true);
       
       GoogleSignInAccount? googleUser;
-      if (kIsWeb) {
-        // ✅ Uses the single global instance from AuthService
-        try { googleUser = await AuthService.googleSignIn.signInSilently(); } catch (e) {}
-      }
-      if (googleUser == null) {
-        try { 
-          // ✅ Uses the single global instance from AuthService
-          googleUser = await AuthService.googleSignIn.signIn(); 
-        } catch (error) {
-          if (mounted) {
-            setState(() => _isGoogleLoading = false);
-            debugPrint("🔴 Google Sign-In Error: $error");
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Google Sign-In Failed: ${error.toString()}"), 
-                backgroundColor: Colors.red
-              ),
-            );
-          }
-          return; 
+      
+      try { 
+        // ✅ FIX: Removed signInSilently() from the button action. 
+        // When a user actively clicks the button, we should strictly trigger the active signIn flow.
+        googleUser = await AuthService.googleSignIn.signIn(); 
+      } catch (error) {
+        if (mounted) {
+          setState(() => _isGoogleLoading = false);
+          debugPrint("🔴 Google Sign-In Error: $error");
+          
+          // Provide a cleaner error message for web users
+          String errorMsg = kIsWeb 
+              ? "Google Sign-In Failed. Ensure popups/cookies are allowed." 
+              : "Google Sign-In Failed: ${error.toString()}";
+              
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMsg), 
+              backgroundColor: Colors.red
+            ),
+          );
         }
+        return; 
       }
+      
       if (googleUser == null) {
         setState(() => _isGoogleLoading = false);
         return;
@@ -352,7 +355,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isGoogleLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("An error occurred during Google Login."), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("An error occurred during Google Login."), backgroundColor: Colors.red)
+        );
       }
     }
   }

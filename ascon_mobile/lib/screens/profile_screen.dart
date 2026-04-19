@@ -154,7 +154,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async => ref.read(profileProvider.notifier).loadProfile(), 
+        onRefresh: () async => ref.read(profileProvider.notifier).loadProfile(isRefresh: true), 
         color: primaryColor,
         child: SingleChildScrollView(
           controller: _scrollController, 
@@ -342,7 +342,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () async {
                       final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => EditProfileScreen(userData: userProfile ?? {})));
-                      if (result == true) ref.read(profileProvider.notifier).loadProfile(); 
+                      if (result == true) {
+                        // Force UI to show loading skeleton so the user instantly knows it is fetching the changes
+                        ref.read(profileProvider.notifier).loadProfile(isRefresh: true, showSkeleton: true); 
+                      }
                     },
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     label: const Text("Edit Details", style: TextStyle(fontSize: 14)),

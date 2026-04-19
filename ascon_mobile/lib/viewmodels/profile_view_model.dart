@@ -52,44 +52,43 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
   }
 
   // =========================================================================
-  // ✅ OFFLINE-FIRST PROFILE LOADING
+  // ✅ OFFLINE-FIRST PROFILE LOADING (OPTIMIZED)
   // =========================================================================
-  Future<void> loadProfile() async {
+  Future<void> loadProfile({bool isRefresh = false, bool showSkeleton = false}) async {
     const String cacheKey = 'user_profile_cache';
 
-    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
-    final String? cachedProfileStr = _cacheBox.get(cacheKey);
-    if (cachedProfileStr != null) {
-      try {
-        final Map<String, dynamic> cachedProfile = jsonDecode(cachedProfileStr);
-        if (mounted) {
-          state = state.copyWith(
-            userProfile: cachedProfile,
-            isLoading: false,
-            isOnline: cachedProfile['isOnline'] == true,
-            lastSeen: cachedProfile['lastSeen'],
-            completionPercent: _calculateCompletion(cachedProfile),
-          );
-          debugPrint("⚡ Loaded Profile instantly from cache.");
-        }
-      } catch (e) {
-        debugPrint("Profile Cache read error: $e");
-      }
-    } else {
+    // Show skeleton immediately if requested (e.g., returning from Edit Screen)
+    if (showSkeleton && mounted) {
       state = state.copyWith(isLoading: true);
     }
 
-    // 2. CHECK CONNECTIVITY (Fail Fast)
-    final connectivityResult = await (Connectivity().checkConnectivity());
-    bool isOffline = connectivityResult.contains(ConnectivityResult.none);
-    
-    if (isOffline) {
-      debugPrint("🚫 Offline. Relying entirely on profile cache.");
-      if (mounted && state.isLoading) state = state.copyWith(isLoading: false);
-      return; 
+    // 1. MILLISECOND 0: Check Local Cache First 
+    // (Only if it's a natural load, NOT an explicit refresh)
+    if (!isRefresh && !showSkeleton) {
+      final String? cachedProfileStr = _cacheBox.get(cacheKey);
+      if (cachedProfileStr != null) {
+        try {
+          final Map<String, dynamic> cachedProfile = jsonDecode(cachedProfileStr);
+          if (mounted) {
+            state = state.copyWith(
+              userProfile: cachedProfile,
+              isLoading: false,
+              isOnline: cachedProfile['isOnline'] == true,
+              lastSeen: cachedProfile['lastSeen'],
+              completionPercent: _calculateCompletion(cachedProfile),
+            );
+            debugPrint("⚡ Loaded Profile instantly from cache.");
+          }
+        } catch (e) {
+          debugPrint("Profile Cache read error: $e");
+        }
+      } else {
+        if (mounted) state = state.copyWith(isLoading: true);
+      }
     }
 
-    // 3. BACKGROUND NETWORK FETCH
+    // 2. BACKGROUND NETWORK FETCH 
+    // (Removed Connectivity() blocker to speed up execution by ~2 seconds)
     try {
       final profile = await _dataService.fetchProfile();
       
@@ -97,12 +96,12 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
       final lastSeen = profile?['lastSeen'];
       final percent = _calculateCompletion(profile ?? {});
 
-      // 4. OVERWRITE CACHE WITH FRESH DATA
+      // 3. OVERWRITE CACHE WITH FRESH DATA
       if (profile != null) {
         await _cacheBox.put(cacheKey, jsonEncode(profile));
       }
 
-      // 5. SILENTLY UPDATE UI
+      // 4. SILENTLY UPDATE UI
       if (mounted) {
         state = state.copyWith(
           userProfile: profile,
@@ -117,6 +116,7 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
         _listenToSocket(profile!['_id']);
       }
     } catch (e) {
+      debugPrint("Network fetch failed, relying on cache: $e");
       if (mounted) state = state.copyWith(isLoading: false);
     }
   }
