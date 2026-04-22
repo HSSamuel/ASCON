@@ -5,18 +5,51 @@
     <link rel="icon" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
-    <meta name="description" content="ASCON Alumni Web Admin Dashboard" />
+    
+    <meta name="description" content="ASCON Alumni is a dedicated networking and communication platform exclusively for the graduates of the Administrative Staff College of Nigeria." />
+    
     <link rel="apple-touch-icon" href="/logo192.png" />
     <link rel="manifest" href="/manifest.json" />
-    <title>ASCON Web Admin</title>
+    
+    <title>ASCON Alumni</title>
+    
     <meta name="google-site-verification" content="zvhYrulOpHLaNFoschy0d7pmcmlTVEcmYc7G2eKVSQc" />
+
+    <style>
+      /* Quick styling to make the public info look clean and professional */
+      #public-landing {
+        font-family: Arial, sans-serif;
+        padding: 40px 20px;
+        max-width: 800px;
+        margin: 0 auto;
+        text-align: center;
+        background-color: #f9f9f9;
+        border-bottom: 2px solid #eaeaea;
+      }
+      #public-landing h1 { color: #333; }
+      #public-landing p { color: #555; line-height: 1.6; }
+      .footer-links { margin-top: 30px; font-size: 14px; }
+      .footer-links a { color: #0056b3; text-decoration: none; margin: 0 10px; }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
+    
+    <div id="public-landing">
+      <h1>ASCON Alumni</h1>
+      <p>ASCON Alumni is a dedicated networking and communication platform exclusively for the graduates of the Administrative Staff College of Nigeria. This platform allows alumni to connect with peers, share professional opportunities, and stay updated on institutional news and events.</p>
+
+      
+      
+      <div class="footer-links">
+        <a href="/privacy.html">Privacy Policy</a> | 
+        <a href="/child-safety.html">Child Safety Policy</a> | 
+        <a href="https://asconapp.netlify.app">Main App</a>
+      </div>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/index.jsx"></script>
-    <footer>
-    <p><a href="/privacy.html">Privacy Policy</a> | <a href="/child-safety.html">Child Safety Policy</a></p>
-</footer>
+    
   </body>
 </html>

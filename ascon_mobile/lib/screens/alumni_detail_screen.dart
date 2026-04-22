@@ -257,13 +257,18 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     final bool showPhone = _currentAlumniData['isPhoneVisible'] == true;
     final bool isMentor = _currentAlumniData['isOpenToMentorship'] == true;
     
-    // ✅ FIX: Unified formatting directly from PresenceFormatter
+    // Unified formatting directly from PresenceFormatter
     final String statusText = PresenceFormatter.getStatusText(isOnline: _isOnline, lastSeen: _lastSeen);
 
     final String phone = _currentAlumniData['phoneNumber'] ?? '';
     final String linkedin = _currentAlumniData['linkedin'] ?? '';
     final String email = _currentAlumniData['email'] ?? '';
-    final String year = _currentAlumniData['yearOfAttendance']?.toString() ?? 'Unknown';
+    
+    // ✅ SMART YEAR BADGE LOGIC
+    final String rawYear = _currentAlumniData['yearOfAttendance']?.toString() ?? '';
+    final bool isGeneralYear = rawYear.trim().isEmpty || rawYear == 'null' || rawYear == 'Unknown' || rawYear == 'Others' || rawYear == 'General';
+    final String yearBadgeText = isGeneralYear ? "General Alumni" : "Class of $rawYear";
+    
     final String imageString = _currentAlumniData['profilePicture'] ?? '';
     
     final String zoomHeroTag = "zoom_profile_${_currentAlumniData['_id'] ?? DateTime.now().millisecondsSinceEpoch}";
@@ -272,6 +277,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
         ? _currentAlumniData['programmeTitle'] 
         : (_isLoadingFullProfile ? 'Loading...' : 'Not Specified');
 
+    // ✅ REFACTORED: Returns an inline, responsive button to fit perfectly in a Wrap
     Widget buildMentorshipButton() {
       if (!isMentor || !_profileExists) return const SizedBox.shrink();
 
@@ -339,22 +345,19 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
         action = null; 
       }
 
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.symmetric(horizontal: 60, vertical: 10),
-        child: ElevatedButton.icon(
-          onPressed: action,
-          icon: isCurrentlyLoading 
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Icon(icon, color: Colors.white, size: 20),
-          label: Text(isCurrentlyLoading ? "Checking Status..." : label, style: GoogleFonts.lato(fontWeight: FontWeight.bold)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: btnColor,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            elevation: isCurrentlyLoading ? 0 : 2,
-          ),
+      return ElevatedButton.icon(
+        onPressed: action,
+        icon: isCurrentlyLoading 
+            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            : Icon(icon, color: Colors.white, size: 16),
+        label: Text(isCurrentlyLoading ? "Checking..." : label, style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 12)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: btnColor,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          minimumSize: const Size(0, 34), // Locked height to match the badge perfectly
+          elevation: isCurrentlyLoading ? 0 : 1,
         ),
       );
     }
@@ -469,7 +472,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                               Container(
                                 width: 8, height: 8,
                                 decoration: BoxDecoration(
-                                  color: PresenceFormatter.getStatusColor(_isOnline), // ✅ FIX
+                                  color: PresenceFormatter.getStatusColor(_isOnline), 
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -477,7 +480,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                               Text(
                                 statusText, 
                                 style: GoogleFonts.lato(
-                                  color: PresenceFormatter.getStatusColor(_isOnline), // ✅ FIX
+                                  color: PresenceFormatter.getStatusColor(_isOnline), 
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600
                                 ),
@@ -486,30 +489,46 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                           ),
                         ),
                         
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
                         
+                        // ✅ RESPONSIVE WRAP: Open to Mentoring + Request Mentorship side-by-side
                         if (isMentor)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.amber.shade600),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Wrap(
+                              alignment: WrapAlignment.center,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8, // horizontal spacing between badge and button
+                              runSpacing: 10, // vertical spacing if screen is too small and they stack
                               children: [
-                                Icon(Icons.stars_rounded, color: Colors.amber.shade700, size: 16),
-                                const SizedBox(width: 6),
-                                Text(
-                                  "Open to Mentoring",
-                                  style: GoogleFonts.lato(color: Colors.amber.shade800, fontWeight: FontWeight.bold, fontSize: 12),
+                                // The Indicator Badge
+                                Container(
+                                  height: 34,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: Colors.amber.shade600),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.stars_rounded, color: Colors.amber.shade700, size: 16),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        "Open to Mentoring",
+                                        style: GoogleFonts.lato(color: Colors.amber.shade800, fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                // The Action Button
+                                buildMentorshipButton(),
                               ],
                             ),
                           ),
 
+                        // ✅ APPLIED SMART YEAR BADGE 
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
@@ -518,7 +537,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                             border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
                           ),
                           child: Text(
-                            "Class of $year",
+                            yearBadgeText,
                             style: GoogleFonts.lato(color: const Color(0xFFB8860B), fontWeight: FontWeight.bold, fontSize: 12),
                           ),
                         ),
@@ -526,9 +545,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                     ),
                   ),
 
-                  buildMentorshipButton(),
-
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 20),
 
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,

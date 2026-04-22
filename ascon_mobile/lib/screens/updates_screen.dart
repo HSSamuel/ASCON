@@ -676,6 +676,72 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
     );
   }
 
+  // ✅ NEW: Sleek presentation card for extracted links
+  Widget _buildLinkCard(String url, bool isDark) {
+    IconData icon = Icons.link;
+    String title = "External Link";
+    String domain = Uri.tryParse(url)?.host ?? "website";
+
+    if (url.contains('drive.google.com')) {
+      icon = Icons.add_to_drive;
+      title = "Google Drive Document";
+    } else if (url.contains('youtube.com') || url.contains('youtu.be')) {
+      icon = Icons.play_circle_fill;
+      title = "YouTube Video";
+    }
+
+    return InkWell(
+      onTap: () async {
+        if (await canLaunchUrl(Uri.parse(url))) {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? Colors.grey[850] : Colors.blue.withOpacity(0.05),
+          border: Border.all(color: isDark ? Colors.grey[700]! : Colors.blue.withOpacity(0.2)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[800] : Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: Colors.blue, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    domain,
+                    style: GoogleFonts.lato(color: Colors.grey, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.open_in_new, color: Colors.grey, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildPostCard(Map<String, dynamic> post, bool isAdmin, String? myId, UpdatesNotifier notifier) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardColor = Theme.of(context).cardColor;
@@ -774,21 +840,55 @@ class _UpdatesScreenState extends ConsumerState<UpdatesScreen> {
             ),
           ),
 
-          if (post['text'] != null && post['text'].toString().isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              // ✅ PRO-INITIATIVE: Convert raw links into clickable buttons
-              child: Linkify(
-                onOpen: (link) async {
-                  if (await canLaunchUrl(Uri.parse(link.url))) {
-                    await launchUrl(Uri.parse(link.url), mode: LaunchMode.externalApplication);
-                  }
-                },
-                text: post['text'],
-                style: GoogleFonts.lato(fontSize: 14, color: textColor, height: 1.4),
-                linkStyle: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
-              ),
+          // ✅ UPDATED: Extracts the URL and renders the text + Link Card cleanly
+          if (post['text'] != null && post['text'].toString().isNotEmpty) ...[
+            Builder(
+              builder: (context) {
+                String fullText = post['text'];
+                
+                // 1. Regex to find the first URL
+                final urlRegExp = RegExp(r'(https?:\/\/[^\s]+)', caseSensitive: false);
+                final match = urlRegExp.firstMatch(fullText);
+                String? extractedUrl;
+                String cleanText = fullText;
+
+                // 2. If a URL is found, separate it from the readable text
+                if (match != null) {
+                  extractedUrl = match.group(0);
+                  // Remove the ugly URL from the main text paragraph
+                  cleanText = fullText.replaceAll(extractedUrl!, '').trim();
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Render the clean text without the massive URL
+                    if (cleanText.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Linkify(
+                          onOpen: (link) async {
+                            if (await canLaunchUrl(Uri.parse(link.url))) {
+                              await launchUrl(Uri.parse(link.url), mode: LaunchMode.externalApplication);
+                            }
+                          },
+                          text: cleanText,
+                          style: GoogleFonts.lato(fontSize: 14, color: textColor, height: 1.4),
+                          linkStyle: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
+                        ),
+                      ),
+                      
+                    // 3. Render the sleek Link Card if a URL was found
+                    if (extractedUrl != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: _buildLinkCard(extractedUrl, isDark),
+                      ),
+                  ],
+                );
+              }
             ),
+          ],
 
           if (images.isNotEmpty)
             Padding(

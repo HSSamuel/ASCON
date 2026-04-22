@@ -390,7 +390,7 @@ const initializeSocket = async (server) => {
           { status: "ended", endTime: new Date() },
         );
         activeCallTimers.delete(channelName);
-      }, 25000);
+      }, 60000);
 
       activeCallTimers.set(channelName, {
         timer: heartbeatTimer,
@@ -420,7 +420,7 @@ const initializeSocket = async (server) => {
             { status: "ended", endTime: new Date() },
           );
           activeCallTimers.delete(channelName);
-        }, 25000);
+        }, 60000);
 
         callData.timer = newTimer;
       }
