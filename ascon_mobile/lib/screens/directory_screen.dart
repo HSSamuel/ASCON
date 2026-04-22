@@ -299,10 +299,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
             const SizedBox(width: 12),
             Icon(isExpanded ? Icons.folder_open_rounded : Icons.folder_rounded, color: color, size: 22),
             const SizedBox(width: 12),
-            Text(
-              "Class of $year", 
-              style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : Colors.black87)
-            ),
+           Text(
+  (year == 'General' || year == 'Others') ? "General Alumni" : "Class of $year", 
+  style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : Colors.black87)
+),
             const Spacer(),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
