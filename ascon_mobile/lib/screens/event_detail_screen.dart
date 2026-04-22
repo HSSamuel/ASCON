@@ -20,7 +20,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   late Map<String, dynamic> _event;
   bool _isLoading = false;
   final DataService _dataService = DataService();
-  int _currentImageIndex = 0; // ✅ For the image carousel indicator
+  int _currentImageIndex = 0; 
 
   @override
   void initState() {
@@ -88,6 +88,65 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
 
+  // ✅ NEW: Builds the rich link card (like Updates Screen)
+  Widget _buildLinkCard(String url, bool isDark) {
+    IconData icon = Icons.link;
+    String title = "External Link";
+    String domain = Uri.tryParse(url)?.host ?? "website";
+
+    if (url.contains('drive.google.com')) {
+      icon = Icons.add_to_drive;
+      title = "Google Drive Document";
+    } else if (url.contains('youtube.com') || url.contains('youtu.be')) {
+      icon = Icons.play_circle_fill;
+      title = "YouTube Video";
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: InkWell(
+        onTap: () async {
+          final Uri uri = Uri.parse(url.startsWith('http') ? url : 'https://$url');
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            debugPrint('Could not launch $url');
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isDark ? Colors.grey[850] : Colors.blue.withOpacity(0.05),
+            border: Border.all(color: isDark ? Colors.grey[700]! : Colors.blue.withOpacity(0.2)),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: isDark ? Colors.grey[800] : Colors.white, borderRadius: BorderRadius.circular(8)),
+                child: Icon(icon, color: Colors.blue, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Text(domain, style: GoogleFonts.lato(color: Colors.grey, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+              const Icon(Icons.open_in_new, color: Colors.grey, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
@@ -97,7 +156,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     final dividerColor = Theme.of(context).dividerColor;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // ✅ Process Multiple Images safely
     List<String> images = [];
     if (_event['images'] != null && _event['images'] is List && _event['images'].isNotEmpty) {
       images = List<String>.from(_event['images']);
@@ -119,7 +177,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
 
     final String eventType = _event['type'] ?? 'News';
 
-    // DATE FORMATTING
     String formattedDate = 'Date to be announced';
     String rawDateString = _event['rawDate'] ?? _event['date'] ?? '';
     DateTime? eventDateObject;
@@ -179,7 +236,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // ✅ MULTIPLE IMAGES CAROUSEL
                   if (images.isNotEmpty)
                     PageView.builder(
                       itemCount: images.length,
@@ -196,7 +252,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       },
                     )
                   else
-                    Container(color: Colors.grey[800]), // Fallback if no images
+                    Container(color: Colors.grey[800]), 
                     
                   Container(
                     decoration: BoxDecoration(
@@ -208,7 +264,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                     ),
                   ),
 
-                  // ✅ PAGE INDICATOR FOR MULTIPLE IMAGES
                   if (images.length > 1)
                     Positioned(
                       bottom: 30,
@@ -231,7 +286,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       ),
                     ),
 
-                  // "VIEW PHOTO" BADGE
                   if (images.isNotEmpty)
                     Positioned(
                       bottom: 40,
@@ -268,7 +322,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             ),
           ),
 
-          // 2. CONTENT BODY
           SliverToBoxAdapter(
             child: Container(
               transform: Matrix4.translationValues(0, -20, 0),
@@ -318,7 +371,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   Text("About Event", style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
                   const SizedBox(height: 12),
                   
-                  _buildFormattedDescription(description, isDark, primaryColor),
+                  _buildFormattedDescription(description, isDark),
                   
                   const SizedBox(height: 100),
                 ],
@@ -330,7 +383,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
 
-  Widget _buildFormattedDescription(String text, bool isDark, Color linkColor) {
+  Widget _buildFormattedDescription(String text, bool isDark) {
     final baseStyle = GoogleFonts.lato(
       fontSize: 15, 
       height: 1.6, 
@@ -338,14 +391,31 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
 
     List<String> paragraphs = text.split('\n');
+    final urlRegex = RegExp(r'(https?:\/\/[^\s]+)', caseSensitive: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: paragraphs.map((paragraph) {
         if (paragraph.trim().isEmpty) return const SizedBox(height: 10);
 
-        if (paragraph.trim().startsWith('- ') || paragraph.trim().startsWith('* ')) {
-          return Padding(
+        List<String> extractedUrls = [];
+        String cleanText = paragraph;
+
+        // ✅ Extract URLs and remove them from the raw text
+        for (final match in urlRegex.allMatches(paragraph)) {
+          String url = match.group(0)!;
+          if (url.endsWith(')') || url.endsWith('.') || url.endsWith(',')) {
+            url = url.substring(0, url.length - 1);
+          }
+          extractedUrls.add(url);
+          cleanText = cleanText.replaceAll(url, '').trim(); 
+        }
+
+        Widget textContent;
+        if (cleanText.isEmpty) {
+          textContent = const SizedBox.shrink();
+        } else if (cleanText.trim().startsWith('- ') || cleanText.trim().startsWith('* ')) {
+          textContent = Padding(
             padding: const EdgeInsets.only(bottom: 6.0, left: 8.0),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,34 +423,38 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 Text("• ", style: baseStyle.copyWith(fontWeight: FontWeight.bold)),
                 Expanded(
                   child: Text.rich(
-                    _parseRichText(paragraph.substring(2), baseStyle, linkColor, isDark),
+                    _parseRichText(cleanText.substring(2).trimLeft(), baseStyle, isDark),
                     textAlign: TextAlign.justify,
                   ),
                 ),
               ],
             ),
           );
+        } else {
+          textContent = Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: Text.rich(
+              _parseRichText(cleanText, baseStyle, isDark),
+              textAlign: TextAlign.justify,
+            ),
+          );
         }
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12.0),
-          child: Text.rich(
-            _parseRichText(paragraph, baseStyle, linkColor, isDark),
-            textAlign: TextAlign.justify,
-          ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            textContent,
+            // ✅ Render beautiful link cards at the bottom of the paragraph
+            ...extractedUrls.map((url) => _buildLinkCard(url, isDark)),
+          ],
         );
       }).toList(),
     );
   }
 
-  TextSpan _parseRichText(String text, TextStyle baseStyle, Color linkColor, bool isDark) {
+  TextSpan _parseRichText(String text, TextStyle baseStyle, bool isDark) {
     List<TextSpan> spans = [];
-    
-    final regex = RegExp(
-      r'\*\*(.*?)\*\*|\*(.*?)\*|((https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([-a-zA-Z0-9@:%_\+.~#?&//=]*))',
-      caseSensitive: false,
-    );
-
+    final regex = RegExp(r'\*\*(.*?)\*\*|\*(.*?)\*'); // Removed raw URL regex since cards handle them now
     int lastMatchEnd = 0;
 
     for (final match in regex.allMatches(text)) {
@@ -400,31 +474,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         spans.add(TextSpan(
           text: match.group(2),
           style: baseStyle.copyWith(fontStyle: FontStyle.italic),
-        ));
-      } else if (match.group(3) != null) {
-        String url = match.group(3)!;
-        if (url.endsWith(')') || url.endsWith('.')) {
-           url = url.substring(0, url.length - 1);
-        }
-
-        spans.add(TextSpan(
-          text: url,
-          style: baseStyle.copyWith(
-            color: linkColor, 
-            decoration: TextDecoration.underline,
-            decorationColor: linkColor.withOpacity(0.5),
-          ),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () async {
-              final Uri uri = Uri.parse(url.startsWith('http') ? url : 'https://$url');
-              try {
-                if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-                   debugPrint("Could not launch $uri");
-                }
-              } catch (e) {
-                debugPrint("Error launching URL: $e");
-              }
-            },
         ));
       }
       lastMatchEnd = match.end;

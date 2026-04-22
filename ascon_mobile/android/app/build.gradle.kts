@@ -18,10 +18,9 @@ android {
 
     namespace = "com.ascon.app"
     
-    // ✅ CRITICAL FIX: Dropped from 36 to 34. 
-    // API 34 is the current stable Google Play requirement. 
-    // API 36 is in preview and will break Flutter native plugins.
-    compileSdk = 34 
+    // ✅ UPDATED: Bumped to 36. 
+    // Newer Flutter plugins and AndroidX Media3 dependencies strictly require SDK 35/36.
+    compileSdk = 36 
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -48,8 +47,8 @@ android {
         // ✅ 26 is excellent for modern VoIP (Agora/CallKit) and Firebase
         minSdk = 26
         
-        // ✅ CRITICAL FIX: Matched to compileSdk 34 for stability
-        targetSdk = 34
+        // ✅ UPDATED: Matched to compileSdk 36 for stability
+        targetSdk = 36
         
         versionCode = flutter.versionCode.toInt()
         versionName = flutter.versionName

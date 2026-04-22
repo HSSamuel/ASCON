@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // ✅ ADDED
-import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart'; // ✅ ADDED
-import 'package:flutter_callkit_incoming/entities/entities.dart'; // ✅ ADDED
+import 'package:firebase_messaging/firebase_messaging.dart'; 
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart'; 
+import 'package:flutter_callkit_incoming/entities/entities.dart'; 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
@@ -22,7 +22,7 @@ final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
 final ProviderContainer providerContainer = ProviderContainer();
 
-// ✅ ADDED: High-Priority Background Handler to Wake Phone
+// ✅ High-Priority Background Handler to Wake Phone
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(); // Initialize isolated Firebase instance
@@ -127,8 +127,10 @@ void main() async {
     }
 
     if (isMobile) {
-       await NotificationService().init();
-       // ✅ ADDED: Register the background handler for calls
+       // ✅ FIX: Removed NotificationService().init() from here so it doesn't trigger token requests early.
+       // It will now ONLY run in splash_screen.dart after permissions are verified.
+       
+       // Register the background handler for calls
        FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     }
 
@@ -156,10 +158,10 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _listenForIncomingCalls();
-    _listenForCallKitEvents(); // ✅ ADDED
+    _listenForCallKitEvents(); 
   }
 
-  // ✅ ADDED: Navigate to the actual call screen if user swipes "Accept" on the lock screen
+  // Navigate to the actual call screen if user swipes "Accept" on the lock screen
   void _listenForCallKitEvents() {
     if (kIsWeb) return;
     FlutterCallkitIncoming.onEvent.listen((event) {

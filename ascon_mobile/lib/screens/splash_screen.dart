@@ -53,20 +53,14 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     // 3. Determine Next Destination (Default)
     String nextPath = isValid ? '/home' : '/login';
 
-    // ✅ FIX 1: Notification Permission Check (Runs for EVERYONE now)
+    // ✅ PROACTIVE PRODUCTION FIX: 
+    // We strictly check our internal flag. We DO NOT check the OS authorization status here.
+    // This guarantees every user sees your explanation screen during initial onboarding, 
+    // regardless of whether Android/iOS defaulted the permission to true or false in the background.
     final prefs = await SharedPreferences.getInstance();
     bool hasSeenPrompt = prefs.getBool('has_seen_notification_prompt') ?? false;
-    
-    // Check actual system permission (only on Mobile)
-    bool isAuthorized = false;
-    if (!kIsWeb) {
-       final status = await NotificationService().getAuthorizationStatus();
-       isAuthorized = status == AuthorizationStatus.authorized;
-    }
 
-    // If never seen prompt AND not authorized -> Go to Permission Screen FIRST
-    // We pass 'nextPath' so it knows where to go AFTER permission is handled.
-    if (!hasSeenPrompt && !isAuthorized) {
+    if (!hasSeenPrompt) {
       if (mounted) {
         context.go('/notification_permission', extra: nextPath);
       }

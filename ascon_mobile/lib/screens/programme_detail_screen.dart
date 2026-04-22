@@ -2,9 +2,7 @@ import 'dart:convert';
 import 'package:flutter/gestures.dart'; 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart'; 
-import 'programme_registration_screen.dart';
 import '../services/data_service.dart';
 
 class ProgrammeDetailScreen extends StatefulWidget {
@@ -19,14 +17,12 @@ class ProgrammeDetailScreen extends StatefulWidget {
 class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
   final DataService _dataService = DataService();
   late Map<String, dynamic> _programme;
-  String? _localUserId;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _programme = widget.programme;
-    _getUserId();
 
     final String? idToFetch = _programme['id'] ?? _programme['_id'];
     if ((_programme['description'] == null || _programme['fee'] == null) && idToFetch != null) {
@@ -51,15 +47,6 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
     }
   }
 
-  Future<void> _getUserId() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return; 
-    setState(() {
-       _localUserId = prefs.getString('mongo_id');
-    });
-  }
-
-  // ✅ HELPER: Handles both HTTP URLs and Base64 Strings
   Widget _buildSafeImage(String? imageUrl, {BoxFit fit = BoxFit.cover}) {
     if (imageUrl == null || imageUrl.isEmpty) {
       return Container(color: Colors.grey[300]); 
@@ -87,20 +74,71 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
       return Container(color: Colors.grey[300]);
     }
   }
-  
-  Future<void> _launchURL(String url) async {
-    final Uri uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      throw Exception('Could not launch $url');
-    }
-  }
 
-  // ✅ NAVIGATE TO FULL SCREEN IMAGE
   void _openFullScreenImage(String imageUrl) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => FullScreenImageViewer(imageUrl: imageUrl),
+      ),
+    );
+  }
+
+  // ✅ NEW: Builds the rich link card (like Updates Screen)
+  Widget _buildLinkCard(String url, bool isDark) {
+    IconData icon = Icons.link;
+    String title = "External Link";
+    String domain = Uri.tryParse(url)?.host ?? "website";
+
+    if (url.contains('drive.google.com')) {
+      icon = Icons.add_to_drive;
+      title = "Google Drive Document";
+    } else if (url.contains('youtube.com') || url.contains('youtu.be')) {
+      icon = Icons.play_circle_fill;
+      title = "YouTube Video";
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: InkWell(
+        onTap: () async {
+          final Uri uri = Uri.parse(url.startsWith('http') ? url : 'https://$url');
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } else {
+            debugPrint('Could not launch $url');
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isDark ? Colors.grey[850] : Colors.blue.withOpacity(0.05),
+            border: Border.all(color: isDark ? Colors.grey[700]! : Colors.blue.withOpacity(0.2)),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: isDark ? Colors.grey[800] : Colors.white, borderRadius: BorderRadius.circular(8)),
+                child: Icon(icon, color: Colors.blue, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Text(domain, style: GoogleFonts.lato(color: Colors.grey, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+              const Icon(Icons.open_in_new, color: Colors.grey, size: 16),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -115,7 +153,6 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
     final description = _programme['description'] ?? 'No description available.';
     final duration = _programme['duration'];
     final fee = _programme['fee'];
-    final programmeId = _programme['_id'] ?? _programme['id'];
     
     final String? programmeImage = _programme['image'] ?? _programme['imageUrl'];
 
@@ -160,32 +197,6 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
             
             _buildFormattedDescription(description, isDark),
             
-            const SizedBox(height: 40),
-            
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ProgrammeRegistrationScreen(
-                        programmeId: programmeId,
-                        programmeTitle: title,
-                        userId: _localUserId,
-                        programmeImage: programmeImage,
-                      ),
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text("Register Interest", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-              ),
-            ),
             const SizedBox(height: 20),
           ],
         ),
@@ -201,14 +212,31 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
     );
 
     List<String> paragraphs = text.split('\n');
+    final urlRegex = RegExp(r'(https?:\/\/[^\s]+)', caseSensitive: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: paragraphs.map((paragraph) {
         if (paragraph.trim().isEmpty) return const SizedBox(height: 10);
 
-        if (paragraph.trim().startsWith('- ') || paragraph.trim().startsWith('* ')) {
-          return Padding(
+        List<String> extractedUrls = [];
+        String cleanText = paragraph;
+
+        // ✅ Extract URLs and remove them from the raw text
+        for (final match in urlRegex.allMatches(paragraph)) {
+          String url = match.group(0)!;
+          if (url.endsWith(')') || url.endsWith('.') || url.endsWith(',')) {
+            url = url.substring(0, url.length - 1);
+          }
+          extractedUrls.add(url);
+          cleanText = cleanText.replaceAll(url, '').trim(); 
+        }
+
+        Widget textContent;
+        if (cleanText.isEmpty) {
+          textContent = const SizedBox.shrink();
+        } else if (cleanText.trim().startsWith('- ') || cleanText.trim().startsWith('* ')) {
+          textContent = Padding(
             padding: const EdgeInsets.only(bottom: 6.0, left: 8.0),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -216,21 +244,30 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
                 Text("• ", style: baseStyle.copyWith(fontWeight: FontWeight.bold)),
                 Expanded(
                   child: Text.rich(
-                    _parseRichText(paragraph.substring(2), baseStyle, isDark),
+                    _parseRichText(cleanText.substring(2).trimLeft(), baseStyle, isDark),
                     textAlign: TextAlign.justify,
                   ),
                 ),
               ],
             ),
           );
+        } else {
+          textContent = Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: Text.rich(
+              _parseRichText(cleanText, baseStyle, isDark),
+              textAlign: TextAlign.justify,
+            ),
+          );
         }
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12.0),
-          child: Text.rich(
-            _parseRichText(paragraph, baseStyle, isDark),
-            textAlign: TextAlign.justify,
-          ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            textContent,
+            // ✅ Render beautiful link cards at the bottom of the paragraph
+            ...extractedUrls.map((url) => _buildLinkCard(url, isDark)),
+          ],
         );
       }).toList(),
     );
@@ -238,7 +275,7 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
 
   TextSpan _parseRichText(String text, TextStyle baseStyle, bool isDark) {
     List<TextSpan> spans = [];
-    final regex = RegExp(r'(https?:\/\/[^\s]+)|\*\*(.*?)\*\*|\*(.*?)\*');
+    final regex = RegExp(r'\*\*(.*?)\*\*|\*(.*?)\*'); // Removed raw URL regex since cards handle them now
     int lastMatchEnd = 0;
 
     for (final match in regex.allMatches(text)) {
@@ -247,30 +284,16 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
       }
 
       if (match.group(1) != null) {
-        final String url = match.group(1)!;
         spans.add(TextSpan(
-          text: url,
-          style: baseStyle.copyWith(
-            color: Colors.blue, 
-            decoration: TextDecoration.underline,
-            fontWeight: FontWeight.bold
-          ),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () => _launchURL(url),
-        ));
-      } 
-      else if (match.group(2) != null) {
-        spans.add(TextSpan(
-          text: match.group(2),
+          text: match.group(1),
           style: baseStyle.copyWith(
             fontWeight: FontWeight.bold, 
             color: isDark ? Colors.white : Colors.black87
           ), 
         ));
-      } 
-      else if (match.group(3) != null) {
+      } else if (match.group(2) != null) {
         spans.add(TextSpan(
-          text: match.group(3),
+          text: match.group(2),
           style: baseStyle.copyWith(fontStyle: FontStyle.italic),
         ));
       }
@@ -288,7 +311,6 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
   Widget _buildHeader(String? image, String title, Color primaryColor) {
     if (image != null && image.isNotEmpty) {
       return GestureDetector(
-        // ✅ Make the image tappable
         onTap: () => _openFullScreenImage(image),
         child: Container(
           height: 220, 
@@ -339,7 +361,6 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
                   ),
                 ),
               ),
-              // ✅ "View Photo" Badge at Bottom Right
               Positioned(
                 bottom: 12,
                 right: 12,
@@ -417,7 +438,6 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
   }
 }
 
-// ✅ NEW: Full Screen Image Viewer Widget
 class FullScreenImageViewer extends StatelessWidget {
   final String imageUrl;
 
