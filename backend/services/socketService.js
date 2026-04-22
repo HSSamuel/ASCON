@@ -3,8 +3,10 @@ const { createAdapter } = require("@socket.io/redis-adapter");
 const { createClient } = require("redis");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
+const admin = require("firebase-admin"); // ✅ ADDED Firebase Admin SDK
 const UserAuth = require("../models/UserAuth");
 const UserProfile = require("../models/UserProfile");
+const User = require("../models/User"); // ✅ ADDED User model to get fcmTokens
 const Group = require("../models/Group");
 const Message = require("../models/Message");
 const CallLog = require("../models/CallLog");
@@ -18,7 +20,7 @@ const disconnectTimers = new Map();
 // ✅ COST SAFEGUARD TIMERS
 const activeCallTimers = new Map();
 const MAX_RING_TIME = 60 * 1000; // 60 Seconds
-const MAX_CALL_DURATION = 45 * 60 * 1000; // 45 Minutes (Kept as fallback/reference if needed elsewhere)
+const MAX_CALL_DURATION = 45 * 60 * 1000; // 45 Minutes
 
 const addSocketToUser = async (userId, socketId) => {
   if (redisClient && redisClient.isOpen) {
@@ -63,8 +65,8 @@ const initializeSocket = async (server) => {
       methods: ["GET", "POST"],
       credentials: true,
     },
-    pingTimeout: 60000, // 60 seconds: Wait much longer before assuming the mobile client is dead
-    pingInterval: 25000, // 25 seconds: Send heartbeats less frequently to save battery
+    pingTimeout: 60000,
+    pingInterval: 25000,
   };
 
   io = new Server(server, ioConfig);
@@ -106,10 +108,8 @@ const initializeSocket = async (server) => {
         return next(new Error("Authentication error: Token required"));
       }
 
-      // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // ✅ ENHANCEMENT: Verify user actually exists in the database
       const user = await UserAuth.findById(decoded._id).select("_id");
       if (!user) {
         logger.warn(
@@ -237,24 +237,18 @@ const initializeSocket = async (server) => {
       }
     });
 
-    // ==========================================
-    // --- EMOJI REACTIONS ---
-    // ==========================================
     socket.on("add_reaction", async ({ messageId, chatId, emoji }) => {
       try {
         const msg = await Message.findById(messageId);
         if (!msg) return;
 
-        // Check if user already reacted with this exact emoji
         const existingIndex = msg.reactions.findIndex(
           (r) => r.userId === userId && r.emoji === emoji,
         );
 
         if (existingIndex > -1) {
-          // Toggle off
           msg.reactions.splice(existingIndex, 1);
         } else {
-          // Optional: Limit to 1 emoji per user per message
           msg.reactions = msg.reactions.filter((r) => r.userId !== userId);
           msg.reactions.push({ userId, emoji });
         }
@@ -300,6 +294,37 @@ const initializeSocket = async (server) => {
               callType: callerData.isVideoCall ? "video" : "voice",
               status: "initiated",
             });
+          }
+
+          // ✅ ADDED: High-Priority FCM Wake-Up Call
+          const targetUser = await User.findById(targetUserId);
+          if (
+            targetUser &&
+            targetUser.fcmTokens &&
+            targetUser.fcmTokens.length > 0
+          ) {
+            const message = {
+              data: {
+                type: "incoming_call",
+                channelName: channelName,
+                callerId: userId,
+                callerName: enrichedCallerData.callerName,
+                isVideoCall: enrichedCallerData.isVideoCall ? "true" : "false",
+              },
+              tokens: targetUser.fcmTokens,
+              android: { priority: "high" },
+              apns: { headers: { "apns-priority": "10" } },
+            };
+
+            admin
+              .messaging()
+              .sendEachForMulticast(message)
+              .then(() =>
+                logger.info(
+                  `🔔 High-priority call notification sent to ${targetUserId}`,
+                ),
+              )
+              .catch((err) => logger.error("FCM Call Send Error:", err));
           }
         } catch (error) {
           logger.error("Error creating CallLog:", error);
@@ -350,7 +375,7 @@ const initializeSocket = async (server) => {
       const callData = activeCallTimers.get(channelName);
       if (callData) clearTimeout(callData.timer);
 
-      // ✅ Start the strict 25-second heartbeat timer
+      // Start the strict 25-second heartbeat timer
       const heartbeatTimer = setTimeout(async () => {
         logger.warn(
           `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
@@ -444,22 +469,17 @@ const initializeSocket = async (server) => {
     // --- BUSY SIGNAL / CALL REJECTION ---
     // ==========================================
     socket.on("reject_call", async ({ targetUserId, reason }) => {
-      // 'targetUserId' is the ID of the person who originally initiated the call.
-      // We need to tell them that the person they are calling is busy.
       if (targetUserId) {
         io.to(targetUserId).emit("call_rejected", {
-          callerId: userId, // The ID of the person who is currently busy
+          callerId: userId,
           reason: reason || "user_busy",
         });
 
-        // 1. Clear the ringing timer so the server stops tracking this call
-        // (We need to find the channelName from the activeCallTimers map)
         for (const [channelName, data] of activeCallTimers.entries()) {
           if (data.receiver === userId && data.caller === targetUserId) {
             clearTimeout(data.timer);
             activeCallTimers.delete(channelName);
 
-            // 2. Update the Database Call Log to show it was declined/busy
             try {
               await CallLog.updateOne(
                 { channelName: channelName, status: "initiated" },
@@ -468,7 +488,7 @@ const initializeSocket = async (server) => {
             } catch (error) {
               logger.error("Error updating CallLog on busy reject:", error);
             }
-            break; // Found and handled, exit loop
+            break;
           }
         }
       }
@@ -519,7 +539,6 @@ const getIO = () => {
   return io;
 };
 
-// ✅ Cleanup function for graceful shutdown
 const closeSocket = async () => {
   if (io) {
     io.close();

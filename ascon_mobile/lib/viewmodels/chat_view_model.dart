@@ -52,7 +52,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final AuthService _auth = AuthService();
   final SocketService _socket = SocketService();
   
-  // ✅ Reference the fast local database
   final Box _cacheBox = Hive.box('ascon_cache');
 
   ChatNotifier() : super(const ChatState()) {
@@ -84,13 +83,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     super.dispose();
   }
 
-  // =========================================================================
-  // ✅ OFFLINE-FIRST CHAT LIST LOADING
-  // =========================================================================
   Future<void> loadConversations() async {
     const String cacheKey = 'chat_list_cache';
 
-    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
     final String? cachedDataString = _cacheBox.get(cacheKey);
     if (cachedDataString != null) {
       try {
@@ -100,11 +95,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
         debugPrint("Chat Cache read error: $e");
       }
     } else if (state.conversations.isEmpty) {
-      // Only show spinner if we have absolutely no data
       state = state.copyWith(isLoading: true);
     }
 
-    // 2. CHECK CONNECTIVITY (Fail Fast)
     final connectivityResult = await (Connectivity().checkConnectivity());
     bool isOffline = connectivityResult.contains(ConnectivityResult.none);
     
@@ -114,7 +107,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return; 
     }
 
-    // 3. BACKGROUND NETWORK FETCH
     try {
       final res = await _api.get('/api/chat');
       
@@ -123,19 +115,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
         List<dynamic> data = [];
 
         if (body is Map && body.containsKey('data')) {
-           if (body['data'] is List) {
-             data = body['data'];
-           } else {
-             data = [];
-           }
+           data = body['data'] is List ? body['data'] : [];
         } else if (body is List) {
            data = body;
         }
 
-        // 4. OVERWRITE CACHE WITH FRESH DATA
         await _cacheBox.put(cacheKey, jsonEncode(data));
-
-        // 5. SILENTLY UPDATE UI
         _updateStateWithData(data, isFromCache: false);
         
       } else {
@@ -147,16 +132,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  // Helper method to keep parsing logic dry
   void _updateStateWithData(List<dynamic> data, {required bool isFromCache}) {
     if (!mounted) return;
 
     final online = data.where((c) {
         try {
-          final mapC = c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{};
+          if (c == null || c is! Map) return false; // ✅ Null safety check
+          final mapC = Map<String, dynamic>.from(c);
           final other = _getOtherParticipant(mapC, state.myId);
           return other['isOnline'] == true;
         } catch (e) {
+          debugPrint("❌ Parser Error: $e");
           return false;
         }
     }).take(10).toList();
@@ -181,7 +167,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     } else {
       final filtered = state.conversations.where((c) {
         try {
-          final mapC = c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{};
+          if (c == null || c is! Map) return false;
+          final mapC = Map<String, dynamic>.from(c);
           final other = _getOtherParticipant(mapC, state.myId);
           final name = (other['fullName'] ?? other['name'] ?? "").toString().toLowerCase();
           
@@ -203,12 +190,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   Future<void> deleteConversation(String id) async {
     try {
-      final newConvs = state.conversations.where((c) => c['_id'] != id).toList();
+      final newConvs = state.conversations.where((c) => c != null && c is Map && c['_id'] != id).toList();
       state = state.copyWith(conversations: newConvs, filteredConversations: newConvs);
       
-      // Update cache immediately so it doesn't reappear on reload before server sync
       await _cacheBox.put('chat_list_cache', jsonEncode(newConvs));
-      
       await _api.delete('/api/chat/conversation/$id');
     } catch (_) {}
   }
@@ -221,7 +206,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
       final file = File("${dir.path}/$safeFileName");
       return await file.exists();
     } catch (e) {
-      debugPrint("File check error: $e");
       return false;
     }
   }
@@ -243,11 +227,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       if (!mounted) return;
       final convId = data['conversationId'];
       final updated = List<dynamic>.from(state.conversations);
-      final index = updated.indexWhere((c) => c['_id'] == convId);
+      final index = updated.indexWhere((c) => c != null && c is Map && c['_id'] == convId);
       if (index != -1) {
         updated[index] = Map.from(updated[index])..['unreadCount'] = 0;
         state = state.copyWith(conversations: updated, filteredConversations: updated);
-        // Silently update cache
         _cacheBox.put('chat_list_cache', jsonEncode(updated));
       }
     });
@@ -272,7 +255,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void _handleIncomingMessage(dynamic data) {
     final convId = data['conversationId'];
     final updated = List<dynamic>.from(state.conversations);
-    final index = updated.indexWhere((c) => c['_id'] == convId);
+    final index = updated.indexWhere((c) => c != null && c is Map && c['_id'] == convId);
 
     if (index != -1) {
       var chat = Map<String, dynamic>.from(updated.removeAt(index));
@@ -285,20 +268,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
       updated.insert(0, chat);
       state = state.copyWith(conversations: updated, filteredConversations: updated);
-      
-      // Silently update cache so if they kill the app, the latest message is saved
       _cacheBox.put('chat_list_cache', jsonEncode(updated));
     } else {
       loadConversations();
     }
   }
 
+  // ✅ UPDATED: Bulletproof null-safety for identifying participants
   Map<String, dynamic> _getOtherParticipant(Map<String, dynamic> conversation, String myId) {
     if (conversation['isGroup'] == true) {
       final group = conversation['groupId'];
       if (group is Map) {
         return {
-          '_id': group['_id'],
+          '_id': group['_id'] ?? '',
           'fullName': group['name'] ?? "Group",
           'profilePicture': group['icon'],
           'isOnline': false, 
@@ -310,14 +292,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
 
     final participants = conversation['participants'] as List?;
-    final other = participants?.firstWhere(
-      (p) => p['_id'] != myId,
-      orElse: () => {'fullName': 'Unknown User', 'profilePicture': ''},
+    if (participants == null || participants.isEmpty) {
+      return {'fullName': 'Unknown User', 'profilePicture': '', 'isOnline': false};
+    }
+
+    final other = participants.firstWhere(
+      (p) {
+        if (p == null) return false;
+        if (p is Map) return p['_id'] != myId;
+        return p.toString() != myId;
+      },
+      orElse: () => null,
     );
     
-    if (other == null) return {'fullName': 'Unknown User', 'profilePicture': ''};
+    if (other == null || other is! Map) {
+      return {'fullName': 'Deleted User', 'profilePicture': '', 'isOnline': false};
+    }
     
-    return Map<String, dynamic>.from(other as Map);
+    return Map<String, dynamic>.from(other);
   }
 }
 

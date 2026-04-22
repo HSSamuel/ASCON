@@ -32,8 +32,8 @@ class CallLogDetailScreen extends ConsumerWidget {
       final currentUserName = userProfile?['fullName'] ?? "Alumni User";
       final currentUserAvatar = userProfile?['profilePicture'];
 
-      Navigator.push(
-        context,
+      // ✅ FIX: Added rootNavigator: true to hide the bottom menu
+      Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute(
           builder: (_) => CallScreen(
             remoteId: callerId!,
@@ -41,7 +41,7 @@ class CallLogDetailScreen extends ConsumerWidget {
             remoteAvatar: avatar, 
             channelName: "call_${DateTime.now().millisecondsSinceEpoch}",
             isIncoming: false,
-            isVideoCall: isVideo, // ✅ Correctly triggers Video or Voice
+            isVideoCall: isVideo, 
             currentUserName: currentUserName,      
             currentUserAvatar: currentUserAvatar,  
           ),
@@ -85,7 +85,7 @@ class CallLogDetailScreen extends ConsumerWidget {
                   
                   // ACTION BUTTONS (Voice, Video, Message)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0), // ✅ Widened to fit 3 buttons
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0), 
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -102,7 +102,7 @@ class CallLogDetailScreen extends ConsumerWidget {
                         
                         const SizedBox(width: 12),
                         
-                        // ✅ NEW Button 2: Video Call
+                        // Button 2: Video Call
                         Expanded(
                           child: _buildActionButton(
                             context, 
@@ -123,15 +123,18 @@ class CallLogDetailScreen extends ConsumerWidget {
                             label: "Message", 
                             color: Colors.blue,
                             onTap: () {
-                              Navigator.push(context, MaterialPageRoute(
-                                builder: (_) => ChatScreen(
-                                  receiverId: callerId!,
-                                  receiverName: name,
-                                  receiverProfilePic: avatar,
-                                  isOnline: false,
-                                  isGroup: false,
+                              // ✅ FIX: Added rootNavigator: true to hide the bottom menu
+                              Navigator.of(context, rootNavigator: true).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    receiverId: callerId!,
+                                    receiverName: name,
+                                    receiverProfilePic: avatar,
+                                    isOnline: false,
+                                    isGroup: false,
+                                  )
                                 )
-                              ));
+                              );
                             },
                           ),
                         ),
@@ -151,20 +154,18 @@ class CallLogDetailScreen extends ConsumerWidget {
               separatorBuilder: (c, i) => Divider(height: 1, indent: 50, color: Colors.grey.withOpacity(0.1)),
               itemBuilder: (context, index) {
                 final log = logs[index];
-                final String callType = log['callType'] ?? 'voice'; // ✅ Fetch Call Type
+                final String callType = log['callType'] ?? 'voice'; 
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Row(
                     children: [
-                      // ✅ Dynamic Icon (Voice vs Video)
                       Icon(_getIcon(log['type'], callType), color: _getIconColor(log['type']), size: 20),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // ✅ Dynamic Label (Voice vs Video)
                             Text(
                               _getTypeLabel(log['type'], callType),
                               style: const TextStyle(fontWeight: FontWeight.bold),
@@ -204,9 +205,9 @@ class CallLogDetailScreen extends ConsumerWidget {
         alignment: Alignment.center, 
         child: Column(
           children: [
-            Icon(icon, color: color, size: 24), // ✅ Slightly smaller to prevent overflow
+            Icon(icon, color: color, size: 24), 
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)) // ✅ Adjusted font size
+            Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)) 
           ],
         ),
       ),
@@ -251,7 +252,8 @@ class CallLogDetailScreen extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         if (url != null && url.isNotEmpty) {
-          Navigator.push(context, MaterialPageRoute(
+          // ✅ FIX: Also added rootNavigator: true for viewing the full screen profile image
+          Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
             builder: (_) => FullScreenImage(
               imageUrl: url, 
               heroTag: "avatar_detail_${callerId ?? name}"
@@ -266,7 +268,6 @@ class CallLogDetailScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ UPDATED: Supports Video Call Icons
   IconData _getIcon(String type, String callType) {
     if (callType == 'video') {
       switch (type) {
@@ -294,7 +295,6 @@ class CallLogDetailScreen extends ConsumerWidget {
     }
   }
 
-  // ✅ UPDATED: Supports Video Call Labels
   String _getTypeLabel(String type, String callType) {
     final bool isVideo = callType == 'video';
     switch (type) {

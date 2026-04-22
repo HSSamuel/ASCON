@@ -232,10 +232,17 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     });
   }
 
-  void _startTimer() {
+ void _startTimer() {
     if (_callTimer != null && _callTimer!.isActive) return;
     _callTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) setState(() => _callDuration += const Duration(seconds: 1));
+      if (mounted) {
+        setState(() => _callDuration += const Duration(seconds: 1));
+        
+        // ✅ ADDED: Send a heartbeat to the server every 10 seconds
+        if (_callDuration.inSeconds % 10 == 0) {
+          _socketService.sendCallHeartbeat(widget.channelName);
+        }
+      }
     });
   }
 

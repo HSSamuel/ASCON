@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // ✅ ADDED
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart'; // ✅ ADDED
+import 'package:flutter_callkit_incoming/entities/entities.dart'; // ✅ ADDED
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
@@ -17,8 +20,65 @@ import 'screens/call_screen.dart';
 final GlobalKey<NavigatorState> navigatorKey = rootNavigatorKey;
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
-// ✅ ADDED: Global ProviderContainer to allow background services to read/modify Riverpod state
 final ProviderContainer providerContainer = ProviderContainer();
+
+// ✅ ADDED: High-Priority Background Handler to Wake Phone
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(); // Initialize isolated Firebase instance
+
+  if (kIsWeb) return;
+
+  if (message.data['type'] == 'incoming_call') {
+    CallKitParams callKitParams = CallKitParams(
+      id: message.data['channelName'],
+      nameCaller: message.data['callerName'] ?? 'Alumni User',
+      appName: 'ASCON Connect',
+      avatar: 'https://i.pravatar.cc/100', // Optional default avatar
+      handle: 'Incoming Call',
+      type: message.data['isVideoCall'] == "true" ? 1 : 0,
+      textAccept: 'Accept',
+      textDecline: 'Decline',
+      missedCallNotification: const NotificationParams(
+        showNotification: true,
+        isShowCallback: false,
+        subtitle: 'Missed call',
+        callbackText: 'Call back',
+      ),
+      duration: 30000, // Ring for 30 seconds
+      extra: <String, dynamic>{
+        'channelName': message.data['channelName'],
+        'callerId': message.data['callerId']
+      },
+      android: const AndroidParams(
+        isCustomNotification: true,
+        isShowLogo: false,
+        ringtonePath: 'system_ringtone_default',
+        backgroundColor: '#0F3621',
+        actionColor: '#4CAF50',
+      ),
+      ios: const IOSParams(
+        iconName: 'CallKitIcon',
+        handleType: 'generic',
+        supportsVideo: true,
+        maximumCallGroups: 2,
+        maximumCallsPerCallGroup: 1,
+        audioSessionMode: 'default',
+        audioSessionActive: true,
+        audioSessionPreferredSampleRate: 44100.0,
+        audioSessionPreferredIOBufferDuration: 0.005,
+        supportsDTMF: true,
+        supportsHolding: true,
+        supportsGrouping: false,
+        supportsUngrouping: false,
+        ringtonePath: 'system_ringtone_default',
+      ),
+    );
+
+    // This forces the lock screen to show the Accept/Decline UI
+    await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
+  }
+}
 
 void main() async {
   ErrorHandler.init();
@@ -40,7 +100,6 @@ void main() async {
     WidgetsFlutterBinding.ensureInitialized();
     
     await dotenv.load(fileName: "env.txt");
-    // ✅ Initialize High-Speed Cache Box
     await Hive.initFlutter();
     await Hive.openBox('ascon_cache');
     
@@ -69,16 +128,17 @@ void main() async {
 
     if (isMobile) {
        await NotificationService().init();
+       // ✅ ADDED: Register the background handler for calls
+       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     }
 
-    // ✅ UPDATED: Pass the global container into the app
     runApp(UncontrolledProviderScope(
       container: providerContainer, 
       child: const MyApp()
     ));
     
   }, (error, stack) {
-    debugPrint("🔴 Uncaught Zone Error: $error\n$stack"); // Print the stack trace!
+    debugPrint("🔴 Uncaught Zone Error: $error\n$stack");
   });
 }
 
@@ -96,6 +156,38 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _listenForIncomingCalls();
+    _listenForCallKitEvents(); // ✅ ADDED
+  }
+
+  // ✅ ADDED: Navigate to the actual call screen if user swipes "Accept" on the lock screen
+  void _listenForCallKitEvents() {
+    if (kIsWeb) return;
+    FlutterCallkitIncoming.onEvent.listen((event) {
+      switch (event!.event) {
+        case Event.actionCallAccept:
+          final data = event.body;
+          String channelName = data['extra']?['channelName'] ?? data['id'] ?? "";
+          String callerId = data['extra']?['callerId'] ?? "";
+          
+          appRouter.push('/call', extra: {
+            'isGroupCall': false, 
+            'isVideoCall': data['type'] == 1,
+            'remoteName': data['nameCaller'] ?? "Alumni User",
+            'remoteId': callerId,
+            'channelName': channelName,
+            'isIncoming': true,
+          });
+          break;
+          
+        case Event.actionCallDecline:
+          // Emit a reject signal to the server if they decline from the lock screen
+          SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
+          break;
+          
+        default:
+          break;
+      }
+    });
   }
 
   void _listenForIncomingCalls() {
@@ -108,16 +200,12 @@ class _MyAppState extends State<MyApp> {
             ? (data['callerData']?['groupName'] ?? "Group Call") 
             : (data['callerData']?['callerName'] ?? "Alumni User");
 
-        // 1. Get the current active route from GoRouter
         final currentPath = appRouter.routerDelegate.currentConfiguration.uri.path;
         
-        // 2. Define blocked states
         final isAuthScreen = currentPath == '/' || currentPath == '/login';
         final isAlreadyInCall = currentPath == '/call';
 
-        // 3. Evaluate context before acting
         if (!isAuthScreen && !isAlreadyInCall) {
-          // Safe to show the call using GoRouter's internal stack
           appRouter.push('/call', extra: {
             'isGroupCall': isGroup, 
             'isVideoCall': data['callerData']?['isVideoCall'] ?? false, 
@@ -128,7 +216,6 @@ class _MyAppState extends State<MyApp> {
             'isIncoming': true, 
           });
         } else if (isAlreadyInCall) {
-          // 4. Automatically reject secondary incoming calls to prevent UI crashes
           SocketService().socket?.emit('reject_call', {
             'targetUserId': data['callerId'],
             'reason': 'user_busy'

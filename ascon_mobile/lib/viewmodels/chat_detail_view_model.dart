@@ -223,6 +223,13 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
 
         final body = result['data'];
         final innerData = (body is Map && body.containsKey('data')) ? body['data'] : body;
+        
+        // ✅ FIX: Strict null-check before trying to read '_id'
+        if (innerData == null || innerData is! Map) {
+          if (mounted) state = state.copyWith(isLoading: false); 
+          return null;
+        }
+
         final newId = innerData['_id'] ?? innerData['id'];
         
         if (newId != null && mounted) {

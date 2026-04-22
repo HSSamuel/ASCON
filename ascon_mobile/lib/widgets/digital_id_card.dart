@@ -65,7 +65,7 @@ class DigitalIDCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const Color cardGreen = Color(0xFF1B5E3A);
-    final String verificationLink = "https://asconalumni.netlify.app/verify/${alumniID.replaceAll('/', '-')}";
+    final String verificationLink = "https://asconalumni.org/verify/${alumniID.replaceAll('/', '-')}";
 
     return LayoutBuilder(
       builder: (context, constraints) {

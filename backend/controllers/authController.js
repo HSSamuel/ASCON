@@ -521,7 +521,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   userAuth.resetPasswordExpires = Date.now() + 3600000;
   await userAuth.save();
 
-  const clientUrl = process.env.CLIENT_URL || "https://asconalumni.netlify.app";
+  const clientUrl = process.env.CLIENT_URL || "https://asconalumni.org;
   const resetUrl = `${clientUrl}/reset-password?token=${token}`;
 
   try {

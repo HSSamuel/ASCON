@@ -205,6 +205,13 @@ class SocketService with WidgetsBindingObserver {
     }
   }
 
+  // ✅ ADDED: Function to send a heartbeat to keep the call alive
+  void sendCallHeartbeat(String channelName) {
+    if (socket != null && socket!.connected) {
+      socket!.emit('call_heartbeat', {'channelName': channelName});
+    }
+  }
+
   void connectUser(String userId) {
     if (_currentUserId != userId) {
       _currentUserId = userId;

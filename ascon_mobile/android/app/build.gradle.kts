@@ -17,7 +17,11 @@ android {
     }
 
     namespace = "com.ascon.app"
-    compileSdk = 36
+    
+    // ✅ CRITICAL FIX: Dropped from 36 to 34. 
+    // API 34 is the current stable Google Play requirement. 
+    // API 36 is in preview and will break Flutter native plugins.
+    compileSdk = 34 
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -32,7 +36,7 @@ android {
         jvmTarget = "17"
     }
 
-    // ✅ CRITICAL FIX: Disable strict lint checks to prevent "InvalidProtocolBufferException"
+    // ✅ Disable strict lint checks to prevent build interruptions
     lint {
         checkReleaseBuilds = false
         abortOnError = false
@@ -41,15 +45,16 @@ android {
     defaultConfig {
         applicationId = "com.ascon.app"
         
-        // ✅ CRITICAL FIX: Explicitly set to 26 for twilio_voice compatibility
+        // ✅ 26 is excellent for modern VoIP (Agora/CallKit) and Firebase
         minSdk = 26
         
-        targetSdk = 36
+        // ✅ CRITICAL FIX: Matched to compileSdk 34 for stability
+        targetSdk = 34
         
         versionCode = flutter.versionCode.toInt()
         versionName = flutter.versionName
         
-        // ✅ CRITICAL FIX: Enable MultiDex for Video + Firebase
+        // ✅ Enable MultiDex for Video + Firebase
         multiDexEnabled = true
     }
 

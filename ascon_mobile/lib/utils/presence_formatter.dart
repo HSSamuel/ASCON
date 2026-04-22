@@ -11,9 +11,10 @@ class PresenceFormatter {
   }
 
   /// Returns a standardized string for the user's presence.
+  /// Accepts dynamic lastSeen to handle both ints (epoch) and Strings (ISO).
   static String getStatusText({
     required bool isOnline,
-    String? lastSeen,
+    dynamic lastSeen, 
     bool isTyping = false,
     bool isGroup = false,
     String groupParticipants = "",
@@ -22,15 +23,29 @@ class PresenceFormatter {
     if (isTyping) return "Typing...";
     if (isOnline) return "Online";
     
-    if (lastSeen == null || lastSeen.isEmpty) return "Offline";
+    // Prevent literal "null" strings or empty values from breaking the parser
+    if (lastSeen == null || lastSeen.toString().isEmpty || lastSeen.toString() == "null") {
+      return "Offline";
+    }
 
     try {
-      final lastSeenDate = DateTime.parse(lastSeen).toLocal();
+      DateTime lastSeenDate;
+
+      // Handle if backend sends milliseconds since epoch (int)
+      if (lastSeen is int) {
+        lastSeenDate = DateTime.fromMillisecondsSinceEpoch(lastSeen).toLocal();
+      } else {
+        // Handle standard ISO string
+        lastSeenDate = DateTime.parse(lastSeen.toString()).toLocal();
+      }
+
       final now = DateTime.now();
       final diff = now.difference(lastSeenDate);
 
-      // Seconds
-      if (diff.inSeconds < 60) return "Active just now";
+      // Handle negative diffs (caused by slight server-client clock desync)
+      if (diff.isNegative || diff.inSeconds < 60) {
+        return "Active just now";
+      }
       
       // Minutes
       if (diff.inMinutes < 60) {
@@ -61,7 +76,9 @@ class PresenceFormatter {
       return "Last seen $years ${years == 1 ? 'yr' : 'yrs'} ago";
       
     } catch (e) {
-      return "Offline";
+      // ✅ Now you will see exactly what broke it in your terminal
+      debugPrint("⚠️ PresenceFormatter failed to parse lastSeen: '$lastSeen'. Error: $e");
+      return "Offline"; 
     }
   }
 }

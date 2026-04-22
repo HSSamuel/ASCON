@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart'; // ✅ ADD THIS
+import 'dart:io' show Platform; // ✅ ADD THIS
 import 'dart:ui'; 
 import '../services/notification_service.dart';
 
@@ -41,6 +43,15 @@ class _NotificationPermissionScreenState extends State<NotificationPermissionScr
 
     if (granted) {
       await NotificationService().requestPermission();
+      
+      // ✅ NEW: Proactively ask for System Alert Window permission on Android
+      // This prevents the random OS popup later and ensures calls wake the screen.
+      if (Platform.isAndroid) {
+         final status = await Permission.systemAlertWindow.status;
+         if (!status.isGranted) {
+            await Permission.systemAlertWindow.request();
+         }
+      }
     }
 
     if (mounted) {
