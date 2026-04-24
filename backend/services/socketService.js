@@ -42,6 +42,12 @@ const removeSocketFromUser = async (userId, socketId) => {
   } else {
     if (onlineUsersMemory.has(userId)) {
       onlineUsersMemory.get(userId).delete(socketId);
+
+      // ✅ CRITICAL MEMORY LEAK FIX: Delete the key entirely if set is empty
+      if (onlineUsersMemory.get(userId).size === 0) {
+        onlineUsersMemory.delete(userId);
+        return 0;
+      }
       return onlineUsersMemory.get(userId).size;
     }
     return 0;
@@ -296,7 +302,6 @@ const initializeSocket = async (server) => {
             });
           }
 
-          // ✅ ADDED: High-Priority FCM Wake-Up Call
           const targetUser = await User.findById(targetUserId);
           if (
             targetUser &&
@@ -336,8 +341,13 @@ const initializeSocket = async (server) => {
           callerData: enrichedCallerData,
         });
 
+        // ✅ CRITICAL BUG FIX: Composite Key for Group Call Timers
+        const callKey = `${channelName}_${targetUserId}`;
+
         const ringTimer = setTimeout(async () => {
-          logger.info(`Call Ring Timeout triggered for ${channelName}`);
+          logger.info(
+            `Call Ring Timeout triggered for ${channelName} to user ${targetUserId}`,
+          );
           io.to(targetUserId)
             .to(userId)
             .emit("call_ended", { channelName, reason: "No Answer" });
@@ -346,13 +356,14 @@ const initializeSocket = async (server) => {
             { channelName: channelName, status: "initiated" },
             { status: "missed", endTime: new Date() },
           );
-          activeCallTimers.delete(channelName);
+          activeCallTimers.delete(callKey);
         }, MAX_RING_TIME);
 
-        activeCallTimers.set(channelName, {
+        activeCallTimers.set(callKey, {
           timer: ringTimer,
           caller: userId,
           receiver: targetUserId,
+          channelName: channelName,
         });
       },
     );
@@ -372,10 +383,12 @@ const initializeSocket = async (server) => {
 
       socket.to(targetUserId).emit("call_answered", { channelName });
 
-      const callData = activeCallTimers.get(channelName);
+      // ✅ FIX: The receiver (userId) is answering the caller (targetUserId)
+      const callKey = `${channelName}_${userId}`;
+      const callData = activeCallTimers.get(callKey);
       if (callData) clearTimeout(callData.timer);
 
-      // Start the strict 25-second heartbeat timer
+      // Start the strict heartbeat timer
       const heartbeatTimer = setTimeout(async () => {
         logger.warn(
           `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
@@ -389,48 +402,57 @@ const initializeSocket = async (server) => {
           { channelName: channelName, status: "ongoing" },
           { status: "ended", endTime: new Date() },
         );
-        activeCallTimers.delete(channelName);
+        activeCallTimers.delete(callKey);
       }, 60000);
 
-      activeCallTimers.set(channelName, {
+      activeCallTimers.set(callKey, {
         timer: heartbeatTimer,
-        caller: userId,
-        receiver: targetUserId,
+        caller: targetUserId,
+        receiver: userId,
+        channelName: channelName,
       });
     });
 
-    // ✅ New Heartbeat Listener from Mobile Client
     socket.on("call_heartbeat", ({ channelName }) => {
-      const callData = activeCallTimers.get(channelName);
+      // ✅ FIX: Traverse to find specific user's participation in this channel
+      for (const [key, callData] of activeCallTimers.entries()) {
+        if (
+          key.startsWith(`${channelName}_`) &&
+          (callData.caller === userId || callData.receiver === userId)
+        ) {
+          clearTimeout(callData.timer);
 
-      if (callData) {
-        clearTimeout(callData.timer);
+          // Reset the strict countdown
+          const newTimer = setTimeout(async () => {
+            logger.warn(
+              `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
+            );
+            io.to(callData.receiver)
+              .to(callData.caller)
+              .emit("call_ended", { channelName, reason: "Connection Lost" });
 
-        // Reset the strict 25-second countdown
-        const newTimer = setTimeout(async () => {
-          logger.warn(
-            `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
-          );
-          io.to(callData.receiver)
-            .to(callData.caller)
-            .emit("call_ended", { channelName, reason: "Connection Lost" });
+            await CallLog.updateOne(
+              { channelName: channelName, status: "ongoing" },
+              { status: "ended", endTime: new Date() },
+            );
+            activeCallTimers.delete(key);
+          }, 60000);
 
-          await CallLog.updateOne(
-            { channelName: channelName, status: "ongoing" },
-            { status: "ended", endTime: new Date() },
-          );
-          activeCallTimers.delete(channelName);
-        }, 60000);
-
-        callData.timer = newTimer;
+          callData.timer = newTimer;
+        }
       }
     });
 
     socket.on("end_call", async ({ targetUserId, channelName }) => {
-      const callData = activeCallTimers.get(channelName);
-      if (callData) {
-        clearTimeout(callData.timer);
-        activeCallTimers.delete(channelName);
+      // ✅ FIX: Iterate safely
+      for (const [key, callData] of activeCallTimers.entries()) {
+        if (
+          key.startsWith(`${channelName}_`) &&
+          (callData.caller === userId || callData.receiver === userId)
+        ) {
+          clearTimeout(callData.timer);
+          activeCallTimers.delete(key);
+        }
       }
 
       try {
@@ -475,14 +497,15 @@ const initializeSocket = async (server) => {
           reason: reason || "user_busy",
         });
 
-        for (const [channelName, data] of activeCallTimers.entries()) {
+        // ✅ FIX: Safely retrieve and destroy using added channelName payload
+        for (const [key, data] of activeCallTimers.entries()) {
           if (data.receiver === userId && data.caller === targetUserId) {
             clearTimeout(data.timer);
-            activeCallTimers.delete(channelName);
+            activeCallTimers.delete(key);
 
             try {
               await CallLog.updateOne(
-                { channelName: channelName, status: "initiated" },
+                { channelName: data.channelName, status: "initiated" },
                 { status: "declined", endTime: new Date() },
               );
             } catch (error) {

@@ -49,10 +49,11 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   bool _isConnected = false;
   bool _hasAccepted = false;
   int _activeGroupUsers = 0; 
+  bool _isDialing = false; // ✅ ADDED: Prevent Audio Race conditions
 
   StreamSubscription<CallEvent>? _listener;
   StreamSubscription<Map<String, dynamic>>? _socketListener;
-  StreamSubscription<Map<String, dynamic>>? _userStatusSub; // ✅ ADDED: For tracking if the user is online to ring
+  StreamSubscription<Map<String, dynamic>>? _userStatusSub; 
   
   Timer? _callTimer;
   Duration _callDuration = Duration.zero;
@@ -80,7 +81,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       _pulseController.repeat(reverse: true);
       _playRingtone(); 
     } else {
-      // ✅ FIX: Start with Calling. We will change to Ringing if the status check proves they are online.
       _status = "Calling...";
       _startOutgoingCall();
       _playDialingSound(); 
@@ -98,17 +98,25 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _playDialingSound() async {
+    _isDialing = true;
     await _audioPlayer.setReleaseMode(ReleaseMode.loop);
-    await _audioPlayer.play(AssetSource('sounds/dialing.mp3'));
+    
+    // ✅ FIX: Ensure call is still valid by the time the async audio driver boots
+    if (_isDialing && mounted && (_status == "Calling..." || _status == "Ringing...")) {
+      await _audioPlayer.play(AssetSource('sounds/dialing.mp3'));
+    }
   }
 
   void _stopAudio() async {
+    _isDialing = false; 
     await _audioPlayer.stop();
   }
 
   void _startOutgoingCall() async {
     bool success = await _callService.joinCall(channelName: widget.channelName, isVideo: widget.isVideoCall); 
     
+    if (!mounted) return; // ✅ FIX: Context safety after async init
+
     if (success) {
       if (!kIsWeb) {
         _callService.setAudioRoute(_selectedAudioRoute); 
@@ -186,7 +194,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       if (!mounted) return;
       if (event['type'] == 'ended' && event['data']['channelName'] == widget.channelName) {
         
-        // ✅ FIX: Capture exact reasons like 'No Answer' from the socket
         String endMessage = "Call Ended";
         if (event['data']['reason'] == "No Answer") {
           endMessage = "No answer";
@@ -208,7 +215,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       }
     });
 
-    // ✅ FIX: Listen to online presence specifically to flip "Calling..." to "Ringing..."
     _userStatusSub = _socketService.userStatusStream.listen((data) {
        if (!mounted || widget.isIncoming || widget.isGroupCall) return;
        
@@ -315,7 +321,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _audioPlayer.dispose();
     _listener?.cancel();
     _socketListener?.cancel();
-    _userStatusSub?.cancel(); // ✅ ADDED cleanup
+    _userStatusSub?.cancel();
     _stopTimer();
     _pulseController.dispose();
     super.dispose();

@@ -1,10 +1,12 @@
 import 'dart:async'; 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart'; 
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart'; 
 import 'package:flutter_callkit_incoming/entities/entities.dart'; 
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
@@ -22,13 +24,14 @@ final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
 final ProviderContainer providerContainer = ProviderContainer();
 
-// ✅ High-Priority Background Handler to Wake Phone
+// ✅ Unified High-Priority Background Handler
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(); // Initialize isolated Firebase instance
 
   if (kIsWeb) return;
 
+  // 1. ROUTE AS INCOMING CALL
   if (message.data['type'] == 'incoming_call') {
     CallKitParams callKitParams = CallKitParams(
       id: message.data['channelName'],
@@ -77,6 +80,39 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
     // This forces the lock screen to show the Accept/Decline UI
     await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
+  } 
+  // 2. ROUTE AS STANDARD NOTIFICATION (Chat, Updates, etc.)
+  else if (message.notification == null && message.data.isNotEmpty) {
+    final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
+    
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('ic_notification');
+    await localNotifications.initialize(const InitializationSettings(android: androidSettings));
+
+    String title = "New Notification";
+    String body = "You have a new update";
+    
+    // Attempt to extract title/body from data payload if no notification payload exists
+    if (message.data.containsKey('title')) title = message.data['title'];
+    if (message.data.containsKey('body')) body = message.data['body'];
+
+    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      AppConfig.notificationChannelId,
+      AppConfig.notificationChannelName,
+      importance: Importance.max,
+      priority: Priority.high,
+      color: const Color(0xFF1B5E3A),
+      icon: 'ic_notification',
+      enableVibration: true,
+      playSound: true, 
+    );
+
+    await localNotifications.show(
+      message.hashCode,
+      title,
+      body,
+      NotificationDetails(android: androidDetails),
+      payload: jsonEncode(message.data),
+    );
   }
 }
 
@@ -130,7 +166,7 @@ void main() async {
        // ✅ FIX: Removed NotificationService().init() from here so it doesn't trigger token requests early.
        // It will now ONLY run in splash_screen.dart after permissions are verified.
        
-       // Register the background handler for calls
+       // Register the single, unified background handler for calls and notifications
        FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     }
 

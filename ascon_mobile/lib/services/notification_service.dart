@@ -13,46 +13,6 @@ import '../config.dart';
 import '../router.dart'; 
 import '../services/socket_service.dart';
 
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint("🌙 Background Message: ${message.messageId}");
-  
-  if (message.notification == null && message.data.isNotEmpty) {
-    
-    final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
-    
-    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('ic_notification');
-    const InitializationSettings initSettings = InitializationSettings(android: androidSettings);
-    await localNotifications.initialize(initSettings);
-
-    bool isCall = message.data['type'] == 'call_offer' || message.data['type'] == 'video_call';
-    String channelId = isCall ? AppConfig.callChannelId : AppConfig.notificationChannelId;
-    String channelName = isCall ? AppConfig.callChannelName : AppConfig.notificationChannelName;
-    String title = isCall ? "Incoming Call" : "New Message";
-    String callerName = message.data['callerName'] ?? 'Someone';
-    String body = isCall ? "$callerName is calling you" : "You have a new message";
-
-    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      channelId,
-      channelName,
-      importance: Importance.max,
-      priority: Priority.high,
-      color: const Color(0xFF1B5E3A),
-      icon: 'ic_notification',
-      enableVibration: true,
-      playSound: true, 
-    );
-
-    await localNotifications.show(
-      message.hashCode,
-      title,
-      body,
-      NotificationDetails(android: androidDetails),
-      payload: jsonEncode(message.data),
-    );
-  }
-}
-
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
@@ -72,8 +32,6 @@ class NotificationService {
     _isInitialized = true;
 
     if (!kIsWeb) {
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
       await _firebaseMessaging.setForegroundNotificationPresentationOptions(
         alert: true,
         badge: true,

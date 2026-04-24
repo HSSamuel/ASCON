@@ -37,12 +37,11 @@ class SocketService with WidgetsBindingObserver {
             // Reconnect completely if the socket died in the background
             initSocket();
           } else {
-            // Socket thinks it's connected, but TCP might be stale.
-            // Emit a pulse to the server to instantly wake up the connection
+            // ✅ FIX: Socket thinks it's connected, but TCP might be stale.
+            // Forcefully disconnect and reconnect to ensure network freshness
             // and flush any queued background messages/calls.
-            if (_currentUserId != null) {
-               socket!.emit("user_connected", _currentUserId);
-            }
+            socket!.disconnect();
+            socket!.connect();
           }
         }
       });

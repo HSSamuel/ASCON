@@ -568,7 +568,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     
     final cleanSource = source.toLowerCase().trim();
     
-    // 🛡️ Explicitly block dummy URLs before they trigger network decoding errors
     if (cleanSource.contains('profile/picture') || cleanSource.contains('default-user')) return null;
     
     if (cleanSource.startsWith('http')) return CachedNetworkImageProvider(source);
@@ -683,21 +682,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(_displayReceiverName, overflow: TextOverflow.ellipsis, style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.bold)),
-                        // ✅ FIX: Using the centralized formatter for text and color
-                        Text(
-                          PresenceFormatter.getStatusText(
-                            isOnline: _realtimeIsOnline,
-                            lastSeen: _realtimeLastSeen,
-                            isTyping: state.isPeerTyping,
-                            isGroup: widget.isGroup,
-                            groupParticipants: _groupParticipants,
-                          ), 
-                          style: TextStyle(
-                            fontSize: 11, 
-                            color: widget.isGroup ? Colors.grey : PresenceFormatter.getStatusColor(_realtimeIsOnline),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          maxLines: 1,
+                        
+                        // ✅ FIX: StreamBuilder.periodic isolated cleanly to the text widget!
+                        StreamBuilder(
+                          stream: Stream.periodic(const Duration(minutes: 1)),
+                          builder: (context, _) {
+                            return Text(
+                              PresenceFormatter.getStatusText(
+                                isOnline: _realtimeIsOnline,
+                                lastSeen: _realtimeLastSeen,
+                                isTyping: state.isPeerTyping,
+                                isGroup: widget.isGroup,
+                                groupParticipants: _groupParticipants,
+                              ),
+                              style: TextStyle(
+                                fontSize: 11, 
+                                color: widget.isGroup ? Colors.grey : PresenceFormatter.getStatusColor(_realtimeIsOnline),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              maxLines: 1,
+                            );
+                          }
                         ),
                       ],
                     ),
