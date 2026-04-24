@@ -81,7 +81,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   final DataService _dataService = DataService();
   StreamSubscription? _statusSubscription;
   
-  // Reference the fast local database
   final Box _cacheBox = Hive.box('ascon_cache');
 
   DirectoryNotifier() : super(const DirectoryState()) {
@@ -117,36 +116,50 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   }
 
   // =========================================================================
-  // ✅ THE CORE OF OFFLINE-FIRST ARCHITECTURE
+  // ✅ THE CORE OF OFFLINE-FIRST ARCHITECTURE (WITH CACHE EXPIRATION)
   // =========================================================================
   Future<void> loadDirectory({String query = ""}) async {
     final String cacheKey = 'dir_cache_${state.activeFilter}';
+    final String timeKey = 'dir_cache_time_${state.activeFilter}';
 
-    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
     if (query.isEmpty) {
       final String? cachedDataString = _cacheBox.get(cacheKey);
-      if (cachedDataString != null) {
-        try {
-          final List<dynamic> cachedList = jsonDecode(cachedDataString);
-          if (mounted) {
-            state = state.copyWith(
-              allAlumni: cachedList,
-              searchResults: cachedList,
-              groupedAlumni: _groupUsersByYear(cachedList),
-              isLoadingDirectory: false, // Turn off loader instantly
-            );
-            debugPrint("⚡ Loaded ${cachedList.length} alumni instantly from cache.");
+      final int? cacheTimestamp = _cacheBox.get(timeKey);
+      
+      bool isCacheValid = false;
+
+      if (cachedDataString != null && cacheTimestamp != null) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        // 7 days = 604,800,000 milliseconds
+        if (now - cacheTimestamp < 604800000) {
+          isCacheValid = true;
+          try {
+            final List<dynamic> cachedList = jsonDecode(cachedDataString);
+            if (mounted) {
+              state = state.copyWith(
+                allAlumni: cachedList,
+                searchResults: cachedList,
+                groupedAlumni: _groupUsersByYear(cachedList),
+                isLoadingDirectory: false, 
+              );
+              debugPrint("⚡ Loaded ${cachedList.length} alumni instantly from cache.");
+            }
+          } catch (e) {
+            debugPrint("Cache read error: $e");
+            isCacheValid = false;
           }
-        } catch (e) {
-          debugPrint("Cache read error: $e");
+        } else {
+          debugPrint("🧹 Cache expired (older than 7 days). Purging...");
+          _cacheBox.delete(cacheKey);
+          _cacheBox.delete(timeKey);
         }
-      } else if (state.allAlumni.isEmpty) {
-        // Only show spinner if we literally have NO data (first app install)
+      } 
+      
+      if (!isCacheValid && state.allAlumni.isEmpty) {
         state = state.copyWith(isLoadingDirectory: true);
       }
     }
 
-    // 2. CHECK CONNECTIVITY (Fail Fast)
     final connectivityResult = await (Connectivity().checkConnectivity());
     bool isOffline = connectivityResult.contains(ConnectivityResult.none);
     
@@ -156,7 +169,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
       return; 
     }
 
-    // 3. BACKGROUND NETWORK FETCH
     try {
       String endpoint = '/api/directory?search=$query';
       
@@ -175,12 +187,11 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
           list = rawData['data'];
         }
 
-        // 4. OVERWRITE CACHE WITH FRESH DATA
         if (query.isEmpty) {
           await _cacheBox.put(cacheKey, jsonEncode(list));
+          await _cacheBox.put(timeKey, DateTime.now().millisecondsSinceEpoch);
         }
 
-        // 5. SILENTLY UPDATE UI
         if (mounted) {
           state = state.copyWith(
             allAlumni: list,
@@ -281,7 +292,7 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
     Map<String, List<dynamic>> groups = {};
     for (var user in users) {
       String year = user['yearOfAttendance']?.toString() ?? 'General';
-      if (year.trim().isEmpty || year == 'null') year = 'General'; // Catch empty/null string cases
+      if (year.trim().isEmpty || year == 'null') year = 'General';
       if (!groups.containsKey(year)) groups[year] = [];
       groups[year]!.add(user);
     }

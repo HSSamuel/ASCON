@@ -45,9 +45,13 @@ class ChatService {
         ? AppConfig.baseUrl.substring(0, AppConfig.baseUrl.length - 1)
         : AppConfig.baseUrl;
         
-    final uri = Uri.parse('$baseUrl/api/chat/$conversationId');
+    // ✅ FIX 1: Point to the exact endpoint the Express router expects
+    final uri = Uri.parse('$baseUrl/api/chat/message/send');
     var request = http.MultipartRequest('POST', uri);
     request.headers['auth-token'] = token;
+
+    // ✅ FIX 2: Attach the conversationId to the form fields
+    request.fields['conversationId'] = conversationId;
 
     if (text != null) request.fields['text'] = text;
     if (type != null) request.fields['type'] = type;
@@ -65,8 +69,10 @@ class ChatService {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return ChatMessage.fromJson(data);
+    } else {
+      debugPrint("Message Send Failed: ${response.statusCode} - ${response.body}");
+      return null;
     }
-    return null;
   }
 
   Future<void> deleteMessages(List<String> ids, bool deleteForEveryone) async {

@@ -1,15 +1,14 @@
 import 'package:flutter/foundation.dart'; 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:convert';
 import 'dart:async'; 
 import 'package:url_launcher/url_launcher.dart'; 
-import 'package:cached_network_image/cached_network_image.dart'; 
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../viewmodels/profile_view_model.dart'; 
 
 import '../widgets/full_screen_image.dart'; 
+import '../widgets/robust_avatar.dart'; // ✅ NEW IMPORT
 import 'chat_screen.dart'; 
 import 'call_screen.dart'; 
 import '../services/data_service.dart';
@@ -257,14 +256,12 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     final bool showPhone = _currentAlumniData['isPhoneVisible'] == true;
     final bool isMentor = _currentAlumniData['isOpenToMentorship'] == true;
     
-    // Unified formatting directly from PresenceFormatter
     final String statusText = PresenceFormatter.getStatusText(isOnline: _isOnline, lastSeen: _lastSeen);
 
     final String phone = _currentAlumniData['phoneNumber'] ?? '';
     final String linkedin = _currentAlumniData['linkedin'] ?? '';
     final String email = _currentAlumniData['email'] ?? '';
     
-    // ✅ SMART YEAR BADGE LOGIC
     final String rawYear = _currentAlumniData['yearOfAttendance']?.toString() ?? '';
     final bool isGeneralYear = rawYear.trim().isEmpty || rawYear == 'null' || rawYear == 'Unknown' || rawYear == 'Others' || rawYear == 'General';
     final String yearBadgeText = isGeneralYear ? "General Alumni" : "Class of $rawYear";
@@ -277,7 +274,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
         ? _currentAlumniData['programmeTitle'] 
         : (_isLoadingFullProfile ? 'Loading...' : 'Not Specified');
 
-    // ✅ REFACTORED: Returns an inline, responsive button to fit perfectly in a Wrap
     Widget buildMentorshipButton() {
       if (!isMentor || !_profileExists) return const SizedBox.shrink();
 
@@ -356,7 +352,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          minimumSize: const Size(0, 34), // Locked height to match the badge perfectly
+          minimumSize: const Size(0, 34),
           elevation: isCurrentlyLoading ? 0 : 1,
         ),
       );
@@ -397,7 +393,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                             behavior: HitTestBehavior.opaque,
                             onTap: () {
                               final cleanImg = imageString.toLowerCase().trim();
-                              // 🛡️ Safely block bad URLs from opening the FullScreenImage viewer
                               if (cleanImg.isNotEmpty && 
                                   !cleanImg.contains('profile/picture') && 
                                   !cleanImg.contains('default-user') &&
@@ -423,7 +418,8 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                                       BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 5))
                                   ],
                                 ),
-                                child: _buildRobustAvatar(imageString, isDark),
+                                // ✅ UPDATED: Call RobustAvatar directly
+                                child: RobustAvatar(imageUrl: imageString, radius: 45, isDark: isDark),
                               ),
                             ),
                           ),
@@ -491,17 +487,15 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                         
                         const SizedBox(height: 12),
                         
-                        // ✅ RESPONSIVE WRAP: Open to Mentoring + Request Mentorship side-by-side
                         if (isMentor)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: Wrap(
                               alignment: WrapAlignment.center,
                               crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 8, // horizontal spacing between badge and button
-                              runSpacing: 10, // vertical spacing if screen is too small and they stack
+                              spacing: 8,
+                              runSpacing: 10,
                               children: [
-                                // The Indicator Badge
                                 Container(
                                   height: 34,
                                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -522,13 +516,11 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                                     ],
                                   ),
                                 ),
-                                // The Action Button
                                 buildMentorshipButton(),
                               ],
                             ),
                           ),
 
-                        // ✅ APPLIED SMART YEAR BADGE 
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
@@ -779,68 +771,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildRobustAvatar(String imageString, bool isDark) {
-    if (imageString.trim().isEmpty) {
-      return _buildPlaceholder(isDark);
-    }
-
-    final cleanString = imageString.toLowerCase().trim();
-
-    // 🛡️ Explicitly block dummy URLs before they trigger network decoding errors
-    if (cleanString.contains('profile/picture') || cleanString.contains('default-user')) {
-      return _buildPlaceholder(isDark);
-    }
-
-    if (cleanString.startsWith('http')) {
-      if (kIsWeb) {
-        return CircleAvatar(
-          radius: 45,
-          backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
-          child: ClipOval(
-            child: Image.network(
-              imageString,
-              width: 90,
-              height: 90,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Icon(Icons.person, size: 45, color: isDark ? Colors.grey[500] : Colors.grey),
-            ),
-          ),
-        );
-      } else {
-        return CachedNetworkImage(
-          imageUrl: imageString,
-          imageBuilder: (context, imageProvider) => CircleAvatar(
-            radius: 45,
-            backgroundImage: imageProvider,
-          ),
-          placeholder: (context, url) => _buildPlaceholder(isDark),
-          errorWidget: (context, url, error) => _buildPlaceholder(isDark),
-        );
-      }
-    }
-
-    try {
-      String cleanBase64 = imageString;
-      if (cleanBase64.contains(',')) {
-        cleanBase64 = cleanBase64.split(',').last;
-      }
-      return CircleAvatar(
-        radius: 45,
-        backgroundImage: MemoryImage(base64Decode(cleanBase64)),
-      );
-    } catch (e) {
-      return _buildPlaceholder(isDark);
-    }
-  }
-
-  Widget _buildPlaceholder(bool isDark) {
-    return CircleAvatar(
-      radius: 45,
-      backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
-      child: Icon(Icons.person, size: 45, color: isDark ? Colors.grey[500] : Colors.grey),
     );
   }
 

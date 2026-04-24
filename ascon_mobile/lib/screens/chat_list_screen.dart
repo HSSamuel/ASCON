@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../viewmodels/chat_view_model.dart';
 import '../widgets/shimmer_utils.dart';
 import '../widgets/chat/call_logs_tab.dart'; 
+import '../widgets/robust_avatar.dart'; // ✅ NEW IMPORT
 import 'chat_screen.dart';
 
 class ChatListScreen extends ConsumerStatefulWidget {
@@ -19,21 +19,33 @@ class ChatListScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatListScreen> createState() => _ChatListScreenState();
 }
 
-class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTickerProviderStateMixin {
+// ✅ ADDED: WidgetsBindingObserver for background/foreground lifecycle tracking
+class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // ✅ ADDED
     _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // ✅ ADDED
     _searchController.dispose();
     _tabController.dispose();
     super.dispose();
+  }
+
+  // ✅ ADDED: Flush stale data on app resume
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint("📱 App Resumed: Flushing stale online statuses...");
+      ref.read(chatProvider.notifier).loadConversations();
+    }
   }
 
   Map<String, dynamic> _getOtherParticipant(Map<String, dynamic> conversation, String myId) {
@@ -67,67 +79,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
       return Map<String, dynamic>.from(otherRaw);
     }
     return {'fullName': 'Unknown User', 'profilePicture': ''};
-  }
-
- // ✅ NEW: Robust Avatar Builder to catch Google's invalid "picture/0" URLs
-  Widget _buildRobustAvatar(String? imageUrl, double radius) {
-    if (imageUrl == null || imageUrl.isEmpty) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: Colors.grey[200],
-        child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
-      );
-    }
-    
-    final cleanUrl = imageUrl.toLowerCase().trim();
-
-    // 🛡️ Explicitly block dummy URLs before they trigger network decoding errors
-    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: Colors.grey[200],
-        child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
-      );
-    }
-
-    if (imageUrl.startsWith('http')) {
-      return CachedNetworkImage(
-        imageUrl: imageUrl,
-        imageBuilder: (context, imageProvider) => CircleAvatar(
-          radius: radius,
-          backgroundImage: imageProvider,
-          backgroundColor: Colors.grey[200],
-        ),
-        placeholder: (context, url) => CircleAvatar(
-          radius: radius,
-          backgroundColor: Colors.grey[200],
-          child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
-        ),
-        errorWidget: (context, url, error) => CircleAvatar(
-          radius: radius,
-          backgroundColor: Colors.grey[200],
-          child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
-        ),
-      );
-    }
-
-    try {
-      String cleanBase64 = imageUrl;
-      if (cleanBase64.contains(',')) {
-        cleanBase64 = cleanBase64.split(',').last;
-      }
-      return CircleAvatar(
-        radius: radius,
-        backgroundImage: MemoryImage(base64Decode(cleanBase64)),
-        backgroundColor: Colors.grey[200],
-      );
-    } catch (e) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: Colors.grey[200],
-        child: Icon(Icons.person, color: Colors.grey, size: radius * 1.2),
-      );
-    }
   }
 
   @override
@@ -281,8 +232,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
           children: [
             Stack(
               children: [
-                // ✅ UPDATED: Use the robust avatar builder
-                _buildRobustAvatar(user['profilePicture'], 28),
+                // ✅ UPDATED: Call RobustAvatar directly
+                RobustAvatar(imageUrl: user['profilePicture'], radius: 28),
                 Positioned(
                   right: 2, bottom: 2,
                   child: Container(
@@ -383,8 +334,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
             children: [
               Stack(
                 children: [
-                  // ✅ UPDATED: Use the robust avatar builder
-                  _buildRobustAvatar(other['profilePicture'], 28),
+                  // ✅ UPDATED: Call RobustAvatar directly
+                  RobustAvatar(imageUrl: other['profilePicture'], radius: 28),
                   if (isOnline)
                     Positioned(
                       right: 0, bottom: 0,

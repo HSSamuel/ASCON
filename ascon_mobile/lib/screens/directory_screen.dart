@@ -2,13 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:google_fonts/google_fonts.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 
 import '../viewmodels/directory_view_model.dart'; 
 import '../services/auth_service.dart';
 import '../services/api_client.dart';
 import '../widgets/shimmer_utils.dart'; 
+import '../widgets/robust_avatar.dart'; 
 import 'alumni_detail_screen.dart';
 import 'chat_screen.dart';
 
@@ -28,7 +28,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
   String? _myUserId;
   final List<String> _filters = ["All", "Mentors", "Classmates", "Near Me"];
   
-  // Track expansion locally (UI state)
   final Set<String> _expandedSections = {}; 
 
   @override
@@ -58,19 +57,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     });
   }
 
-  // ✅ FOOLPROOF AVATAR HELPER
-  ImageProvider? _getSafeImageProvider(String? imgUrl) {
-    if (imgUrl == null || imgUrl.trim().isEmpty) return null;
-    
-    final cleanUrl = imgUrl.toLowerCase().trim();
-    
-    // Catch any variation of the Google profile placeholder
-    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) return null;
-    
-    if (cleanUrl.startsWith('http')) return CachedNetworkImageProvider(imgUrl);
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(directoryProvider);
@@ -82,7 +68,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     final primaryColor = Theme.of(context).primaryColor;
     final textColor = Theme.of(context).textTheme.bodyLarge?.color;
 
-    // Handle search expansion logic
     if (_searchController.text.isNotEmpty && !_expandedSections.contains("search_active")) {
        _expandedSections.addAll(state.groupedAlumni.keys);
        _expandedSections.add("search_active"); 
@@ -95,7 +80,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     Widget content;
 
     if (state.activeFilter == "Near Me") {
-      // --- NEAR ME VIEW ---
       if (state.isLoadingNearMe && state.nearbyAlumni.isEmpty) {
         content = const DirectorySkeleton();
       } 
@@ -106,7 +90,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             child: SizedBox(
               height: MediaQuery.of(context).size.height * 0.6,
-              child: _buildEmptyState(context, "No alumni found nearby.")
+              child: _buildEmptyState(context, "No alumni found nearby. Try another city.")
             ),
           ),
         );
@@ -127,7 +111,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         );
       }
     } else {
-      // --- STANDARD DIRECTORY VIEW (All, Mentors, Classmates) ---
       if (state.isLoadingDirectory && sortedKeys.isEmpty) {
         content = const DirectorySkeleton();
       } 
@@ -144,20 +127,15 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         );
       } 
       else {
-        // ✅ MASSIVE PERFORMANCE FIX: FLATTENING THE LIST
-        // Convert the 2D Grouped Map into a flat 1D list so ListView.builder 
-        // can lazily render ONLY the cards currently visible on screen.
         List<Map<String, dynamic>> flattenedList = [];
         
         for (String year in sortedKeys) {
-          // Add the Header item
           flattenedList.add({
             'type': 'header', 
             'year': year, 
             'count': state.groupedAlumni[year]?.length ?? 0
           });
           
-          // If this year is expanded, add its users as individual items
           if (_expandedSections.contains(year)) {
             final users = state.groupedAlumni[year] ?? [];
             for (var user in users) {
@@ -174,11 +152,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 40),
-            itemCount: flattenedList.length, // Use the flat list length
+            itemCount: flattenedList.length, 
             itemBuilder: (context, index) {
               final item = flattenedList[index];
 
-              // Render Header
               if (item['type'] == 'header') {
                 return _buildYearHeader(
                   item['year'], 
@@ -188,7 +165,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                   _expandedSections.contains(item['year'])
                 );
               } 
-              // Render individual User Card
               else {
                 final userMap = item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{};
                 return Padding(
@@ -207,7 +183,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // 1. HEADER
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -268,11 +243,42 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                       }).toList(),
                     ),
                   ),
+                  
+                  // ✅ RESTORED: Near Me City Filter UI
+                  if (state.activeFilter == "Near Me") ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(Icons.my_location, size: 16, color: primaryColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.grey[800] : Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: TextField(
+                              onSubmitted: (val) {
+                                notifier.setNearMeFilter(val);
+                                notifier.loadNearMe(city: val);
+                              },
+                              style: const TextStyle(fontSize: 13),
+                              decoration: const InputDecoration(
+                                hintText: "Enter your city (e.g. Lagos, Abuja)...",
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.only(bottom: 14),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
-
-            // 2. LIST (Using the clean content widget with RefreshIndicator)
             Expanded(child: content),
           ],
         ),
@@ -299,10 +305,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
             const SizedBox(width: 12),
             Icon(isExpanded ? Icons.folder_open_rounded : Icons.folder_rounded, color: color, size: 22),
             const SizedBox(width: 12),
-           Text(
-  (year == 'General' || year == 'Others') ? "General Alumni" : "Class of $year", 
-  style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : Colors.black87)
-),
+            Text(
+              (year == 'General' || year == 'Others') ? "General Alumni" : "Class of $year", 
+              style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : Colors.black87)
+            ),
             const Spacer(),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -327,8 +333,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     
     if (userId == _myUserId || userId.isEmpty) return const SizedBox.shrink();
 
-    final imageProvider = _getSafeImageProvider(img);
-
     return GestureDetector(
       onTap: () {
         Navigator.of(context, rootNavigator: true).push(
@@ -350,12 +354,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           children: [
             Stack(
               children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.grey[200],
-                  backgroundImage: imageProvider,
-                  child: imageProvider == null ? const Icon(Icons.person, color: Colors.grey) : null,
-                ),
+                RobustAvatar(imageUrl: img, radius: 30),
                 if (isMentor)
                   Positioned(
                     right: 0, bottom: 0,

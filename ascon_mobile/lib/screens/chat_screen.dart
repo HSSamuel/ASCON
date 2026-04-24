@@ -7,11 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:convert'; 
 import 'package:http/http.dart' as http;
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart'; 
-import 'package:go_router/go_router.dart';
 
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -29,15 +26,14 @@ import 'group_info_screen.dart';
 import 'alumni_detail_screen.dart'; 
 import 'call_screen.dart'; 
 
-import '../widgets/full_screen_image.dart';
 import '../widgets/chat/poll_creation_sheet.dart';
 import '../widgets/active_poll_card.dart';
 import '../widgets/chat/message_bubble.dart'; 
 import '../widgets/chat/chat_input_area.dart'; 
+import '../widgets/robust_avatar.dart'; // ✅ NEW IMPORT
 
 import '../services/socket_service.dart';
 import '../services/data_service.dart';
-import '../services/call_service.dart'; 
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String? conversationId;
@@ -563,21 +559,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  ImageProvider? _getImageProvider(String? source) {
-    if (source == null || source.trim().isEmpty) return null;
-    
-    final cleanSource = source.toLowerCase().trim();
-    
-    if (cleanSource.contains('profile/picture') || cleanSource.contains('default-user')) return null;
-    
-    if (cleanSource.startsWith('http')) return CachedNetworkImageProvider(source);
-    try {
-      return MemoryImage(base64Decode(source));
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(_provider);
@@ -660,22 +641,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onTap: _openDetails,
               child: Row(
                 children: [
-                  Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      image: _getImageProvider(widget.receiverProfilePic) != null
-                          ? DecorationImage(image: _getImageProvider(widget.receiverProfilePic)!, fit: BoxFit.cover)
-                          : null,
-                      color: Colors.grey[300],
-                    ),
-                    child: _getImageProvider(widget.receiverProfilePic) == null
-                        ? Center(child: Text(
-                            _displayReceiverName.isNotEmpty ? _displayReceiverName.substring(0, 1).toUpperCase() : "?",
-                            style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
-                          ))
-                        : null,
-                  ),
+                  // ✅ UPDATED: Call RobustAvatar directly instead of old 13-line Container
+                  RobustAvatar(imageUrl: widget.receiverProfilePic, radius: 20),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -683,7 +650,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       children: [
                         Text(_displayReceiverName, overflow: TextOverflow.ellipsis, style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.bold)),
                         
-                        // ✅ FIX: StreamBuilder.periodic isolated cleanly to the text widget!
                         StreamBuilder(
                           stream: Stream.periodic(const Duration(minutes: 1)),
                           builder: (context, _) {
