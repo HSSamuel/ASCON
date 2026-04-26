@@ -411,6 +411,8 @@ router.get("/celebrations", verifyToken, async (req, res) => {
       },
       {
         $project: {
+          _id: "$userId", // ✅ Maps the userId to _id for the mobile app
+          userId: 1, // ✅ Explicitly includes userId
           fullName: 1,
           profilePicture: 1,
           jobTitle: 1,

@@ -309,41 +309,26 @@ label {
    6. LOGIN SCREEN STYLES
    ========================================= */
 .login-container {
-  height: 100vh;
+  min-height: 100vh;
   width: 100vw;
   display: flex;
+  flex-direction: column; /* ✅ Allows footer to sit nicely below the card */
   align-items: center;
   justify-content: center;
   padding: 15px;
   box-sizing: border-box;
-  background-image: linear-gradient(rgba(27, 94, 58, 0.85), rgba(0, 0, 0, 0.75)),
-    url("https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  animation: zoomBackground 20s infinite alternate;
-}
-
-@keyframes zoomBackground {
-  0% {
-    background-size: 100%;
-  }
-  100% {
-    background-size: 110%;
-  }
+  background-color: #ffffff; /* ✅ Changed to solid white */
 }
 
 .login-card {
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: #ffffff;
   padding: 30px 25px;
   border-radius: 12px;
-  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); /* ✅ Softer shadow for white background */
   width: 100%;
   max-width: 380px;
   text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid #f0f0f0; /* ✅ Subtle border */
 }
 
 .login-title {
@@ -395,6 +380,48 @@ label {
 
 .login-btn:hover {
   background-color: #14452b;
+}
+
+/* =========================================
+   🌟 LOGIN HERO SECTION (Landing Text)
+   ========================================= */
+.login-hero {
+  max-width: 600px;
+  text-align: center;
+  margin-bottom: 35px;
+  padding: 0 20px;
+  animation: fadeIn 0.8s ease-in-out;
+}
+
+.hero-title {
+  color: #1b5e3a; /* ASCON Green */
+  font-size: 34px;
+  font-weight: 900;
+  margin-bottom: 15px;
+  letter-spacing: -0.5px;
+}
+
+.hero-description {
+  color: #555555;
+  font-size: 16px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Ensure it scales nicely on mobile */
+@media (max-width: 600px) {
+  .login-hero {
+    margin-bottom: 25px;
+  }
+  
+  .hero-title {
+    font-size: 26px;
+    margin-bottom: 10px;
+  }
+  
+  .hero-description {
+    font-size: 14px;
+  }
 }
 
 /* =========================================
@@ -716,5 +743,71 @@ label {
   .login-btn {
     padding: 10px;
     font-size: 14px;
+  }
+}
+
+/* =========================================
+   🌐 FOOTER & FLASHY LINK STYLES
+   ========================================= */
+.login-footer {
+  margin-top: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.login-footer a {
+  color: #1b5e3a;
+  text-decoration: none;
+  font-weight: 600;
+  transition: opacity 0.2s;
+}
+
+.login-footer a:hover {
+  opacity: 0.7;
+}
+
+.footer-separator {
+  color: #ccc;
+}
+
+/* 🌟 The Flashy Animated "Main App" Text */
+.flashy-main-app {
+  font-weight: 900 !important;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  /* A shining, moving rainbow gradient */
+  background: linear-gradient(270deg, #ff0055, #9c27b0, #00bcd4, #4caf50, #ff9800);
+  background-size: 400% 400%;
+  color: transparent !important;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: rainbowGlow 4s ease infinite;
+}
+
+@keyframes rainbowGlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 📱 Mobile Responsiveness for Footer */
+@media (max-width: 600px) {
+  .login-footer {
+    flex-direction: column; /* Stack the links vertically on phones */
+    gap: 15px;
+    margin-top: 30px;
+  }
+
+  .footer-separator {
+    display: none; /* Hide the "|" separators on mobile */
+  }
+
+  .flashy-main-app {
+    font-size: 16px; /* Make the Main App link slightly bigger to tap on mobile */
+    padding-top: 5px;
   }
 }

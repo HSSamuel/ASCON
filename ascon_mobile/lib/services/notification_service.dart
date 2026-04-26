@@ -7,7 +7,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:go_router/go_router.dart'; 
 
 import '../config.dart';
 import '../router.dart'; 
@@ -101,7 +100,8 @@ class NotificationService {
 
     RemoteMessage? initialMessage = await _firebaseMessaging.getInitialMessage();
     if (initialMessage != null) {
-      Future.delayed(const Duration(milliseconds: 800), () {
+      // ✅ Reduced delay since we no longer rely on BuildContext to be ready
+      Future.delayed(const Duration(milliseconds: 300), () {
         handleNavigation(initialMessage.data);
       });
     }
@@ -124,22 +124,19 @@ class NotificationService {
       token = prefs.getString('auth_token');
     }
 
-    final BuildContext? context = rootNavigatorKey.currentContext;
-
     if (token == null) {
-      if (context != null) context.go('/login', extra: data); 
+      // ✅ Use global appRouter instead of context
+      appRouter.go('/login', extra: data); 
       return;
     }
 
-    if (context == null) return;
-
-    // ✅ CALL ROUTING (Uses push to stack over current screen)
+    // ✅ CALL ROUTING
     if (type == 'call_offer' || type == 'video_call') {
       SocketService().initSocket(); 
       bool isVideo = data['isVideoCall'].toString().toLowerCase() == 'true' || type == 'video_call';
       bool isGroup = data['isGroupCall'].toString().toLowerCase() == 'true';
 
-      context.push('/call', extra: {
+      appRouter.push('/call', extra: {
         'remoteName': data['callerName'] ?? "Unknown Caller",
         'remoteId': data['callerId'],
         'remoteAvatar': data['callerPic'],
@@ -167,7 +164,7 @@ class NotificationService {
       if (conversationId != null) {
         SocketService().initSocket();
         
-        context.push('/chat_detail', extra: {
+        appRouter.push('/chat_detail', extra: {
           'conversationId': conversationId,
           'receiverId': senderId,
           'receiverName': displayName,
@@ -180,30 +177,46 @@ class NotificationService {
       return;
     }
 
+    // ✅ NEW ALUMNI ROUTING
+    if (route == 'alumni_detail' || type == 'new_alumni') {
+      appRouter.push('/alumni_detail', extra: {
+        'alumniData': {
+          '_id': id.toString(),
+          'fullName': data['fullName'] ?? 'New Alumni',
+        }
+      });
+      return;
+    }
+
     // ✅ TAB ROUTING (Uses go to swap bottom nav shell)
     if (type == 'new_update' || route == 'updates') {
-      context.go('/updates'); 
+      appRouter.go('/updates'); 
       return;
     }
 
     if (type == 'welcome' || route == 'profile') {
-      context.go('/profile'); 
+      appRouter.go('/profile'); 
       return;
     }
 
     // ✅ DETAIL SCREEN ROUTING (Uses push to enable back button)
-    if (route == 'mentorship_requests') {
-      context.push('/mentorship_requests');
+    if (route == 'mentorship_requests' || type == 'mentorship_request') {
+      appRouter.push('/mentorship_requests');
+      return;
+    }
+    
+    if (route == 'polls' || type == 'poll') {
+      appRouter.push('/polls');
       return;
     }
 
     if (id != null) {
-      if (route == 'event_detail') {
-        context.push('/event_detail', extra: {'eventData': {'_id': id.toString(), 'title': 'Loading...'}});
-      } else if (route == 'programme_detail') {
-        context.push('/programme_detail', extra: {'programme': {'_id': id.toString(), 'title': 'Loading...'}});
-      } else if (route == 'facility_detail') {
-        context.push('/facility_detail', extra: {'facility': {'_id': id.toString(), 'title': 'Loading...'}});
+      if (route == 'event_detail' || type == 'event') {
+        appRouter.push('/event_detail', extra: {'eventData': {'_id': id.toString(), 'title': 'Loading...'}});
+      } else if (route == 'programme_detail' || type == 'programme') {
+        appRouter.push('/programme_detail', extra: {'programme': {'_id': id.toString(), 'title': 'Loading...'}});
+      } else if (route == 'facility_detail' || type == 'facility') {
+        appRouter.push('/facility_detail', extra: {'facility': {'_id': id.toString(), 'title': 'Loading...'}});
       }
     }
   }

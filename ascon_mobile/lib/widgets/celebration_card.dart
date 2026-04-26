@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../viewmodels/dashboard_view_model.dart';
+import '../screens/alumni_detail_screen.dart'; // ✅ Added import for the detail screen
 
 class CelebrationWidget extends ConsumerWidget {
   const CelebrationWidget({super.key});
@@ -71,32 +72,42 @@ class CelebrationWidget extends ConsumerWidget {
             final String name = (item['fullName'] ?? "User").split(" ")[0]; 
             final String? img = item['profilePicture'];
 
-            return Padding(
-              padding: const EdgeInsets.only(right: 20.0),
-              child: Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
+            // ✅ Wrapped the item in a GestureDetector
+            return GestureDetector(
+              onTap: () {
+                Navigator.of(context, rootNavigator: true).push(
+                  MaterialPageRoute(
+                    builder: (_) => AlumniDetailScreen(alumniData: item),
+                  )
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(right: 20.0),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: _buildSafeAvatar(img),
                     ),
-                    child: _buildSafeAvatar(img),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    name, 
-                    style: GoogleFonts.lato(
-                      fontSize: 11, 
-                      fontWeight: FontWeight.w600, 
-                      color: Colors.brown[800]
-                    )
-                  ),
-                  const Text(
-                    "Birthday",
-                    style: TextStyle(fontSize: 10, color: Colors.deepOrange)
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      name, 
+                      style: GoogleFonts.lato(
+                        fontSize: 11, 
+                        fontWeight: FontWeight.w600, 
+                        color: Colors.brown[800]
+                      )
+                    ),
+                    const Text(
+                      "Birthday",
+                      style: TextStyle(fontSize: 10, color: Colors.deepOrange)
+                    ),
+                  ],
+                ),
               ),
             );
         },
@@ -107,7 +118,7 @@ class CelebrationWidget extends ConsumerWidget {
   Widget _buildSafeAvatar(String? imageUrl) {
     const double radius = 24;
 
-    // ✅ FIX: Catch ANY placeholder number (e.g., profile/picture/2)
+    // ✅ Catch ANY placeholder number (e.g., profile/picture/2)
     if (imageUrl == null || imageUrl.isEmpty || imageUrl.contains('profile/picture/')) {
       return _buildFallbackAvatar();
     }

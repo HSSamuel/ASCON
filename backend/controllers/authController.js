@@ -14,7 +14,10 @@ const nodemailer = require("nodemailer");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../utils/AppError");
 
-const { sendPersonalNotification } = require("../utils/notificationHandler");
+const {
+  sendPersonalNotification,
+  notifyPeersOfNewUser,
+} = require("../utils/notificationHandler");
 
 // --------------------------------------------------------------------------
 // 1. AUTH CLIENT
@@ -178,6 +181,9 @@ exports.register = asyncHandler(async (req, res) => {
       userId: savedAuth._id,
       fullName,
       phoneNumber,
+      programmeTitle: req.body.programmeTitle, // ✅ Now saving
+      yearOfAttendance: req.body.yearOfAttendance, // ✅ Now saving
+      city: req.body.city, // ✅ Now saving
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
     });
     await newUserProfile.save({ session });
@@ -219,6 +225,9 @@ exports.register = asyncHandler(async (req, res) => {
       </div>
       `,
     );
+
+    // ✅ Fire the peer notification in the background
+    notifyPeersOfNewUser(newUserProfile).catch((e) => console.error(e));
 
     try {
       if (req.io) {
@@ -521,7 +530,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   userAuth.resetPasswordExpires = Date.now() + 3600000;
   await userAuth.save();
 
-  const clientUrl = process.env.CLIENT_URL || "https://asconalumni.org;
+  const clientUrl = process.env.CLIENT_URL || "https://asconalumni.org";
   const resetUrl = `${clientUrl}/reset-password?token=${token}`;
 
   try {

@@ -1,6 +1,7 @@
 const admin = require("../config/firebase");
 const UserAuth = require("../models/UserAuth");
 const Notification = require("../models/Notification");
+const UserProfile = require("../models/UserProfile");
 const logger = require("./logger");
 
 const getUniqueTokens = (user) => {
@@ -174,4 +175,75 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
   }
 };
 
-module.exports = { sendBroadcastNotification, sendPersonalNotification };
+const notifyPeersOfNewUser = async (newUserProfile) => {
+  try {
+    const { userId, fullName, yearOfAttendance, city } = newUserProfile;
+
+    const queries = [];
+
+    // 1. Check for Same Class
+    if (
+      yearOfAttendance &&
+      yearOfAttendance !== "General" &&
+      yearOfAttendance !== "Unknown"
+    ) {
+      queries.push({ yearOfAttendance: yearOfAttendance });
+    }
+
+    // 2. Check for Same City
+    if (city && city.trim() !== "") {
+      // Case insensitive exact match for city
+      queries.push({ city: { $regex: new RegExp(`^${city.trim()}$`, "i") } });
+    }
+
+    if (queries.length === 0) return;
+
+    // Find peers (excluding the newly registered user)
+    const peers = await UserProfile.find({
+      userId: { $ne: userId },
+      $or: queries,
+    }).select("userId yearOfAttendance city");
+
+    if (peers.length === 0) return;
+
+    const newUserIdStr = userId.toString();
+    const firstName = fullName.split(" ")[0];
+
+    // Send personalized notifications to each matched peer
+    const promises = peers.map((peer) => {
+      let title = "New Alumni Joined! 🎉";
+      let body = `${firstName} just joined the ASCON Alumni Network!`;
+
+      // Prioritize Classmate notification over City notification
+      if (peer.yearOfAttendance == yearOfAttendance) {
+        title = "Classmate Alert! 🎓";
+        body = `${fullName} from your Class of ${yearOfAttendance} just joined!`;
+      } else if (
+        peer.city &&
+        city &&
+        peer.city.toLowerCase() === city.toLowerCase()
+      ) {
+        title = "New Alumni Near You! 📍";
+        body = `${firstName} just joined the network from ${city}. Say hi!`;
+      }
+
+      return sendPersonalNotification(peer.userId.toString(), title, body, {
+        type: "new_alumni",
+        route: "alumni_detail",
+        id: newUserIdStr,
+        fullName: fullName,
+      });
+    });
+
+    await Promise.all(promises);
+    logger.info(`📢 Notified ${peers.length} peers about new user ${fullName}`);
+  } catch (err) {
+    logger.error(`❌ Error notifying peers: ${err.message}`);
+  }
+};
+
+module.exports = {
+  sendBroadcastNotification,
+  sendPersonalNotification,
+  notifyPeersOfNewUser,
+};

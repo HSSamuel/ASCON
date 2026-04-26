@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart'; 
 import '../services/call_service.dart';
 import '../services/socket_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class CallScreen extends StatefulWidget {
   final bool isGroupCall;          
@@ -62,6 +63,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WakelockPlus.enable();
     
     if (widget.isVideoCall) {
       _selectedAudioRoute = 'Speaker'; 
@@ -317,6 +319,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _stopAudio(); 
     _audioPlayer.dispose();
     _listener?.cancel();

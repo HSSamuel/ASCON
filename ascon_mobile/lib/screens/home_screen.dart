@@ -219,40 +219,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             )
           : null, 
 
-        body: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onHorizontalDragEnd: (DragEndDetails details) {
-            final int currentIndex = widget.navigationShell.currentIndex;
-            final double velocity = details.primaryVelocity ?? 0;
-            const int totalTabs = 5;
-
-            int nextIndex = currentIndex;
-
-            // Swipe Left (Negative velocity) -> Go to Next Tab
-            if (velocity < -300) {
-              nextIndex = currentIndex + 1;
-            } 
-            // Swipe Right (Positive velocity) -> Go to Previous Tab
-            else if (velocity > 300) {
-              nextIndex = currentIndex - 1;
-            }
-
-            // Only navigate if the index changed and is within bounds
-            if (nextIndex != currentIndex && nextIndex >= 0 && nextIndex < totalTabs) {
-              // Clear chat badge if swiping to the Chat tab (Index 1)
-              if (nextIndex == 1) { 
-                ref.read(badgeProvider.notifier).clearMessageBadge(); 
-              }
-              _goBranch(nextIndex);
-            }
+        body: NotificationListener<UserScrollNotification>(
+          onNotification: (notification) {
+            _onScroll(notification);
+            return false; 
           },
-          child: NotificationListener<UserScrollNotification>(
-            onNotification: (notification) {
-              _onScroll(notification);
-              return false; 
-            },
-            child: widget.navigationShell,
-          ),
+          child: widget.navigationShell,
         ),
 
         bottomNavigationBar: isKeyboardOpen 

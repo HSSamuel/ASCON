@@ -81,6 +81,18 @@ function Login({ onLogin }) {
 
   return (
     <div className="login-container">
+      {/* 🌟 NEW: Descriptive Hero Section */}
+      <div className="login-hero">
+        <h1 className="hero-title">ASCON Alumni</h1>
+        <p className="hero-description">
+          ASCON Alumni is a dedicated networking and communication platform
+          exclusively for the graduates of the Administrative Staff College of
+          Nigeria. This platform allows alumni to connect with peers, share
+          professional opportunities, and stay updated on institutional news and
+          events.
+        </p>
+      </div>
+
       <div className="login-card">
         <img src={logo} alt="ASCON Logo" className="login-logo" />
         <h2 className="login-title">Admin Portal</h2>
@@ -176,6 +188,23 @@ function Login({ onLogin }) {
             text="signin_with"
           />
         </div>
+      </div>
+
+      {/* 🌐 Responsive Footer */}
+      <div className="login-footer">
+        <a href="/privacy.html" target="_blank" rel="noreferrer">
+          Privacy Policy
+        </a>
+        <span className="footer-separator">|</span>
+
+        <a href="/child-safety.html" target="_blank" rel="noreferrer">
+          Child Safety Policy
+        </a>
+        <span className="footer-separator">|</span>
+
+        <a href="https://asconapp.netlify.app" className="flashy-main-app">
+          Main App 🚀
+        </a>
       </div>
     </div>
   );

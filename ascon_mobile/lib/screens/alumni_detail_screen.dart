@@ -487,6 +487,22 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                         
                         const SizedBox(height: 12),
                         
+                        // 1. "Class Of" Badge moved to the top
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 12), // Added margin to space it from the mentorship block
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD4AF37).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
+                          ),
+                          child: Text(
+                            yearBadgeText,
+                            style: GoogleFonts.lato(color: const Color(0xFFB8860B), fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ),
+
+                        // 2. Mentorship Section moved below
                         if (isMentor)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
@@ -520,19 +536,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                               ],
                             ),
                           ),
-
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFD4AF37).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.3)),
-                          ),
-                          child: Text(
-                            yearBadgeText,
-                            style: GoogleFonts.lato(color: const Color(0xFFB8860B), fontWeight: FontWeight.bold, fontSize: 12),
-                          ),
-                        ),
                       ],
                     ),
                   ),

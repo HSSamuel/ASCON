@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 // Screens
 import 'screens/splash_screen.dart';
+import 'screens/alumni_detail_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart'; 
 import 'screens/events_screen.dart';
@@ -198,6 +199,16 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) {
         final args = state.extra as Map<String, dynamic>;
         return FacilityDetailScreen(facility: args['facility']);
+      },
+    ),
+
+    GoRoute(
+      path: '/alumni_detail',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) {
+        final args = state.extra as Map<String, dynamic>;
+        // Pass the minimal data payload; the screen's init state will fetch the rest!
+        return AlumniDetailScreen(alumniData: args['alumniData']);
       },
     ),
   ],
