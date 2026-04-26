@@ -30,7 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final BiometricService _biometricService = BiometricService(); 
   
   bool _isEmailLoading = false;
-  bool _isGoogleLoading = false;
+  bool _isGoogleLoading = false; // Optional: Can comment this out too since Google Login is disabled
   bool _obscurePassword = true; 
   bool _canCheckBiometrics = false;
 
@@ -283,6 +283,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // ==========================================
+  // COMMENTED OUT GOOGLE LOGIN LOGIC
+  // ==========================================
   Future<void> signInWithGoogle() async {
     try {
       setState(() => _isGoogleLoading = true);
@@ -361,6 +364,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     }
   }
+  // ==========================================
+  // END OF COMMENTED OUT GOOGLE LOGIN LOGIC
+  // ==========================================
 
   @override
   Widget build(BuildContext context) {
@@ -530,7 +536,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                       const SizedBox(height: 16), 
-                      
+
+                      // ==========================================
+                      // COMMENTED OUT GOOGLE LOGIN BUTTON
+                      // ==========================================
                       SizedBox(
                         width: double.infinity, 
                         height: 45, 
@@ -554,6 +563,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         )
                       ),
                       const SizedBox(height: 24),
+                      // ==========================================
+                      // END OF COMMENTED OUT GOOGLE LOGIN BUTTON
+                      // ==========================================
+
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center, 
                         children: [

@@ -43,6 +43,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   DateTime? _lastPressedAt;
   bool _isBottomNavVisible = true;
+  
+  // ✅ 1. ADDED: Tab History Stack to track user's navigation path
+  final List<int> _tabHistory = [0];
 
   @override
   void initState() {
@@ -93,10 +96,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
   }
 
-  void _goBranch(int index) {
+  // ✅ 2. UPDATED: Record tab clicks into history
+  void _goBranch(int index, {bool isBackNavigation = false}) {
     if (index == widget.navigationShell.currentIndex) {
       if (index == 0) {
         ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
+      }
+    } else {
+      // Add to history ONLY if it's a forward tap by the user (not a back button pop)
+      if (!isBackNavigation) {
+        if (_tabHistory.isEmpty || _tabHistory.last != index) {
+          _tabHistory.add(index);
+        }
       }
     }
     widget.navigationShell.goBranch(
@@ -105,6 +116,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     );
   }
 
+  // ✅ 3. UPDATED: Walk backwards through the history stack
   Future<void> _handleBackPress() async {
     if (MediaQuery.of(context).viewInsets.bottom > 0) {
       SystemChannels.textInput.invokeMethod('TextInput.hide');
@@ -121,6 +133,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       case 4: currentNavigatorKey = profileNavKey; break;
     }
 
+    // Step A: Pop any inner screens pushed inside the current tab
     if (currentNavigatorKey != null && 
         currentNavigatorKey.currentState != null && 
         currentNavigatorKey.currentState!.canPop()) {
@@ -128,11 +141,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       return; 
     }
 
-    if (currentIndex != 0) {
-      _goBranch(0);
+    // Step B: Pop through the Tab History
+    if (_tabHistory.length > 1) {
+      _tabHistory.removeLast(); // Remove the current tab
+      final int previousIndex = _tabHistory.last; // Find the previous tab
+      _goBranch(previousIndex, isBackNavigation: true); // Navigate back to it
       return; 
     }
 
+    // Step C: Exit App Logic (Only triggered if history is empty / at root)
     final now = DateTime.now();
     if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
       _lastPressedAt = now;
@@ -807,7 +824,7 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
             ),
           ),
         ),
-        // ✅ UPDATED: Shifted to the Left Side
+        // Shifted to the Left Side
         if (_isAdmin) 
           Positioned(
             top: 4, 

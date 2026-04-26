@@ -315,6 +315,9 @@ const initializeSocket = async (server) => {
                 callerId: userId,
                 callerName: enrichedCallerData.callerName,
                 isVideoCall: enrichedCallerData.isVideoCall ? "true" : "false",
+                callerAvatar: enrichedCallerData.callerAvatar
+                  ? String(enrichedCallerData.callerAvatar)
+                  : "",
               },
               tokens: targetUser.fcmTokens,
               android: { priority: "high" },

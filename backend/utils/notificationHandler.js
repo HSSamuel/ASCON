@@ -71,19 +71,27 @@ const sendBroadcastNotification = async (title, body, data = {}) => {
       try {
         const response = await admin.messaging().sendEachForMulticast(message);
         const failedTokens = [];
+        
         response.responses.forEach((res, idx) => {
           if (!res.success) {
             const errorCode = res.error?.code;
-            if (
-              errorCode === "messaging/registration-token-not-registered" ||
-              errorCode === "messaging/invalid-registration-token"
-            ) {
+            // ✅ ENHANCED: Catch all variations of dead/invalid tokens
+            const invalidTokenErrors = [
+              "messaging/registration-token-not-registered",
+              "messaging/invalid-registration-token",       
+              "messaging/invalid-argument",                  
+              "messaging/mismatched-credential"              
+            ];
+
+            if (invalidTokenErrors.includes(errorCode)) {
               failedTokens.push(uniqueTokens[idx]);
             }
           }
         });
-        if (failedTokens.length > 0)
+        
+        if (failedTokens.length > 0) {
           await cleanupTokens(user._id, failedTokens);
+        }
       } catch (sendError) {
         logger.warn(`Failed to send to user ${user._id}: ${sendError.message}`);
       }
@@ -122,11 +130,7 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
       return;
     }
 
-    // ✅ FIX: ALWAYS send Standard Notification (Visible Banner)
-    // This forces the user to tap the notification to open the app.
-    // CallKit is removed, so we rely on this title/body to alert the user.
-
-    // If title is null (e.g. from socketService), use default
+    // ALWAYS send Standard Notification (Visible Banner)
     const displayTitle =
       title || (isCall ? "Incoming Call" : "New Notification");
     const displayBody =
@@ -158,10 +162,15 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
     response.responses.forEach((res, idx) => {
       if (!res.success) {
         const errorCode = res.error?.code;
-        if (
-          errorCode === "messaging/registration-token-not-registered" ||
-          errorCode === "messaging/invalid-registration-token"
-        ) {
+        // ✅ ENHANCED: Catch all variations of dead/invalid tokens
+        const invalidTokenErrors = [
+          "messaging/registration-token-not-registered", 
+          "messaging/invalid-registration-token",        
+          "messaging/invalid-argument",                  
+          "messaging/mismatched-credential"              
+        ];
+
+        if (invalidTokenErrors.includes(errorCode)) {
           failedTokens.push(uniqueTokens[idx]);
         }
       }

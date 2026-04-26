@@ -37,7 +37,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       id: message.data['channelName'],
       nameCaller: message.data['callerName'] ?? 'Alumni User',
       appName: 'ASCON Connect',
-      avatar: 'https://i.pravatar.cc/100', // Optional default avatar
+      avatar: message.data['callerAvatar'] ?? '',
       handle: 'Incoming Call',
       type: message.data['isVideoCall'] == "true" ? 1 : 0,
       textAccept: 'Accept',
@@ -163,9 +163,6 @@ void main() async {
     }
 
     if (isMobile) {
-       // ✅ FIX: Removed NotificationService().init() from here so it doesn't trigger token requests early.
-       // It will now ONLY run in splash_screen.dart after permissions are verified.
-       
        // Register the single, unified background handler for calls and notifications
        FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     }
@@ -195,6 +192,39 @@ class _MyAppState extends State<MyApp> {
     super.initState();
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
+    _setupInteractedMessage(); // ✅ NEW: Initialize Notification Tap Listeners
+  }
+
+  // ✅ NEW: Handle taps on standard FCM Notifications (Crucial for Web & App-Closed states)
+  Future<void> _setupInteractedMessage() async {
+    // 1. App launched from a terminated state via a notification click
+    RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      _handleNotificationClick(initialMessage);
+    }
+
+    // 2. App opened from the background via a notification click
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationClick);
+  }
+
+  void _handleNotificationClick(RemoteMessage message) {
+    final data = message.data;
+    
+    // Fallback Routing for Calls (Web/Standard Push)
+    if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
+      appRouter.push('/call', extra: {
+        'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
+        'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
+        'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
+        'remoteId': data['callerId'] ?? "",
+        'channelName': data['channelName'] ?? "",
+        'isIncoming': true,
+      });
+    } 
+    // Fallback Routing for Generic Updates/Chat
+    else if (data['route'] != null) {
+      appRouter.push('/${data['route']}', extra: data);
+    }
   }
 
   // Navigate to the actual call screen if user swipes "Accept" on the lock screen
