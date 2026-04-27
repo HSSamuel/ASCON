@@ -5,8 +5,10 @@ const UserSettings = require("../models/UserSettings");
 const Group = require("../models/Group");
 const verifyToken = require("./verifyToken");
 const upload = require("../config/cloudinary");
-// ✅ ADDED: Import ID Generator
 const { generateAlumniId } = require("../utils/idGenerator");
+
+// ✅ ADDED: Import the peer notification function
+const { notifyPeersOfNewUser } = require("../utils/notificationHandler");
 
 // ✅ Centralized Profile Completeness Logic
 const calculateProfileCompleteness = (profile) => {
@@ -62,11 +64,16 @@ router.put("/update", verifyToken, (req, res) => {
       // ✅ NEW: GENERATE ID IF MISSING
       // If the user doesn't have an ID yet, generate it now based on the NEW year provided.
       let generatedAlumniId = currentProfile.alumniId;
+
+      // ✅ Track if this is their first time completing the profile
+      let isFirstTimeSetup = false;
+
       if (!generatedAlumniId && newYear) {
         console.log(
           `🆕 First-time setup: Generating Alumni ID for Year ${newYear}`,
         );
         generatedAlumniId = await generateAlumniId(newYear);
+        isFirstTimeSetup = true; // ✅ Mark as true
       }
 
       // 3. ✅ GROUP SYNC LOGIC (Year Change)
@@ -162,6 +169,14 @@ router.put("/update", verifyToken, (req, res) => {
           { new: true },
         ),
       ]);
+
+      // ✅ 7. NOTIFY PEERS (Only on first-time setup!)
+      // We don't use 'await' here so it doesn't slow down the UI response for the user saving their profile.
+      if (isFirstTimeSetup) {
+        notifyPeersOfNewUser(updatedProfile).catch((err) =>
+          console.error("❌ Peer notification failed:", err),
+        );
+      }
 
       res
         .status(200)

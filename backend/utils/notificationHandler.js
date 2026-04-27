@@ -105,7 +105,10 @@ const sendBroadcastNotification = async (title, body, data = {}) => {
 
 const sendPersonalNotification = async (userId, title, body, data = {}) => {
   try {
-    const isCall = data.type === "call_offer" || data.type === "video_call";
+    const isCall =
+      data.type === "call_offer" ||
+      data.type === "video_call" ||
+      data.type === "incoming_call";
 
     // Only save non-call notifications to DB history
     if (title && body && !isCall) {
@@ -130,31 +133,40 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
       return;
     }
 
-    // ALWAYS send Standard Notification (Visible Banner)
-    const displayTitle =
-      title || (isCall ? "Incoming Call" : "New Notification");
-    const displayBody =
-      body || (isCall ? "Tap to answer..." : "You have a new message");
+    // ✅ FIX: Separate Data-Only payloads (Calls) from Standard Notifications
+    let message = {
+      tokens: uniqueTokens,
+    };
 
-    const message = {
-      notification: {
-        title: displayTitle,
-        body: displayBody,
-      },
-      android: {
+    if (isCall) {
+      // 🚨 DATA-ONLY PAYLOAD: Do NOT add a 'notification' block here.
+      // This forces the OS to wake up the Flutter background handler to ring the phone.
+      message.data = {
+        ...data,
+        type: data.type || "incoming_call", // standardize the type
+      };
+      message.android = {
+        priority: "high", // Required to wake sleeping devices
+      };
+    } else {
+      // STANDARD NOTIFICATION PAYLOAD (Chat, Events, etc)
+      message.notification = {
+        title: title || "New Notification",
+        body: body || "You have a new message",
+      };
+      message.data = {
+        ...data,
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+      };
+      message.android = {
         notification: {
-          channelId: isCall ? "ascon_call_channel" : "ascon_high_importance",
+          channelId: "ascon_high_importance",
           priority: "high",
           sound: "default",
           visibility: "public",
         },
-      },
-      data: {
-        ...data,
-        click_action: "FLUTTER_NOTIFICATION_CLICK",
-      },
-      tokens: uniqueTokens,
-    };
+      };
+    }
 
     const response = await admin.messaging().sendEachForMulticast(message);
 
@@ -164,10 +176,10 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
         const errorCode = res.error?.code;
         // ✅ ENHANCED: Catch all variations of dead/invalid tokens
         const invalidTokenErrors = [
-          "messaging/registration-token-not-registered", 
-          "messaging/invalid-registration-token",        
-          "messaging/invalid-argument",                  
-          "messaging/mismatched-credential"              
+          "messaging/registration-token-not-registered",
+          "messaging/invalid-registration-token",
+          "messaging/invalid-argument",
+          "messaging/mismatched-credential",
         ];
 
         if (invalidTokenErrors.includes(errorCode)) {

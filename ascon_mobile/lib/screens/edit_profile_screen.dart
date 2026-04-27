@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
+import 'package:hive/hive.dart';
 import '../services/data_service.dart'; 
 import '../viewmodels/profile_view_model.dart'; 
 import '../viewmodels/dashboard_view_model.dart'; 
@@ -174,15 +175,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
   Future<void> _updateLocalCache(Map<String, String> fields) async {
     try {
+      // 1. Keep SharedPreferences for basic name access if used elsewhere
       final prefs = await SharedPreferences.getInstance();
-      
-      // Update basic name preference
       if (fields['fullName'] != null) {
         await prefs.setString('user_name', fields['fullName']!);
       }
       
-      // Fetch the old cache
-      String? userJson = prefs.getString('cached_user');
+      // ✅ 2. FIX: Synchronize perfectly with ProfileNotifier's Hive Cache
+      final cacheBox = Hive.box('ascon_cache');
+      String? userJson = cacheBox.get('user_profile_cache');
+      
       Map<String, dynamic> userMap = {};
       
       if (userJson != null) {
@@ -191,23 +193,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         userMap = Map<String, dynamic>.from(widget.userData);
       }
 
-      // ✅ FIX: Safely parse and inject all new fields into the map
-      if (fields['fullName'] != null) userMap['fullName'] = fields['fullName'];
-      if (fields['programmeTitle'] != null) userMap['programmeTitle'] = fields['programmeTitle'];
-      
-      // ✅ VITAL FIX: Ensure Year of Attendance is strictly saved as an integer
-      if (fields['yearOfAttendance'] != null && fields['yearOfAttendance']!.isNotEmpty) {
-        userMap['yearOfAttendance'] = int.tryParse(fields['yearOfAttendance']!) ?? fields['yearOfAttendance'];
-      }
+      // 3. Inject all newly submitted fields into the map safely
+      fields.forEach((key, value) {
+        if (key == 'isBirthdayVisible' || key == 'isLocationVisible' || key == 'isOpenToMentorship') {
+          userMap[key] = value == 'true';
+        } else if (key == 'yearOfAttendance') {
+          userMap[key] = int.tryParse(value) ?? value;
+        } else {
+          userMap[key] = value;
+        }
+      });
 
-      // Update toggles
-      if (fields['isBirthdayVisible'] != null) userMap['isBirthdayVisible'] = fields['isBirthdayVisible'] == 'true';
-      if (fields['isLocationVisible'] != null) userMap['isLocationVisible'] = fields['isLocationVisible'] == 'true';
-      if (fields['isOpenToMentorship'] != null) userMap['isOpenToMentorship'] = fields['isOpenToMentorship'] == 'true';
-
-      // Save it back to the device
-      await prefs.setString('cached_user', jsonEncode(userMap));
-      debugPrint("✅ Local Cache successfully updated with year: ${userMap['yearOfAttendance']}");
+      // 4. Save it back to Hive so ProfileNotifier reads the fresh data instantly
+      await cacheBox.put('user_profile_cache', jsonEncode(userMap));
+      debugPrint("✅ Local Cache successfully updated in Hive");
     } catch (e) {
       debugPrint("❌ Cache Update Failed: $e");
     }

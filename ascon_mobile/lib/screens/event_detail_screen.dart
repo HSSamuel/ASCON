@@ -88,7 +88,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
 
-  // ✅ NEW: Builds the rich link card (like Updates Screen)
   Widget _buildLinkCard(String url, bool isDark) {
     IconData icon = Icons.link;
     String title = "External Link";
@@ -401,7 +400,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         List<String> extractedUrls = [];
         String cleanText = paragraph;
 
-        // ✅ Extract URLs and remove them from the raw text
         for (final match in urlRegex.allMatches(paragraph)) {
           String url = match.group(0)!;
           if (url.endsWith(')') || url.endsWith('.') || url.endsWith(',')) {
@@ -422,7 +420,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               children: [
                 Text("• ", style: baseStyle.copyWith(fontWeight: FontWeight.bold)),
                 Expanded(
-                  child: Text.rich(
+                  child: SelectableText.rich( // ✅ ADDED SELECTABLE
                     _parseRichText(cleanText.substring(2).trimLeft(), baseStyle, isDark),
                     textAlign: TextAlign.justify,
                   ),
@@ -433,7 +431,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         } else {
           textContent = Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
-            child: Text.rich(
+            child: SelectableText.rich( // ✅ ADDED SELECTABLE
               _parseRichText(cleanText, baseStyle, isDark),
               textAlign: TextAlign.justify,
             ),
@@ -444,7 +442,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             textContent,
-            // ✅ Render beautiful link cards at the bottom of the paragraph
             ...extractedUrls.map((url) => _buildLinkCard(url, isDark)),
           ],
         );
@@ -454,7 +451,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
 
   TextSpan _parseRichText(String text, TextStyle baseStyle, bool isDark) {
     List<TextSpan> spans = [];
-    final regex = RegExp(r'\*\*(.*?)\*\*|\*(.*?)\*'); // Removed raw URL regex since cards handle them now
+    final regex = RegExp(r'\*\*(.*?)\*\*|\*(.*?)\*');
     int lastMatchEnd = 0;
 
     for (final match in regex.allMatches(text)) {

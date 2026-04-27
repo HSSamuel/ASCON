@@ -204,6 +204,7 @@ class PostCard extends ConsumerWidget {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
                         child: MarkdownBody(
+                          selectable: true, // ✅ THIS ENABLES COPYING FOR POSTS
                           data: cleanText,
                           styleSheet: MarkdownStyleSheet(
                             p: GoogleFonts.lato(fontSize: 13, color: textColor, height: 1.3),

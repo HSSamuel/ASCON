@@ -24,22 +24,23 @@ final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
 final ProviderContainer providerContainer = ProviderContainer();
 
-// ✅ Unified High-Priority Background Handler
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(); // Initialize isolated Firebase instance
 
   if (kIsWeb) return;
 
-  // 1. ROUTE AS INCOMING CALL
-  if (message.data['type'] == 'incoming_call') {
+  // ✅ FIX: Catch 'call_offer', 'video_call', AND 'incoming_call'
+  final type = message.data['type'];
+  if (type == 'incoming_call' || type == 'call_offer' || type == 'video_call') {
+    
     CallKitParams callKitParams = CallKitParams(
-      id: message.data['channelName'],
+      id: message.data['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}", // Fallback ID
       nameCaller: message.data['callerName'] ?? 'Alumni User',
       appName: 'ASCON Connect',
       avatar: message.data['callerAvatar'] ?? '',
       handle: 'Incoming Call',
-      type: message.data['isVideoCall'] == "true" ? 1 : 0,
+      type: (message.data['isVideoCall'] == "true" || type == 'video_call') ? 1 : 0,
       textAccept: 'Accept',
       textDecline: 'Decline',
       missedCallNotification: const NotificationParams(
