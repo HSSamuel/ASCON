@@ -10,6 +10,7 @@ import AdminDashboard from "./AdminDashboard";
 import Login from "./Login";
 import ResetPassword from "./pages/ResetPassword";
 import VerificationPage from "./pages/VerificationPage";
+import LandingPage from "./pages/LandingPage";
 
 const ProtectedRoute = ({ children }) => {
   const { token, isLoading } = useAuth();
@@ -47,15 +48,24 @@ const AppRoutes = () => {
       <Route path="/verify/:id" element={<VerificationPage />} />
       <Route path="/reset-password" element={<ResetPassword />} />
 
+      {/* ✅ 2. The Landing Page becomes the default root */}
+      <Route path="/" element={<LandingPage />} />
+
+      {/* ✅ 3. Update Login redirect to push to /dashboard instead of / */}
       <Route
         path="/login"
         element={
-          !token ? <Login onLogin={login} /> : <Navigate to="/" replace />
+          !token ? (
+            <Login onLogin={login} />
+          ) : (
+            <Navigate to="/dashboard" replace />
+          )
         }
       />
 
+      {/* ✅ 4. Move the Admin Dashboard to a dedicated /dashboard route */}
       <Route
-        path="/"
+        path="/dashboard"
         element={
           <ProtectedRoute>
             <AdminDashboard token={token} onLogout={logout} />
@@ -63,6 +73,7 @@ const AppRoutes = () => {
         }
       />
 
+      {/* Fallback to landing page for unknown routes */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

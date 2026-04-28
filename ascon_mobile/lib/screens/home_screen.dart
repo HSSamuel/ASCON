@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart'; 
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../main.dart';
 import '../router.dart'; 
@@ -53,9 +54,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkFirstTimeWelcome());
 
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) NotificationService().requestPermission();
+    Future.delayed(const Duration(seconds: 3), () async {
+      if (mounted) {
+        await NotificationService().requestPermission();
+        await _requestCriticalCallPermissions(); // ✅ Triggers the WhatsApp-style popup flow
+      }
     });
+  }
+
+  Future<void> _requestCriticalCallPermissions() async {
+    if (kIsWeb) return; // Permissions aren't handled this way on the web
+    
+    // 1. Request standard permissions
+    await [
+      Permission.microphone,
+      Permission.camera,
+      Permission.notification,
+    ].request();
+
+    // 2. Automatically prompt for Full-Screen Intent (Crucial for Android 14+ CallKit)
+    if (await Permission.systemAlertWindow.isDenied) {
+      await Permission.systemAlertWindow.request();
+    }
+
+    // 3. Automatically prompt to ignore Battery Optimizations (Prevents background kills)
+    if (await Permission.ignoreBatteryOptimizations.isDenied) {
+      await Permission.ignoreBatteryOptimizations.request();
+    }
   }
 
   Future<void> _checkFirstTimeWelcome() async {
@@ -141,7 +166,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       return; 
     }
 
-    // Step B: Pop through the Tab History
+    // Step B: Pop through the Tab History (Manual taps)
     if (_tabHistory.length > 1) {
       _tabHistory.removeLast(); // Remove the current tab
       final int previousIndex = _tabHistory.last; // Find the previous tab
@@ -149,7 +174,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       return; 
     }
 
-    // Step C: Exit App Logic (Only triggered if history is empty / at root)
+    // ==========================================
+    // ✅ NEW: Step C: Deep-Link Fallback
+    // If the user arrived via notification and has no tab history,
+    // force them back to the Home Dashboard (0) instead of exiting.
+    // ==========================================
+    if (currentIndex != 0) {
+      _goBranch(0, isBackNavigation: true);
+      return;
+    }
+
+    // Step D: Exit App Logic (Only triggered if at root Home Dashboard)
     final now = DateTime.now();
     if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
       _lastPressedAt = now;

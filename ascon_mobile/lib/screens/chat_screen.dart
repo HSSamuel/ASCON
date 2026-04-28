@@ -19,6 +19,7 @@ import 'package:vibration/vibration.dart';
 import 'package:url_launcher/url_launcher.dart'; 
 
 import '../viewmodels/chat_detail_view_model.dart'; 
+import '../viewmodels/chat_view_model.dart';
 import '../viewmodels/profile_view_model.dart'; 
 import '../models/chat_objects.dart';
 import '../utils/presence_formatter.dart';
@@ -207,7 +208,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _audioPlayer.onDurationChanged.listen((d) => setState(() => _totalDuration = d));
   }
 
-  @override
+ @override
   void dispose() {
     _statusSubscription?.cancel();
     _textController.dispose();
@@ -217,6 +218,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _recordTimer?.cancel();
     _audioRecorder.dispose();
     _audioPlayer.dispose();
+    
+    // ✅ ADD THIS: Force the ChatList to sync globally when leaving the screen.
+    // This perfectly catches users who entered via a Push Notification Deep Link.
+    Future.microtask(() {
+      try {
+        ref.read(chatProvider.notifier).loadConversations();
+      } catch (e) {}
+    });
+
     super.dispose();
   }
 

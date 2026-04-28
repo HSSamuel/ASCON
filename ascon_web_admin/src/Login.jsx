@@ -94,7 +94,15 @@ function Login({ onLogin }) {
       </div>
 
       <div className="login-card">
-        <img src={logo} alt="ASCON Logo" className="login-logo" />
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            marginBottom: "20px",
+          }}
+        >
+          <img src={logo} alt="ASCON Logo" className="login-logo" />
+        </div>
         <h2 className="login-title">Admin Portal</h2>
 
         {error && (
@@ -153,23 +161,30 @@ function Login({ onLogin }) {
           </button>
         </form>
 
-        {/* Divider */}
+        {/* Divider with Main App Link */}
         <div
-          style={{ display: "flex", alignItems: "center", margin: "20px 0" }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            margin: "24px 0 20px",
+          }}
         >
           <div
             style={{ flex: 1, height: "1px", backgroundColor: "#ddd" }}
           ></div>
-          <span
+          <a
+            href="https://asconapp.netlify.app"
+            className="flashy-main-app"
             style={{
-              padding: "0 10px",
-              color: "#888",
-              fontSize: "12px",
-              fontWeight: "500",
+              padding: "0 15px",
+              textDecoration: "none",
+              fontWeight: "700",
+              fontSize: "13px",
+              color: "#1B5E3A" /* ASCON Green */,
             }}
           >
-            OR
-          </span>
+            Main App 🚀
+          </a>
           <div
             style={{ flex: 1, height: "1px", backgroundColor: "#ddd" }}
           ></div>
@@ -199,11 +214,6 @@ function Login({ onLogin }) {
 
         <a href="/child-safety.html" target="_blank" rel="noreferrer">
           Child Safety Policy
-        </a>
-        <span className="footer-separator">|</span>
-
-        <a href="https://asconapp.netlify.app" className="flashy-main-app">
-          Main App 🚀
         </a>
       </div>
     </div>

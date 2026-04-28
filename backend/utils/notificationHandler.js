@@ -139,15 +139,29 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
     };
 
     if (isCall) {
-      // 🚨 DATA-ONLY PAYLOAD: Do NOT add a 'notification' block here.
-      // This forces the OS to wake up the Flutter background handler to ring the phone.
+      // 🚨 CRITICAL FIX: Ensure every single value in the data payload is a string.
+      // FCM will silently fail to deliver background messages if it contains booleans or numbers.
+      const safeStringifiedData = {};
+      for (const [key, value] of Object.entries(data)) {
+        safeStringifiedData[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      }
+
       message.data = {
-        ...data,
-        type: data.type || "incoming_call", // standardize the type
+        ...safeStringifiedData,
+        type: data.type || "incoming_call", 
       };
+      
       message.android = {
-        priority: "high", // Required to wake sleeping devices
+        priority: "high", 
       };
+
+      // ✅ ADDED FOR iOS: Standard FCM data messages won't wake a terminated iOS app.
+      // You must include APNs headers to force the iOS device to wake up.
+      message.apns = {
+        headers: { "apns-priority": "10" },
+        payload: { aps: { "content-available": 1 } }
+      };
+
     } else {
       // STANDARD NOTIFICATION PAYLOAD (Chat, Events, etc)
       message.notification = {

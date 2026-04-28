@@ -562,6 +562,15 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
 
     if (unreadIds.isNotEmpty) {
       _socket.markMessagesAsRead(state.conversationId!, unreadIds, state.myUserId);
+      
+      // ✅ ADD THIS: Tell the server to broadcast the 'messages_read' event 
+      // back to the client so the ChatListScreen drops the unread badge instantly.
+      _socket.socket?.emit('messages_read', {
+        'conversationId': state.conversationId,
+        'messageIds': unreadIds,
+        'readerId': state.myUserId
+      });
+
       final updated = state.messages.map((m) {
         if (unreadIds.contains(m.id)) {
           m.isRead = true;

@@ -206,9 +206,14 @@ final GoRouter appRouter = GoRouter(
       path: '/alumni_detail',
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) {
-        final args = state.extra as Map<String, dynamic>;
-        // Pass the minimal data payload; the screen's init state will fetch the rest!
-        return AlumniDetailScreen(alumniData: args['alumniData']);
+        // ✅ Defensively cast the arguments to prevent Null Pointer Exceptions
+        final args = state.extra as Map<String, dynamic>? ?? {};
+        
+        // Provide an absolute fallback so it never crashes the build method
+        final Map<String, dynamic> fallbackData = {'_id': '', 'fullName': 'Alumni'};
+        final Map<String, dynamic> alumniData = args['alumniData'] as Map<String, dynamic>? ?? fallbackData;
+        
+        return AlumniDetailScreen(alumniData: alumniData);
       },
     ),
   ],

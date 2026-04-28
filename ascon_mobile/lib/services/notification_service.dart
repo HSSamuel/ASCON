@@ -177,12 +177,15 @@ class NotificationService {
       return;
     }
 
-    // ✅ NEW ALUMNI ROUTING
+// ✅ NEW ALUMNI ROUTING
     if (route == 'alumni_detail' || type == 'new_alumni') {
       appRouter.push('/alumni_detail', extra: {
         'alumniData': {
-          '_id': id.toString(),
+          '_id': id?.toString() ?? '',
+          'userId': id?.toString() ?? '', // ✅ Provide both ID formats to be safe
           'fullName': data['fullName'] ?? 'New Alumni',
+          'profilePicture': '', // ✅ Prevents null cast errors on images
+          'isOnline': false,
         }
       });
       return;

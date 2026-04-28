@@ -9,7 +9,8 @@ import 'package:intl/intl.dart';
 import '../viewmodels/chat_view_model.dart';
 import '../widgets/shimmer_utils.dart';
 import '../widgets/chat/call_logs_tab.dart'; 
-import '../widgets/robust_avatar.dart'; // ✅ NEW IMPORT
+import '../widgets/robust_avatar.dart'; 
+import '../services/socket_service.dart';
 import 'chat_screen.dart';
 
 class ChatListScreen extends ConsumerStatefulWidget {
@@ -39,12 +40,25 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     super.dispose();
   }
 
-  // ✅ ADDED: Flush stale data on app resume
+// ✅ ADDED: Flush stale data on app resume & Wake Socket
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       debugPrint("📱 App Resumed: Flushing stale online statuses...");
+      
+      // 1. Fetch fresh data from the REST API
       ref.read(chatProvider.notifier).loadConversations();
+      
+      // 2. ✅ FORCE WAKE THE SOCKET: Backgrounding kills WebSockets. 
+      // We must explicitly re-establish the connection.
+      try {
+        final socketService = SocketService();
+        if (socketService.socket?.connected == false) {
+          socketService.socket?.connect();
+        }
+      } catch (e) {
+        debugPrint("Socket wake error: $e");
+      }
     }
   }
 
