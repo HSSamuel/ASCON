@@ -44,8 +44,8 @@ android {
     defaultConfig {
         applicationId = "com.ascon.app"
         
-        // ✅ 26 is excellent for modern VoIP (Agora/CallKit) and Firebase
-        minSdk = 26
+        // ✅ 21 is excellent for modern VoIP (Agora/CallKit) and Firebase
+        minSdk = flutter.minSdkVersion
         
         // ✅ UPDATED: Matched to compileSdk 36 for stability
         targetSdk = 36
