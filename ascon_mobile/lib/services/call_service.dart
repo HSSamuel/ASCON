@@ -10,7 +10,6 @@ import 'package:audio_session/audio_session.dart';
 
 enum CallEvent { ringing, connected, callEnded, error, userJoined, userOffline }
 
-// ✅ ADDED: WidgetsBindingObserver to listen for background/foreground OS events
 class CallService with WidgetsBindingObserver {
   static final CallService _instance = CallService._internal();
   factory CallService() => _instance;
@@ -19,7 +18,7 @@ class CallService with WidgetsBindingObserver {
   late RtcEngine _engine;
   bool _isInitialized = false;
   bool isJoined = false;
-  bool _isVideo = false; // Tracks if current call is video to manage OS camera locks
+  bool _isVideo = false; 
   
   Set<int> remoteUids = {}; 
 
@@ -32,7 +31,13 @@ class CallService with WidgetsBindingObserver {
     if (_isInitialized) return;
 
     if (!kIsWeb) {
-      await [Permission.microphone, Permission.camera].request();
+      // ✅ ADDED: SystemAlertWindow and IgnoreBatteryOptimizations for offline Doze routing
+      await [
+        Permission.microphone, 
+        Permission.camera,
+        Permission.systemAlertWindow, 
+        Permission.ignoreBatteryOptimizations
+      ].request();
     }
 
     String appId = dotenv.env['AGORA_APP_ID'] ?? '';
@@ -77,23 +82,18 @@ class CallService with WidgetsBindingObserver {
     await _engine.enableAudio();
     _isInitialized = true;
 
-    // ✅ ADDED: Register the observer to listen to OS backgrounding
     WidgetsBinding.instance.addObserver(this);
   }
 
-  // ✅ ADDED: OS Lifecycle Management for Camera/Mic locks
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!_isInitialized || !isJoined) return;
 
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      // App went to background. OS often kills camera access. 
-      // Mute local video to prevent Agora/OS crash, but keep connection alive.
       if (_isVideo) {
         _engine.muteLocalVideoStream(true);
       }
     } else if (state == AppLifecycleState.resumed) {
-      // App came back to foreground. Safe to resume video.
       if (_isVideo) {
         _engine.muteLocalVideoStream(false);
       }
@@ -102,7 +102,7 @@ class CallService with WidgetsBindingObserver {
 
   Future<bool> joinCall({required String channelName, bool isVideo = false}) async {
     if (!_isInitialized) await init();
-    _isVideo = isVideo; // Track video state for the lifecycle observer
+    _isVideo = isVideo; 
 
     try {
       final response = await ApiClient().post('/api/agora/token', {'channelName': channelName});
@@ -263,7 +263,6 @@ class CallService with WidgetsBindingObserver {
     }
   }
 
-  // ✅ ADDED: Cleanup observer if the service is somehow destroyed
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
   }

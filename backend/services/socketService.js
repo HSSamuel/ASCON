@@ -3,10 +3,10 @@ const { createAdapter } = require("@socket.io/redis-adapter");
 const { createClient } = require("redis");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
-const admin = require("firebase-admin"); // ✅ ADDED Firebase Admin SDK
+const admin = require("firebase-admin");
 const UserAuth = require("../models/UserAuth");
 const UserProfile = require("../models/UserProfile");
-const User = require("../models/User"); // ✅ ADDED User model to get fcmTokens
+const User = require("../models/User");
 const Group = require("../models/Group");
 const Message = require("../models/Message");
 const CallLog = require("../models/CallLog");
@@ -14,7 +14,6 @@ const logger = require("../utils/logger");
 
 let io;
 let redisClient;
-const onlineUsersMemory = new Map();
 const disconnectTimers = new Map();
 
 // ✅ COST SAFEGUARD TIMERS
@@ -22,45 +21,15 @@ const activeCallTimers = new Map();
 const MAX_RING_TIME = 60 * 1000; // 60 Seconds
 const MAX_CALL_DURATION = 45 * 60 * 1000; // 45 Minutes
 
-const addSocketToUser = async (userId, socketId) => {
-  if (redisClient && redisClient.isOpen) {
-    await redisClient.sAdd(`online_users:${userId}`, socketId);
-    await redisClient.expire(`online_users:${userId}`, 86400);
-    return await redisClient.sCard(`online_users:${userId}`);
-  } else {
-    if (!onlineUsersMemory.has(userId))
-      onlineUsersMemory.set(userId, new Set());
-    onlineUsersMemory.get(userId).add(socketId);
-    return onlineUsersMemory.get(userId).size;
-  }
-};
-
-const removeSocketFromUser = async (userId, socketId) => {
-  if (redisClient && redisClient.isOpen) {
-    await redisClient.sRem(`online_users:${userId}`, socketId);
-    return await redisClient.sCard(`online_users:${userId}`);
-  } else {
-    if (onlineUsersMemory.has(userId)) {
-      onlineUsersMemory.get(userId).delete(socketId);
-
-      // ✅ CRITICAL MEMORY LEAK FIX: Delete the key entirely if set is empty
-      if (onlineUsersMemory.get(userId).size === 0) {
-        onlineUsersMemory.delete(userId);
-        return 0;
-      }
-      return onlineUsersMemory.get(userId).size;
-    }
-    return 0;
-  }
-};
-
+// ✅ NATIVE SOCKET.IO ROOM TRACKING (Replaces Buggy Redis Manual Sets)
 const getSocketCount = async (userId) => {
-  if (redisClient && redisClient.isOpen) {
-    return await redisClient.sCard(`online_users:${userId}`);
-  } else {
-    return onlineUsersMemory.has(userId)
-      ? onlineUsersMemory.get(userId).size
-      : 0;
+  try {
+    if (!io) return 0;
+    const sockets = await io.in(userId).fetchSockets();
+    return sockets.length;
+  } catch (err) {
+    logger.error(`Error fetching sockets for ${userId}: ${err.message}`);
+    return 0;
   }
 };
 
@@ -278,6 +247,42 @@ const initializeSocket = async (server) => {
     socket.on(
       "initiate_call",
       async ({ targetUserId, channelName, callerData }) => {
+        // ✅ ADDED: Cross-Call Collision & Busy Detection
+        let isTargetBusy = false;
+        let mutualChannel = null;
+
+        for (const [key, callData] of activeCallTimers.entries()) {
+          if (
+            callData.caller === targetUserId ||
+            callData.receiver === targetUserId
+          ) {
+            isTargetBusy = true;
+            if (
+              callData.caller === targetUserId &&
+              callData.receiver === userId
+            ) {
+              mutualChannel = callData.channelName;
+            }
+          }
+        }
+
+        if (mutualChannel && !callerData.isGroupCall) {
+          logger.info(
+            `📞 Collision detected! Merging ${userId} into ${mutualChannel}`,
+          );
+          socket.emit("call_ended", {
+            channelName: channelName,
+            reason: "collision_merge",
+            existingChannel: mutualChannel,
+          });
+          return;
+        }
+
+        if (isTargetBusy && !callerData.isGroupCall) {
+          socket.emit("call_ended", { channelName, reason: "user_busy" });
+          return;
+        }
+
         let enrichedCallerData = { ...callerData };
 
         try {
@@ -344,7 +349,6 @@ const initializeSocket = async (server) => {
           callerData: enrichedCallerData,
         });
 
-        // ✅ CRITICAL BUG FIX: Composite Key for Group Call Timers
         const callKey = `${channelName}_${targetUserId}`;
 
         const ringTimer = setTimeout(async () => {
@@ -386,12 +390,10 @@ const initializeSocket = async (server) => {
 
       socket.to(targetUserId).emit("call_answered", { channelName });
 
-      // ✅ FIX: The receiver (userId) is answering the caller (targetUserId)
       const callKey = `${channelName}_${userId}`;
       const callData = activeCallTimers.get(callKey);
       if (callData) clearTimeout(callData.timer);
 
-      // Start the strict heartbeat timer
       const heartbeatTimer = setTimeout(async () => {
         logger.warn(
           `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
@@ -417,7 +419,6 @@ const initializeSocket = async (server) => {
     });
 
     socket.on("call_heartbeat", ({ channelName }) => {
-      // ✅ FIX: Traverse to find specific user's participation in this channel
       for (const [key, callData] of activeCallTimers.entries()) {
         if (
           key.startsWith(`${channelName}_`) &&
@@ -425,7 +426,6 @@ const initializeSocket = async (server) => {
         ) {
           clearTimeout(callData.timer);
 
-          // Reset the strict countdown
           const newTimer = setTimeout(async () => {
             logger.warn(
               `Missed heartbeat for ${channelName}. Force terminating stuck call.`,
@@ -447,7 +447,6 @@ const initializeSocket = async (server) => {
     });
 
     socket.on("end_call", async ({ targetUserId, channelName }) => {
-      // ✅ FIX: Iterate safely
       for (const [key, callData] of activeCallTimers.entries()) {
         if (
           key.startsWith(`${channelName}_`) &&
@@ -500,7 +499,6 @@ const initializeSocket = async (server) => {
           reason: reason || "user_busy",
         });
 
-        // ✅ FIX: Safely retrieve and destroy using added channelName payload
         for (const [key, data] of activeCallTimers.entries()) {
           if (data.receiver === userId && data.caller === targetUserId) {
             clearTimeout(data.timer);
@@ -534,7 +532,7 @@ const handleConnection = async (socket, userId) => {
     disconnectTimers.delete(userId);
   }
 
-  const count = await addSocketToUser(userId, socket.id);
+  const count = await getSocketCount(userId);
 
   if (count === 1) {
     await UserAuth.findByIdAndUpdate(userId, { isOnline: true }).catch((e) =>
@@ -545,8 +543,6 @@ const handleConnection = async (socket, userId) => {
 };
 
 const handleDisconnect = async (socket, userId) => {
-  await removeSocketFromUser(userId, socket.id);
-
   const timer = setTimeout(async () => {
     const count = await getSocketCount(userId);
 

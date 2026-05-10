@@ -18,6 +18,7 @@ const errorHandler = require("./utils/errorMiddleware");
 const logger = require("./utils/logger");
 
 const { initializeSocket, closeSocket } = require("./services/socketService");
+const runWeeklySmartMatch = require("./services/smartMatchCron");
 
 // 1. Initialize the App
 const app = express();
@@ -174,6 +175,8 @@ mongoose
   .then(async () => {
     logger.info("✅ Connected to MongoDB Successfully!");
 
+    runWeeklySmartMatch();
+
     try {
       // 2. ✅ NEW: Reset Stuck Calls
       const stuckCalls = await CallLog.updateMany(
@@ -217,6 +220,19 @@ const gracefulShutdown = async (signal) => {
       if (mongoose.connection.readyState === 1) {
         await mongoose.connection.close(false);
         logger.info("🛑 MongoDB connection cleanly closed.");
+      }
+
+      // ✅ Add this right below your stuck calls cleanup:
+      try {
+        const stuckUsers = await UserAuth.updateMany(
+          { isOnline: true },
+          { $set: { isOnline: false, lastSeen: new Date() } },
+        );
+        logger.info(
+          `🧹 Cleaned up ${stuckUsers.modifiedCount} stuck online users.`,
+        );
+      } catch (err) {
+        logger.error("⚠️ Failed to run presence cleanup:", err);
       }
 
       logger.info("✅ Graceful shutdown completed. Exiting process.");

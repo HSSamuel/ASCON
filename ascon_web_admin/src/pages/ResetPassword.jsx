@@ -123,11 +123,22 @@ export default function ResetPassword() {
   return (
     <div className="reset-container">
       <div className="reset-card">
-        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            marginBottom: "20px",
+          }}
+        >
           <img
             src={logo}
             alt="ASCON Logo"
-            style={{ width: "100px", height: "auto" }}
+            style={{
+              width: "100px",
+              height: "auto",
+              display: "block",
+              margin: "0 auto",
+            }}
           />
         </div>
 

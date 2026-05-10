@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:audioplayers/audioplayers.dart'; 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart'; 
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart' hide CallEvent; 
+import 'package:flutter_callkit_incoming/entities/entities.dart' hide CallEvent; 
 import '../services/call_service.dart';
 import '../services/socket_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -43,6 +45,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   final SocketService _socketService = SocketService();
   final AudioPlayer _audioPlayer = AudioPlayer(); 
   
+  late String _currentChannel; // ✅ ADDED: Mutable channel state for collision swaps
+
   String _status = "Connecting...";
   bool _isMuted = false;
   bool _isVideoOff = false; 
@@ -50,7 +54,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   bool _isConnected = false;
   bool _hasAccepted = false;
   int _activeGroupUsers = 0; 
-  bool _isDialing = false; // ✅ ADDED: Prevent Audio Race conditions
+  bool _isDialing = false; 
 
   StreamSubscription<CallEvent>? _listener;
   StreamSubscription<Map<String, dynamic>>? _socketListener;
@@ -64,6 +68,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     WakelockPlus.enable();
+    
+    _currentChannel = widget.channelName; // ✅ INITIALIZE mutable channel
     
     if (widget.isVideoCall) {
       _selectedAudioRoute = 'Speaker'; 
@@ -87,7 +93,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       _startOutgoingCall();
       _playDialingSound(); 
       
-      // Request their online status immediately
       if (!widget.isGroupCall && widget.remoteId != null) {
         _socketService.checkUserStatus(widget.remoteId!);
       }
@@ -103,7 +108,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _isDialing = true;
     await _audioPlayer.setReleaseMode(ReleaseMode.loop);
     
-    // ✅ FIX: Ensure call is still valid by the time the async audio driver boots
     if (_isDialing && mounted && (_status == "Calling..." || _status == "Ringing...")) {
       await _audioPlayer.play(AssetSource('sounds/dialing.mp3'));
     }
@@ -115,13 +119,21 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _startOutgoingCall() async {
-    bool success = await _callService.joinCall(channelName: widget.channelName, isVideo: widget.isVideoCall); 
+    bool success = await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall); 
     
-    if (!mounted) return; // ✅ FIX: Context safety after async init
+    if (!mounted) return; 
 
     if (success) {
       if (!kIsWeb) {
         _callService.setAudioRoute(_selectedAudioRoute); 
+        
+        // ✅ ADDED: Register native call state
+        await FlutterCallkitIncoming.startCall(CallKitParams(
+          id: _currentChannel,
+          nameCaller: widget.remoteName,
+          handle: 'Ongoing Call',
+          type: widget.isVideoCall ? 1 : 0,
+        ));
       }
 
       Map<String, dynamic> callerPayload = {
@@ -134,10 +146,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
       if (widget.isGroupCall && widget.targetIds != null) {
         for (String target in widget.targetIds!) {
-          _socketService.initiateCall(target, widget.channelName, callerPayload);
+          _socketService.initiateCall(target, _currentChannel, callerPayload);
         }
       } else if (widget.remoteId != null) {
-        _socketService.initiateCall(widget.remoteId!, widget.channelName, callerPayload);
+        _socketService.initiateCall(widget.remoteId!, _currentChannel, callerPayload);
       }
     } else {
       _endCallUI("Call Failed");
@@ -153,13 +165,21 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _stopAudio(); 
 
     if (widget.remoteId != null) {
-      _socketService.answerCall(widget.remoteId!, widget.channelName);
+      _socketService.answerCall(widget.remoteId!, _currentChannel);
     }
     
-    await _callService.joinCall(channelName: widget.channelName, isVideo: widget.isVideoCall);
+    await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall);
     
     if (!kIsWeb) {
       _callService.setAudioRoute(_selectedAudioRoute); 
+      
+      // ✅ ADDED: Register native call state
+      await FlutterCallkitIncoming.startCall(CallKitParams(
+        id: _currentChannel,
+        nameCaller: widget.remoteName,
+        handle: 'Ongoing Call',
+        type: widget.isVideoCall ? 1 : 0,
+      ));
     }
   }
 
@@ -194,8 +214,27 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
     _socketListener = _socketService.callEvents.listen((event) {
       if (!mounted) return;
-      if (event['type'] == 'ended' && event['data']['channelName'] == widget.channelName) {
+      
+      // ✅ UPDATE: Checking against mutable _currentChannel
+      if (event['type'] == 'ended' && event['data']['channelName'] == _currentChannel) {
         
+        // ✅ ADDED: Collision Merge Interceptor
+        if (event['data']['reason'] == "collision_merge") {
+           String existingChannel = event['data']['existingChannel'];
+           
+           _callService.leaveCall(); 
+           
+           setState(() {
+             _currentChannel = existingChannel;
+             _status = "Connecting...";
+             _hasAccepted = true; 
+           });
+           
+           _socketService.answerCall(widget.remoteId!, _currentChannel);
+           _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall);
+           return; 
+        }
+
         String endMessage = "Call Ended";
         if (event['data']['reason'] == "No Answer") {
           endMessage = "No answer";
@@ -210,7 +249,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         } else {
            _endCallUI(endMessage);
         }
-      } else if (event['type'] == 'answered' && event['data']['channelName'] == widget.channelName) {
+      } else if (event['type'] == 'answered' && event['data']['channelName'] == _currentChannel) {
         if (!widget.isGroupCall) {
           setState(() => _status = "Connecting Audio...");
         }
@@ -228,12 +267,17 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     });
   }
 
-  void _endCallUI(String message) {
+  void _endCallUI(String message) async {
     setState(() => _status = message);
     _stopAudio(); 
     _stopTimer();
     _pulseController.stop();
     _callService.leaveCall();
+    
+    // ✅ ADDED: Clear OS Call Banner
+    if (!kIsWeb) {
+      await FlutterCallkitIncoming.endAllCalls();
+    }
     
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted && Navigator.canPop(context)) Navigator.pop(context);
@@ -246,9 +290,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       if (mounted) {
         setState(() => _callDuration += const Duration(seconds: 1));
         
-        // ✅ ADDED: Send a heartbeat to the server every 10 seconds
         if (_callDuration.inSeconds % 10 == 0) {
-          _socketService.sendCallHeartbeat(widget.channelName);
+          _socketService.sendCallHeartbeat(_currentChannel);
         }
       }
     });
@@ -393,7 +436,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         _buildActionCircle(Icons.call_end, Colors.redAccent, () {
-                          if (widget.remoteId != null) _socketService.endCall(widget.remoteId!, widget.channelName);
+                          if (widget.remoteId != null) _socketService.endCall(widget.remoteId!, _currentChannel);
                           _endCallUI("Declined");
                         }),
                         _buildActionCircle(widget.isVideoCall ? Icons.videocam : Icons.call, Colors.green, _acceptIncomingCall),
@@ -442,9 +485,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                             ),
                             _buildActionCircle(Icons.call_end, Colors.redAccent, () {
                               if (widget.isGroupCall && widget.targetIds != null && !widget.isIncoming) {
-                                 for(String target in widget.targetIds!) _socketService.endCall(target, widget.channelName);
+                                 for(String target in widget.targetIds!) _socketService.endCall(target, _currentChannel);
                               } else if (widget.remoteId != null) {
-                                 _socketService.endCall(widget.remoteId!, widget.channelName);
+                                 _socketService.endCall(widget.remoteId!, _currentChannel);
                               }
                               _endCallUI("Call Ended");
                             }),
@@ -500,7 +543,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         controller: VideoViewController.remote(
           rtcEngine: _callService.engine,
           canvas: VideoCanvas(uid: uids[0]),
-          connection: RtcConnection(channelId: widget.channelName),
+          connection: RtcConnection(channelId: _currentChannel),
         ),
       );
     }
@@ -519,7 +562,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             controller: VideoViewController.remote(
               rtcEngine: _callService.engine,
               canvas: VideoCanvas(uid: uids[index]),
-              connection: RtcConnection(channelId: widget.channelName),
+              connection: RtcConnection(channelId: _currentChannel),
             ),
           ),
         );

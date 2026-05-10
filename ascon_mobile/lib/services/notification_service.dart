@@ -182,9 +182,9 @@ class NotificationService {
       appRouter.push('/alumni_detail', extra: {
         'alumniData': {
           '_id': id?.toString() ?? '',
-          'userId': id?.toString() ?? '', // ✅ Provide both ID formats to be safe
+          'userId': id?.toString() ?? '', 
           'fullName': data['fullName'] ?? 'New Alumni',
-          'profilePicture': '', // ✅ Prevents null cast errors on images
+          'profilePicture': '', 
           'isOnline': false,
         }
       });
