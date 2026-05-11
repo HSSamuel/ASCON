@@ -2,8 +2,6 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl_phone_field/intl_phone_field.dart';
-import 'package:intl/intl.dart'; 
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
@@ -36,22 +34,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late TextEditingController _bioController;
   late TextEditingController _jobController;
   late TextEditingController _orgController;
-  late TextEditingController _linkedinController;
   late TextEditingController _yearController;
   late TextEditingController _otherProgrammeController;
-  late TextEditingController _cityController;
-  late TextEditingController _stateController;
-  
-  final TextEditingController _dobController = TextEditingController();
-  DateTime? _selectedDate;
 
-  String _completePhoneNumber = "";
   String? _selectedProgramme;
   
-  bool _isOpenToMentorship = false; 
-  bool _isLocationVisible = false; 
-  bool _isBirthdayVisible = true; 
-
   Uint8List? _selectedImageBytes; 
   XFile? _pickedFile; 
   String? _currentUrl;
@@ -78,23 +65,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _bioController = TextEditingController(text: widget.userData['bio'] ?? '');
     _jobController = TextEditingController(text: widget.userData['jobTitle'] ?? '');
     _orgController = TextEditingController(text: widget.userData['organization'] ?? '');
-    _linkedinController = TextEditingController(text: widget.userData['linkedin'] ?? '');
     _yearController = TextEditingController(text: widget.userData['yearOfAttendance']?.toString() ?? '');
     _otherProgrammeController = TextEditingController(text: widget.userData['customProgramme'] ?? '');
-    _cityController = TextEditingController(text: widget.userData['city'] ?? '');
-    _stateController = TextEditingController(text: widget.userData['state'] ?? '');
-
-    _completePhoneNumber = widget.userData['phoneNumber'] ?? '';
-    _isOpenToMentorship = widget.userData['isOpenToMentorship'] == true;
-    _isLocationVisible = widget.userData['isLocationVisible'] == true; 
-    _isBirthdayVisible = widget.userData['isBirthdayVisible'] ?? true; 
-
-    if (widget.userData['dateOfBirth'] != null) {
-      try {
-        _selectedDate = DateTime.parse(widget.userData['dateOfBirth']);
-        _dobController.text = DateFormat('MMM d, y').format(_selectedDate!);
-      } catch (e) { }
-    }
 
     String existingProg = widget.userData['programmeTitle'] ?? '';
     if (_programmeOptions.contains(existingProg)) {
@@ -116,12 +88,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _bioController.dispose();
     _jobController.dispose();
     _orgController.dispose();
-    _linkedinController.dispose();
     _yearController.dispose();
     _otherProgrammeController.dispose();
-    _cityController.dispose(); 
-    _stateController.dispose(); 
-    _dobController.dispose();
     super.dispose();
   }
 
@@ -142,46 +110,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     }
   }
 
-  Future<void> _pickDate() async {
-    final DateTime now = DateTime.now();
-    final DateTime today = DateTime(now.year, now.month, now.day);
-
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? DateTime(1990),
-      firstDate: DateTime(1900), // ✅ Expanded range
-      lastDate: today,           // ✅ Strictly today
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Theme.of(context).primaryColor, 
-              onPrimary: Colors.white,
-              onSurface: Colors.black,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null) {
-      setState(() {
-        _selectedDate = picked;
-        _dobController.text = DateFormat('MMM d, y').format(picked);
-      });
-    }
-  }
-
   Future<void> _updateLocalCache(Map<String, String> fields) async {
     try {
-      // 1. Keep SharedPreferences for basic name access if used elsewhere
       final prefs = await SharedPreferences.getInstance();
       if (fields['fullName'] != null) {
         await prefs.setString('user_name', fields['fullName']!);
       }
       
-      // ✅ 2. FIX: Synchronize perfectly with ProfileNotifier's Hive Cache
       final cacheBox = Hive.box('ascon_cache');
       String? userJson = cacheBox.get('user_profile_cache');
       
@@ -193,18 +128,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         userMap = Map<String, dynamic>.from(widget.userData);
       }
 
-      // 3. Inject all newly submitted fields into the map safely
       fields.forEach((key, value) {
-        if (key == 'isBirthdayVisible' || key == 'isLocationVisible' || key == 'isOpenToMentorship') {
-          userMap[key] = value == 'true';
-        } else if (key == 'yearOfAttendance') {
+        if (key == 'yearOfAttendance') {
           userMap[key] = int.tryParse(value) ?? value;
         } else {
           userMap[key] = value;
         }
       });
 
-      // 4. Save it back to Hive so ProfileNotifier reads the fresh data instantly
       await cacheBox.put('user_profile_cache', jsonEncode(userMap));
       debugPrint("✅ Local Cache successfully updated in Hive");
     } catch (e) {
@@ -230,19 +161,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         'bio': _bioController.text.trim(),
         'jobTitle': _jobController.text.trim(),
         'organization': _orgController.text.trim(),
-        'linkedin': _linkedinController.text.trim(),
-        'phoneNumber': _completePhoneNumber, 
         'yearOfAttendance': _yearController.text.trim(),
-        'city': _cityController.text.trim(),
-        'state': _stateController.text.trim(),
-        'isLocationVisible': _isLocationVisible.toString(),
-        'isOpenToMentorship': _isOpenToMentorship.toString(), 
-        'isBirthdayVisible': _isBirthdayVisible.toString(),
       };
-
-      if (_selectedDate != null) {
-        fields['dateOfBirth'] = _selectedDate!.toIso8601String();
-      }
 
       if (_selectedProgramme == "Other") {
         fields['programmeTitle'] = "Other";
@@ -256,7 +176,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
       if (!mounted) return;
 
-    if (success) {
+      if (success) {
         await _updateLocalCache(fields);
         ref.invalidate(profileProvider);
         ref.invalidate(dashboardProvider);
@@ -264,7 +184,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
         if (!mounted) return;
 
-        // ✅ 1. Unlock the PopScope
         setState(() {
           _isSuccess = true; 
         });
@@ -273,13 +192,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           const SnackBar(content: Text("Profile Updated Successfully!")),
         );
         
-        // ✅ 2. Wait exactly one frame for the UI to unlock, then clear the screen
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           
           if (widget.isFirstTime) {
-            context.go('/home');         // 1. Sets the underlying router to Home
-            Navigator.of(context).pop(); // 2. Removes this EditProfile screen sitting on top!
+            context.go('/home');         
+            Navigator.of(context).pop(); 
           } else {
             Navigator.pop(context, true);
           }
@@ -302,7 +220,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     }
   }
 
-  // ✅ UI HELPER: Constructs the image widget safely
   Widget _buildProfileImage(double radius) {
     if (_selectedImageBytes != null) {
       return CircleAvatar(
@@ -313,8 +230,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     }
 
     if (_currentUrl != null && _currentUrl!.startsWith('http')) {
-      // ✅ We use Image.network inside ClipOval instead of backgroundImage
-      // This allows 'errorBuilder' to catch the 429 error and show the Icon fallback
       return ClipOval(
         child: SizedBox(
           width: radius * 2,
@@ -323,7 +238,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             _currentUrl!,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              // If Google link fails (429), this runs and shows the default person icon
               return Container(
                 color: Theme.of(context).primaryColor,
                 child: const Icon(Icons.person, size: 60, color: Colors.white),
@@ -341,7 +255,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       );
     }
 
-    // Default if no image exists at all
     return CircleAvatar(
       radius: radius,
       backgroundColor: Theme.of(context).primaryColor,
@@ -393,28 +306,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     final subTextColor = Theme.of(context).textTheme.bodyMedium?.color;
     final cardColor = Theme.of(context).cardColor;
 
-    String initialPhoneNumber = widget.userData['phoneNumber'] ?? '';
-    String initialCountryCode = 'NG'; 
-    
-    if (initialPhoneNumber.startsWith('+')) {
-      if (initialPhoneNumber.startsWith('+234')) {
-        initialCountryCode = 'NG';
-        initialPhoneNumber = initialPhoneNumber.substring(4); 
-      } else if (initialPhoneNumber.startsWith('+1')) {
-        initialCountryCode = 'US';
-        initialPhoneNumber = initialPhoneNumber.substring(2);
-      } else if (initialPhoneNumber.startsWith('+44')) {
-        initialCountryCode = 'GB';
-        initialPhoneNumber = initialPhoneNumber.substring(3);
-      }
-    } else if (initialPhoneNumber.startsWith('0')) {
-      initialPhoneNumber = initialPhoneNumber.substring(1); 
-    }
-
     return PopScope(
-      // ✅ UPDATE THIS LINE: Allow popping if it's NOT their first time, OR if the save was successful
       canPop: !widget.isFirstTime || _isSuccess, 
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Please complete your profile to continue.")),
@@ -460,7 +354,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 Center(
                   child: Stack(
                     children: [
-                      // ✅ UPDATED: Using helper method for robust image handling
                       _buildProfileImage(50),
                       
                       Positioned(
@@ -489,15 +382,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 _buildTextField("Job Title", _jobController, Icons.work),
                 const SizedBox(height: 12),
                 _buildTextField("Organization", _orgController, Icons.business),
-                const SizedBox(height: 12),
-
-                _buildTextField(
-                  "Date of Birth",
-                  _dobController,
-                  Icons.cake,
-                  readOnly: true,
-                  onTap: _pickDate,
-                ),
                 const SizedBox(height: 12),
 
                 DropdownButtonFormField<String>(
@@ -544,117 +428,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 _buildTextField("Class Year", _yearController, Icons.calendar_today, isNumber: true),
                 
                 const SizedBox(height: 12),
-
-                IntlPhoneField(
-                  initialValue: initialPhoneNumber,
-                  initialCountryCode: initialCountryCode,
-                  decoration: InputDecoration(
-                    labelText: 'Phone Number',
-                    labelStyle: TextStyle(fontSize: 13, color: subTextColor),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
-                  ),
-                  style: TextStyle(fontSize: 14, color: textColor),
-                  dropdownTextStyle: TextStyle(fontSize: 14, color: textColor),
-                  onChanged: (phone) {
-                    _completePhoneNumber = phone.completeNumber; 
-                  },
-                ),
-
-                const SizedBox(height: 12),
-                _buildTextField("LinkedIn URL", _linkedinController, Icons.link),
-                const SizedBox(height: 12),
-                
                 _buildTextField("Short Bio", _bioController, Icons.person, maxLines: 3),
-
-                const SizedBox(height: 24),
-
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text("Location", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: primaryColor)),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildTextField("City", _cityController, Icons.location_city),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildTextField("State", _stateController, Icons.map_outlined),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                Container(
-                  decoration: BoxDecoration(
-                    color: cardColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: SwitchListTile(
-                    title: const Text("Make Location Visible", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text("Allow nearby alumni to find you on the map.", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    value: _isLocationVisible,
-                    activeColor: Colors.blue,
-                    inactiveThumbColor: Colors.grey, 
-                    inactiveTrackColor: Colors.grey.withOpacity(0.2),
-                    onChanged: (bool value) {
-                      setState(() {
-                        _isLocationVisible = value;
-                      });
-                    },
-                    secondary: Icon(Icons.location_on, color: _isLocationVisible ? Colors.blue : Colors.grey),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                Container(
-                  decoration: BoxDecoration(
-                    color: cardColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: SwitchListTile(
-                    title: const Text("Open to Mentorship", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text("Allow other alumni to contact you for guidance.", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    value: _isOpenToMentorship,
-                    activeColor: const Color(0xFFD4AF37), 
-                    inactiveThumbColor: Colors.grey, 
-                    inactiveTrackColor: Colors.grey.withOpacity(0.2),
-
-                    onChanged: (bool value) {
-                      setState(() {
-                        _isOpenToMentorship = value;
-                      });
-                    },
-                    secondary: Icon(Icons.stars, color: _isOpenToMentorship ? const Color(0xFFD4AF37) : Colors.grey),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                Container(
-                  decoration: BoxDecoration(
-                    color: cardColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: SwitchListTile(
-                    title: const Text("Show Birthday", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: const Text("Announce my birthday to alumni on the dashboard.", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                    value: _isBirthdayVisible,
-                    activeColor: Colors.pinkAccent,
-                    inactiveThumbColor: Colors.grey, 
-                    inactiveTrackColor: Colors.grey.withOpacity(0.2),
-                    onChanged: (bool value) {
-                      setState(() => _isBirthdayVisible = value);
-                    },
-                    secondary: Icon(Icons.cake, color: _isBirthdayVisible ? Colors.pinkAccent : Colors.grey),
-                  ),
-                ),
 
                 const SizedBox(height: 24),
 

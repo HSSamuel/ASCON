@@ -52,7 +52,7 @@ app.use(
 // 1. Global API Rate Limiter
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 150, // Limit each IP to 150 requests per window
+  max: 1500, // ✅ FIX: Increased from 150 to 1500
   message: {
     error: "Too many requests from this IP, please try again after 15 minutes.",
   },
@@ -177,17 +177,6 @@ mongoose
 
     runWeeklySmartMatch();
 
-    try {
-      // 2. ✅ NEW: Reset Stuck Calls
-      const stuckCalls = await CallLog.updateMany(
-        { status: { $in: ["ringing", "ongoing", "initiated"] } },
-        { $set: { status: "ended", endTime: new Date() } },
-      );
-      logger.info(`📞 Cleaned up ${stuckCalls.modifiedCount} stuck calls.`);
-    } catch (err) {
-      logger.error("⚠️ Failed to run startup cleanup:", err);
-    }
-
     app.get("/", (req, res) => {
       res.status(200).send("ASCON Server is Awake! 🚀");
     });
@@ -220,19 +209,6 @@ const gracefulShutdown = async (signal) => {
       if (mongoose.connection.readyState === 1) {
         await mongoose.connection.close(false);
         logger.info("🛑 MongoDB connection cleanly closed.");
-      }
-
-      // ✅ Add this right below your stuck calls cleanup:
-      try {
-        const stuckUsers = await UserAuth.updateMany(
-          { isOnline: true },
-          { $set: { isOnline: false, lastSeen: new Date() } },
-        );
-        logger.info(
-          `🧹 Cleaned up ${stuckUsers.modifiedCount} stuck online users.`,
-        );
-      } catch (err) {
-        logger.error("⚠️ Failed to run presence cleanup:", err);
       }
 
       logger.info("✅ Graceful shutdown completed. Exiting process.");

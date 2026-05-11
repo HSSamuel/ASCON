@@ -10,8 +10,6 @@ import '../widgets/shimmer_utils.dart';
 import '../widgets/full_screen_image.dart'; 
 
 import 'edit_profile_screen.dart';
-import 'document_request_screen.dart'; 
-import 'mentorship_dashboard_screen.dart'; 
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final String? userName; 
@@ -75,7 +73,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  // ✅ FIX: Robust case-insensitive check for Google placeholders
   ImageProvider? getProfileImage(String? imagePath) {
     if (imagePath == null || imagePath.trim().isEmpty) return null;
     
@@ -86,11 +83,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     
     if (cleanPath.startsWith('http')) return NetworkImage(imagePath);
     try { return MemoryImage(base64Decode(imagePath)); } catch (e) { return null; }
-  }
-
-  String _formatPhoneNumber(String? phone) {
-    if (phone == null || phone.isEmpty) return 'Add Phone Number';
-    return phone; 
   }
 
   @override
@@ -116,10 +108,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ? userProfile!['programmeTitle'] : 'Add Programme';
     final String year = userProfile?['yearOfAttendance']?.toString() ?? 'N/A';
     final String email = userProfile?['email'] ?? 'No Email';
-    final String phone = _formatPhoneNumber(userProfile?['phoneNumber']);
     final String bio = userProfile?['bio'] ?? '';
     
-    // ✅ FIX: Using the centralized unified PresenceFormatter
     final String statusText = PresenceFormatter.getStatusText(
       isOnline: profileState.isOnline, 
       lastSeen: profileState.lastSeen
@@ -341,7 +331,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     onPressed: () async {
                       final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => EditProfileScreen(userData: userProfile ?? {})));
                       if (result == true) {
-                        // Force UI to show loading skeleton so the user instantly knows it is fetching the changes
                         ref.read(profileProvider.notifier).loadProfile(isRefresh: true, showSkeleton: true); 
                       }
                     },
@@ -372,8 +361,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     Text("Contact Information", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: primaryColor)),
                     const SizedBox(height: 12),
                     _buildContactRow(Icons.email_outlined, "Email", email, context),
-                    Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: Theme.of(context).dividerColor)),
-                    _buildContactRow(Icons.phone_outlined, "Phone", phone, context), 
                   ],
                 ),
               ),

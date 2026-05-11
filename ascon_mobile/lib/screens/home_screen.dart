@@ -19,9 +19,8 @@ import 'programme_detail_screen.dart';
 import 'alumni_detail_screen.dart';
 import 'about_screen.dart';
 import 'admin/add_content_screen.dart'; 
-import 'welcome_dialog.dart'; 
+import 'welcome_dialog.dart'; // ✅ RESTORED IMPORT
 
-import '../widgets/celebration_card.dart'; 
 import '../widgets/chapter_card.dart';     
 import '../widgets/digital_id_card.dart';
 import '../widgets/shimmer_utils.dart';
@@ -45,44 +44,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   DateTime? _lastPressedAt;
   bool _isBottomNavVisible = true;
   
-  // ✅ 1. ADDED: Tab History Stack to track user's navigation path
   final List<int> _tabHistory = [0];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // ✅ RESTORED: Acts as a safety net for auto-logged-in users
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkFirstTimeWelcome());
 
     Future.delayed(const Duration(seconds: 3), () async {
       if (mounted) {
         await NotificationService().requestPermission();
-        await _requestCriticalCallPermissions(); // ✅ Triggers the WhatsApp-style popup flow
+        await _requestCriticalCallPermissions(); 
       }
     });
   }
 
-  Future<void> _requestCriticalCallPermissions() async {
-    if (kIsWeb) return; // Permissions aren't handled this way on the web
-    
-    // 1. Request standard permissions
-    await [
-      Permission.microphone,
-      Permission.camera,
-      Permission.notification,
-    ].request();
-
-    // 2. Automatically prompt for Full-Screen Intent (Crucial for Android 14+ CallKit)
-    if (await Permission.systemAlertWindow.isDenied) {
-      await Permission.systemAlertWindow.request();
-    }
-
-    // 3. Automatically prompt to ignore Battery Optimizations (Prevents background kills)
-    if (await Permission.ignoreBatteryOptimizations.isDenied) {
-      await Permission.ignoreBatteryOptimizations.request();
-    }
-  }
-
+  // ✅ RESTORED: Welcome Dialog Logic
   Future<void> _checkFirstTimeWelcome() async {
     final userMap = await AuthService().getCachedUser();
     if (userMap == null) return;
@@ -108,6 +88,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
   }
 
+  Future<void> _requestCriticalCallPermissions() async {
+    if (kIsWeb) return; 
+    
+    await [
+      Permission.microphone,
+      Permission.camera,
+      Permission.notification,
+    ].request();
+
+    if (await Permission.systemAlertWindow.isDenied) {
+      await Permission.systemAlertWindow.request();
+    }
+
+    if (await Permission.ignoreBatteryOptimizations.isDenied) {
+      await Permission.ignoreBatteryOptimizations.request();
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -121,14 +119,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
   }
 
-  // ✅ 2. UPDATED: Record tab clicks into history
   void _goBranch(int index, {bool isBackNavigation = false}) {
     if (index == widget.navigationShell.currentIndex) {
       if (index == 0) {
         ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
       }
     } else {
-      // Add to history ONLY if it's a forward tap by the user (not a back button pop)
       if (!isBackNavigation) {
         if (_tabHistory.isEmpty || _tabHistory.last != index) {
           _tabHistory.add(index);
@@ -141,7 +137,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     );
   }
 
-  // ✅ 3. UPDATED: Walk backwards through the history stack
   Future<void> _handleBackPress() async {
     if (MediaQuery.of(context).viewInsets.bottom > 0) {
       SystemChannels.textInput.invokeMethod('TextInput.hide');
@@ -158,7 +153,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       case 4: currentNavigatorKey = profileNavKey; break;
     }
 
-    // Step A: Pop any inner screens pushed inside the current tab
     if (currentNavigatorKey != null && 
         currentNavigatorKey.currentState != null && 
         currentNavigatorKey.currentState!.canPop()) {
@@ -166,25 +160,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       return; 
     }
 
-    // Step B: Pop through the Tab History (Manual taps)
     if (_tabHistory.length > 1) {
-      _tabHistory.removeLast(); // Remove the current tab
-      final int previousIndex = _tabHistory.last; // Find the previous tab
-      _goBranch(previousIndex, isBackNavigation: true); // Navigate back to it
+      _tabHistory.removeLast(); 
+      final int previousIndex = _tabHistory.last; 
+      _goBranch(previousIndex, isBackNavigation: true); 
       return; 
     }
 
-    // ==========================================
-    // ✅ NEW: Step C: Deep-Link Fallback
-    // If the user arrived via notification and has no tab history,
-    // force them back to the Home Dashboard (0) instead of exiting.
-    // ==========================================
     if (currentIndex != 0) {
       _goBranch(0, isBackNavigation: true);
       return;
     }
 
-    // Step D: Exit App Logic (Only triggered if at root Home Dashboard)
     final now = DateTime.now();
     if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
       _lastPressedAt = now;
@@ -238,7 +225,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
               elevation: 0,
               automaticallyImplyLeading: false,
               actions: [
-                // 1. Events Button
                 IconButton(
                   icon: Icon(Icons.event_note_rounded, color: isDark ? Colors.white : primaryColor, size: 22),
                   onPressed: () {
@@ -246,13 +232,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   },
                 ),
                 
-                // 2. About / Info Button
                 IconButton(
                   icon: Icon(Icons.info_outline, color: isDark ? Colors.white : primaryColor, size: 22),
                   onPressed: () => context.push('/about'),
                 ),
 
-                // 3. Theme Switcher (Padding)
                 Padding(
                   padding: const EdgeInsets.only(right: 12.0),
                   child: IconButton(
@@ -329,19 +313,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   }
 
   Widget _buildNavProfileIcon(String? imageUrl, bool isSelected, Color color, IconData icon, IconData activeIcon) {
-    // 1. Explicit null check promotes imageUrl to a non-nullable String
     if (imageUrl == null || imageUrl.trim().isEmpty) {
       return Icon(isSelected ? activeIcon : icon, color: isSelected ? color : Colors.grey[400], size: 20);
     }
 
-    // 2. Safe to use case-insensitive checks
     final cleanUrl = imageUrl.toLowerCase().trim();
     if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) {
       return Icon(isSelected ? activeIcon : icon, color: isSelected ? color : Colors.grey[400], size: 20);
     }
 
     Widget imageWidget;
-    // 3. imageUrl is now safely recognized as a non-null String by the compiler
     if (kIsWeb && imageUrl.startsWith('http')) {
       imageWidget = Image.network(
         imageUrl, 
@@ -392,7 +373,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     String? imageUrl
   }) {
     final isSelected = currentIndex == index;
-    final isUpdates = index == 2; // Targeting the center Updates icon
+    final isUpdates = index == 2; 
 
     Widget iconContent = Stack(
       clipBehavior: Clip.none,
@@ -431,17 +412,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       ],
     );
 
-    // Apply the floating circular adjustment, explicitly managing layout size
     if (isUpdates) {
       iconContent = SizedBox(
-        height: 24, // Restrict layout height so it doesn't overflow the 48px boundary
-        width: 38,  // Maintain standard horizontal footprint
+        height: 24, 
+        width: 38,  
         child: OverflowBox(
-          maxHeight: 60, // Allow container to paint upwards outside the box bounds
+          maxHeight: 60, 
           maxWidth: 60,
-          alignment: Alignment.bottomCenter, // Anchor to the bottom text
+          alignment: Alignment.bottomCenter, 
           child: Transform.translate(
-            offset: const Offset(0, -6), // Shift upward visually
+            offset: const Offset(0, -6), 
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -477,7 +457,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             iconContent,
-            SizedBox(height: isUpdates ? 0 : 2), // Keep tight to the elevated bubble
+            SizedBox(height: isUpdates ? 0 : 2), 
             Transform.translate(
               offset: isUpdates ? const Offset(0, -2) : Offset.zero, 
               child: Text(
@@ -573,18 +553,15 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
   }
 
   Widget _buildSafeImage(String? imageUrl, {IconData fallbackIcon = Icons.image, BoxFit fit = BoxFit.cover}) {
-    // 1. Explicit null check
     if (imageUrl == null || imageUrl.trim().isEmpty) {
       return _buildPlaceholder(fallbackIcon);
     }
 
-    // 2. Safe check
     final cleanUrl = imageUrl.toLowerCase().trim();
     if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) {
       return _buildPlaceholder(fallbackIcon);
     } 
     
-    // 3. imageUrl is now promoted to non-null String
     if (kIsWeb && imageUrl.startsWith('http')) {
        return Image.network(
          imageUrl, fit: fit, errorBuilder: (context, error, stackTrace) => _buildPlaceholder(Icons.broken_image_rounded),
@@ -654,8 +631,8 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
                   alumniID: dashboardState.alumniID, 
                   imageUrl: dashboardState.profileImage
                 ),
+                
                 const ChapterCard(),
-                const CelebrationWidget(),
                 const SizedBox(height: 10),
 
                 Padding(
@@ -859,7 +836,6 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
             ),
           ),
         ),
-        // Shifted to the Left Side
         if (_isAdmin) 
           Positioned(
             top: 4, 

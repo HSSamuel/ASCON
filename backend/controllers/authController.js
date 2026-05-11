@@ -14,48 +14,37 @@ const nodemailer = require("nodemailer");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../utils/AppError");
 
+// ✅ ID Generator & Notifications
+const { generateAlumniId } = require("../utils/idGenerator");
 const {
   sendPersonalNotification,
   notifyPeersOfNewUser,
 } = require("../utils/notificationHandler");
 
 // --------------------------------------------------------------------------
-// 1. AUTH CLIENT
+// 1. AUTH & MAILER CLIENTS
 // --------------------------------------------------------------------------
 const authClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-// --------------------------------------------------------------------------
-// 2. MAILER CLIENT
-// --------------------------------------------------------------------------
 const mailClient = new OAuth2Client(
   process.env.MAILER_CLIENT_ID,
   process.env.MAILER_CLIENT_SECRET,
 );
+mailClient.setCredentials({ refresh_token: process.env.MAILER_REFRESH_TOKEN });
 
-mailClient.setCredentials({
-  refresh_token: process.env.MAILER_REFRESH_TOKEN,
-});
-
-// --------------------------------------------------------------------------
-// HELPER: SEND EMAIL VIA GMAIL API
-// --------------------------------------------------------------------------
 const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
   if (!process.env.MAILER_REFRESH_TOKEN) {
-    const errorMsg = "Email Service Not Configured: MAILER_REFRESH_TOKEN is missing.";
-    console.warn(`⚠️ ${errorMsg}`);
-    // ✅ FIX 1: Throw error so the parent function catches it
-    throw new Error(errorMsg); 
+    console.warn(
+      `⚠️ Email Service Not Configured: MAILER_REFRESH_TOKEN is missing.`,
+    );
+    throw new Error("Email Service Not Configured");
   }
 
   try {
     const { token: accessToken } = await mailClient.getAccessToken();
-
     const mailGenerator = nodemailer.createTransport({
       streamTransport: true,
       newline: "windows",
     });
-
-    // ✅ FIX 2: Added a fallback email in case EMAIL_USER is missing in .env
     const senderEmail = process.env.EMAIL_USER || "noreply@ascon.org";
 
     const mailOptions = {
@@ -64,17 +53,15 @@ const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
       subject: subject,
       html: htmlContent,
     };
-
     const info = await mailGenerator.sendMail(mailOptions);
 
     const rawEmail = await new Promise((resolve, reject) => {
       let buffer = Buffer.alloc(0);
-      info.message.on("data", (chunk) => {
-        buffer = Buffer.concat([buffer, chunk]);
-      });
-      info.message.on("end", () => {
-        resolve(buffer.toString("base64"));
-      });
+      info.message.on(
+        "data",
+        (chunk) => (buffer = Buffer.concat([buffer, chunk])),
+      );
+      info.message.on("end", () => resolve(buffer.toString("base64")));
       info.message.on("error", reject);
     });
 
@@ -88,37 +75,30 @@ const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
         },
       },
     );
-
-    console.log(`✅ Gmail API: Sent to ${toEmail} (ID: ${response.data.id})`);
     return response.data;
   } catch (error) {
-    console.error(
-      "❌ Gmail API Error:",
-      error.response ? error.response.data : error.message,
-    );
-    // ✅ FIX 3: Re-throw the error so it triggers the catch block in forgotPassword()
-    throw error; 
+    throw error;
   }
 };
 
 // --------------------------------------------------------------------------
-// VALIDATION SCHEMAS
+// 2. VALIDATION SCHEMAS
 // --------------------------------------------------------------------------
+// ✅ UPDATED: Removed phoneNumber completely
 const registerSchema = Joi.object({
   fullName: Joi.string().min(6).required(),
   email: Joi.string().min(6).required().email(),
   password: Joi.string().min(6).required(),
-  phoneNumber: Joi.string().required(),
-  programmeTitle: Joi.string().optional().allow(""),
+  programmeTitle: Joi.string().required(),
   yearOfAttendance: Joi.alternatives()
     .try(Joi.string(), Joi.number())
-    .optional()
-    .allow(null, ""),
+    .required(),
   customProgramme: Joi.string().optional().allow(""),
-  city: Joi.string().optional().allow(""),
+  jobTitle: Joi.string().optional().allow(""),
+  organization: Joi.string().optional().allow(""),
+  bio: Joi.string().optional().allow(""),
   googleToken: Joi.string().optional().allow(null, ""),
   fcmToken: Joi.string().optional().allow(null, ""),
-  dateOfBirth: Joi.string().isoDate().optional().allow(null, ""),
 });
 
 const loginSchema = Joi.object({
@@ -128,35 +108,38 @@ const loginSchema = Joi.object({
 });
 
 const manageFcmToken = async (userId, token) => {
-  if (!token) return;
+  if (!token || token.trim() === "") return;
+  await UserAuth.findByIdAndUpdate(userId, { $pull: { fcmTokens: token } });
   await UserAuth.findByIdAndUpdate(userId, {
-    $pull: { fcmTokens: token },
-  });
-  await UserAuth.findByIdAndUpdate(userId, {
-    $push: {
-      fcmTokens: {
-        $each: [token],
-        $position: 0,
-        $slice: 5,
-      },
-    },
+    $push: { fcmTokens: { $each: [token], $position: 0, $slice: 5 } },
   });
 };
 
 // --------------------------------------------------------------------------
-// 1. REGISTER
+// 3. REGISTER
 // --------------------------------------------------------------------------
 exports.register = asyncHandler(async (req, res) => {
   const { error } = registerSchema.validate(req.body);
   if (error) throw new AppError(error.details[0].message, 400);
 
-  // ✅ NORMALIZATION: Force email to lowercase immediately
   const email = req.body.email.toLowerCase().trim();
-  const { fullName, password, phoneNumber, fcmToken, dateOfBirth } = req.body;
+  const {
+    fullName,
+    password,
+    fcmToken,
+    programmeTitle,
+    yearOfAttendance,
+    customProgramme,
+    jobTitle,
+    organization,
+    bio,
+  } = req.body;
 
   const emailExist = await UserAuth.findOne({ email });
   if (emailExist)
     throw new AppError("Email already registered. Please Login.", 400);
+
+  const generatedAlumniId = await generateAlumniId(yearOfAttendance);
 
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -171,90 +154,65 @@ exports.register = asyncHandler(async (req, res) => {
       process.env.REFRESH_SECRET,
       { expiresIn: "30d" },
     );
+    const safeFcmTokens = fcmToken && fcmToken.trim() !== "" ? [fcmToken] : [];
 
     const newUserAuth = new UserAuth({
       _id: newAuthId,
-      email: email, // Saved securely in lowercase
+      email: email,
       password: hashedPassword,
       isVerified: true,
       provider: "local",
-      fcmTokens: fcmToken ? [fcmToken] : [],
+      fcmTokens: safeFcmTokens,
       refreshTokens: [refreshToken],
       isOnline: true,
     });
     const savedAuth = await newUserAuth.save({ session });
 
+    // ✅ UPDATED: Removed phoneNumber
     const newUserProfile = new UserProfile({
       userId: savedAuth._id,
       fullName,
-      phoneNumber,
-      programmeTitle: req.body.programmeTitle,
-      yearOfAttendance: req.body.yearOfAttendance,
-      city: req.body.city,
-      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+      programmeTitle,
+      yearOfAttendance,
+      customProgramme,
+      jobTitle,
+      organization,
+      bio,
+      alumniId: generatedAlumniId,
     });
     await newUserProfile.save({ session });
 
     const newUserSettings = new UserSettings({
       userId: savedAuth._id,
       hasSeenWelcome: false,
-      isEmailVisible: true,
-      isPhoneVisible: false,
-      isBirthdayVisible: true,
     });
     await newUserSettings.save({ session });
 
     await session.commitTransaction();
     session.endSession();
 
-    // ✅ FIX: Isolate the email so a failure doesn't break the registration
+    const newGroupName = `Class of ${yearOfAttendance}`;
+    Group.findOneAndUpdate(
+      { name: newGroupName, type: "Class" },
+      {
+        $addToSet: { members: savedAuth._id },
+        $setOnInsert: { description: `Official group for the ${newGroupName}` },
+      },
+      { upsert: true, new: true },
+    ).catch((e) => console.error("Group Sync Error:", e));
+
     try {
       await sendEmailViaGmailAPI(
         email,
         fullName,
         "Welcome to ASCON Alumni Connect! 🚀",
-        `
-        <div style="font-family: Arial, sans-serif; color: #333;">
-          <div style="background-color: #0F3621; padding: 20px; text-align: center;">
-            <h2 style="color: #fff; margin: 0;">Welcome to ASCON Connect</h2>
-          </div>
-          <div style="padding: 20px; border: 1px solid #ddd; border-top: none;">
-            <h3>Hello ${fullName},</h3>
-            <p>We are thrilled to have you join the ASCON Alumni Network!</p>
-            <p>With this platform, you can:</p>
-            <ul>
-              <li>Reconnect with your class set.</li>
-              <li>Find mentors and professional opportunities.</li>
-              <li>Stay updated with ASCON events and news.</li>
-            </ul>
-            <p>To get the best experience, please take a moment to <strong>complete your profile</strong>.</p>
-            <br/>
-            <p>Warm Regards,<br/><strong>The ASCON Alumni Team</strong></p>
-          </div>
-        </div>
-        `,
+        `<h3>Hello ${fullName},</h3><p>Welcome to the ASCON Alumni Network! Your official Alumni ID is <strong>${generatedAlumniId}</strong>.</p>`,
       );
     } catch (emailError) {
-      console.error(
-        "⚠️ Non-fatal: Welcome email failed to send, but user was registered.",
-      );
+      console.error("Non-fatal: Welcome email failed to send.");
     }
 
-    // ✅ Fire the peer notification in the background
     notifyPeersOfNewUser(newUserProfile).catch((e) => console.error(e));
-
-    try {
-      if (req.io) {
-        req.io.emit("admin_stats_update", { type: "NEW_USER" });
-        req.io.emit("user_status_update", {
-          userId: savedAuth._id,
-          isOnline: true,
-          lastSeen: new Date(),
-        });
-      }
-    } catch (notifyErr) {
-      console.error("Post-registration notification error:", notifyErr);
-    }
 
     const token = jwt.sign(
       { _id: savedAuth._id, isAdmin: false, canEdit: false },
@@ -270,12 +228,9 @@ exports.register = asyncHandler(async (req, res) => {
         id: savedAuth._id,
         fullName: newUserProfile.fullName,
         email: savedAuth.email,
-        alumniId: null,
         hasSeenWelcome: false,
-        phoneNumber: newUserProfile.phoneNumber,
-        dateOfBirth: newUserProfile.dateOfBirth
-          ? newUserProfile.dateOfBirth.toISOString()
-          : null,
+        yearOfAttendance: newUserProfile.yearOfAttendance,
+        alumniId: generatedAlumniId,
       },
     });
   } catch (err) {
@@ -286,13 +241,12 @@ exports.register = asyncHandler(async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// 2. LOGIN
+// 4. LOGIN
 // --------------------------------------------------------------------------
 exports.login = asyncHandler(async (req, res) => {
   const { error } = loginSchema.validate(req.body);
   if (error) throw new AppError(error.details[0].message, 400);
 
-  // ✅ NORMALIZATION: Force login email to match DB formatting
   const email = req.body.email.toLowerCase().trim();
   const { password, fcmToken } = req.body;
 
@@ -301,10 +255,8 @@ exports.login = asyncHandler(async (req, res) => {
 
   const validPass = await bcrypt.compare(password, userAuth.password);
   if (!validPass) throw new AppError("Invalid email or password.", 401);
-
-  if (userAuth.isVerified === false) {
-    throw new AppError("Account pending approval by administrator.", 403);
-  }
+  if (userAuth.isVerified === false)
+    throw new AppError("Account pending approval.", 403);
 
   const userProfile = await UserProfile.findOne({ userId: userAuth._id });
   const userSettings = await UserSettings.findOne({ userId: userAuth._id });
@@ -316,18 +268,14 @@ exports.login = asyncHandler(async (req, res) => {
     process.env.JWT_SECRET,
     { expiresIn: "2h" },
   );
-
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
     process.env.REFRESH_SECRET,
     { expiresIn: "30d" },
   );
 
-  userAuth.refreshTokens.push(refreshToken);
-  if (userAuth.refreshTokens.length > 5) {
-    userAuth.refreshTokens.shift();
-  }
-
+  const currentTokens = userAuth.refreshTokens || [];
+  userAuth.refreshTokens = [...currentTokens, refreshToken].slice(-5);
   userAuth.isOnline = true;
   userAuth.lastSeen = new Date();
   await userAuth.save();
@@ -340,6 +288,7 @@ exports.login = asyncHandler(async (req, res) => {
     });
   }
 
+  // ✅ UPDATED: Removed phoneNumber from response
   res.json({
     token,
     refreshToken,
@@ -353,16 +302,12 @@ exports.login = asyncHandler(async (req, res) => {
       hasSeenWelcome: userSettings.hasSeenWelcome || false,
       alumniId: userProfile.alumniId,
       yearOfAttendance: userProfile.yearOfAttendance,
-      phoneNumber: userProfile.phoneNumber,
-      dateOfBirth: userProfile.dateOfBirth
-        ? userProfile.dateOfBirth.toISOString()
-        : null,
     },
   });
 });
 
 // --------------------------------------------------------------------------
-// 3. GOOGLE LOGIN
+// 5. GOOGLE LOGIN
 // --------------------------------------------------------------------------
 exports.googleLogin = asyncHandler(async (req, res) => {
   const { token, fcmToken } = req.body;
@@ -381,18 +326,14 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   } else {
     const response = await axios.get(
       "https://www.googleapis.com/oauth2/v3/userinfo",
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
+      { headers: { Authorization: `Bearer ${token}` } },
     );
     name = response.data.name;
     rawEmail = response.data.email;
     picture = response.data.picture;
   }
 
-  // ✅ NORMALIZATION: Even for Google payloads
   const email = rawEmail.toLowerCase().trim();
-
   let userAuth = await UserAuth.findOne({ email });
   let userProfile, userSettings;
 
@@ -401,13 +342,16 @@ exports.googleLogin = asyncHandler(async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(randomPassword, salt);
 
+    const safeFcmTokens = fcmToken && fcmToken.trim() !== "" ? [fcmToken] : [];
+
     userAuth = new UserAuth({
       email: email,
       password: hashedPassword,
       isVerified: true,
       provider: "google",
-      fcmTokens: fcmToken ? [fcmToken] : [],
+      fcmTokens: safeFcmTokens,
       isOnline: true,
+      refreshTokens: [],
     });
     await userAuth.save();
 
@@ -434,7 +378,6 @@ exports.googleLogin = asyncHandler(async (req, res) => {
 
     if (req.io) req.io.emit("admin_stats_update", { type: "NEW_USER" });
 
-    // ✅ FIX: Isolate the email here as well
     try {
       await sendEmailViaGmailAPI(
         email,
@@ -442,9 +385,7 @@ exports.googleLogin = asyncHandler(async (req, res) => {
         "Welcome to ASCON Alumni Connect! 🚀",
         `<p>Welcome to the platform, ${name}!</p>`,
       );
-    } catch (emailError) {
-      console.error("⚠️ Non-fatal: Google OAuth Welcome email failed to send.");
-    }
+    } catch (emailError) {}
   } else {
     userProfile = await UserProfile.findOne({ userId: userAuth._id });
     userSettings = await UserSettings.findOne({ userId: userAuth._id });
@@ -459,16 +400,14 @@ exports.googleLogin = asyncHandler(async (req, res) => {
     process.env.JWT_SECRET,
     { expiresIn: "2h" },
   );
-
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
     process.env.REFRESH_SECRET,
     { expiresIn: "30d" },
   );
 
-  userAuth.refreshTokens.push(refreshToken);
-  if (userAuth.refreshTokens.length > 5) userAuth.refreshTokens.shift();
-
+  const currentTokens = userAuth.refreshTokens || [];
+  userAuth.refreshTokens = [...currentTokens, refreshToken].slice(-5);
   userAuth.isOnline = true;
   userAuth.lastSeen = new Date();
   await userAuth.save();
@@ -481,6 +420,7 @@ exports.googleLogin = asyncHandler(async (req, res) => {
     });
   }
 
+  // ✅ UPDATED: Removed phoneNumber
   return res.json({
     token: authToken,
     refreshToken: refreshToken,
@@ -494,16 +434,12 @@ exports.googleLogin = asyncHandler(async (req, res) => {
       hasSeenWelcome: userSettings.hasSeenWelcome || false,
       alumniId: userProfile.alumniId,
       yearOfAttendance: userProfile.yearOfAttendance,
-      phoneNumber: userProfile.phoneNumber,
-      dateOfBirth: userProfile.dateOfBirth
-        ? userProfile.dateOfBirth.toISOString()
-        : null,
     },
   });
 });
 
 // --------------------------------------------------------------------------
-// 4. REFRESH TOKEN (SECURED)
+// 6. REFRESH TOKEN
 // --------------------------------------------------------------------------
 exports.refreshToken = asyncHandler(async (req, res) => {
   const { refreshToken } = req.body;
@@ -534,14 +470,12 @@ exports.refreshToken = asyncHandler(async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// 5. FORGOT PASSWORD
+// 7. FORGOT PASSWORD
 // --------------------------------------------------------------------------
 exports.forgotPassword = asyncHandler(async (req, res) => {
   if (!req.body.email) throw new AppError("Email is required", 400);
 
-  // ✅ NORMALIZATION: Ensure case-insensitive lookup
   const email = req.body.email.toLowerCase().trim();
-
   const userAuth = await UserAuth.findOne({ email: email });
   if (!userAuth) throw new AppError("Email not found", 404);
 
@@ -561,12 +495,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
       userAuth.email,
       userName,
       "ASCON Alumni - Password Reset",
-      `
-      <h3>Password Reset Request</h3>
-      <p>Hello ${userName},</p>
-      <p>You requested a password reset. Click the link below:</p>
-      <p><a href="${resetUrl}">Reset Password</a></p>
-      `,
+      `<h3>Password Reset Request</h3><p>Hello ${userName},</p><p>You requested a password reset. Click the link below:</p><p><a href="${resetUrl}">Reset Password</a></p>`,
     );
     res.json({ message: "Reset link sent to your email!" });
   } catch (error) {
@@ -578,7 +507,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// 6. RESET PASSWORD EXECUTE
+// 8. RESET PASSWORD EXECUTE
 // --------------------------------------------------------------------------
 exports.resetPassword = asyncHandler(async (req, res) => {
   const { token, newPassword } = req.body;
@@ -597,15 +526,14 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   userAuth.password = hashedPassword;
   userAuth.resetPasswordToken = undefined;
   userAuth.resetPasswordExpires = undefined;
-
-  userAuth.refreshTokens = [];
+  userAuth.refreshTokens = []; // Log out from all devices
 
   await userAuth.save();
   res.json({ message: "Password updated successfully! Please login." });
 });
 
 // --------------------------------------------------------------------------
-// 7. LOGOUT (SECURED)
+// 9. LOGOUT
 // --------------------------------------------------------------------------
 exports.logout = asyncHandler(async (req, res) => {
   const { userId, fcmToken, refreshToken } = req.body;
@@ -613,12 +541,7 @@ exports.logout = asyncHandler(async (req, res) => {
   if (userId) {
     await UserAuth.updateOne(
       { _id: userId },
-      {
-        $pull: {
-          fcmTokens: fcmToken,
-          refreshTokens: refreshToken,
-        },
-      },
+      { $pull: { fcmTokens: fcmToken, refreshTokens: refreshToken } },
     );
   }
   res.status(200).json({ message: "Logged out successfully" });

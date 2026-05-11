@@ -14,11 +14,8 @@ const userSchema = new mongoose.Schema(
     jobTitle: { type: String, default: "" },
     organization: { type: String, default: "" },
     bio: { type: String, default: "" },
-    linkedin: { type: String, default: "" },
 
-    // Store the Phone's Notification Tokens
     fcmTokens: { type: [String], default: [] },
-
     alumniId: { type: String, unique: true, sparse: true },
     hasSeenWelcome: { type: Boolean, default: false },
 
@@ -27,22 +24,13 @@ const userSchema = new mongoose.Schema(
     canEdit: { type: Boolean, default: false },
     profilePicture: { type: String, default: "" },
 
-    // ✅ NEW: Tracks origin ("local" or "google"), but we allow cross-login
-    provider: {
-      type: String,
-      default: "local",
-      enum: ["local", "google"],
-    },
+    provider: { type: String, default: "local", enum: ["local", "google"] },
 
-    // Password Reset
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
-
     date: { type: Date, default: Date.now },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true },
 );
 
 userSchema.index({ email: 1 });
@@ -50,8 +38,8 @@ userSchema.index({
   fullName: "text",
   jobTitle: "text",
   organization: "text",
-  email: "text",     
-  alumniId: "text"
+  email: "text",
+  alumniId: "text",
 });
 
 module.exports = mongoose.model("User", userSchema);

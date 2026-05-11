@@ -16,18 +16,20 @@ class RobustAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 1. Handle Null or Empty Strings
     if (imageUrl == null || imageUrl!.trim().isEmpty) {
       return _buildPlaceholder();
     }
 
     final cleanUrl = imageUrl!.toLowerCase().trim();
 
-    // 🛡️ Explicitly block dummy Google URLs before they trigger network decoding errors
-    if (cleanUrl.contains('profile/picture') || cleanUrl.contains('default-user')) {
+    // 2. 🛡️ Explicitly block dummy Google URLs before they trigger network decoding errors
+    if (cleanUrl.contains('googleusercontent.com/profile/picture') || 
+        cleanUrl.contains('default-user')) {
       return _buildPlaceholder();
     }
 
-    // Handle standard network images
+    // 3. Handle standard network images with Graceful Fallbacks
     if (imageUrl!.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: imageUrl!,
@@ -41,7 +43,7 @@ class RobustAvatar extends StatelessWidget {
       );
     }
 
-    // Handle Base64 strings
+    // 4. Handle Base64 strings (If your backend sometimes sends raw image strings)
     try {
       String cleanBase64 = imageUrl!;
       if (cleanBase64.contains(',')) {
@@ -53,15 +55,21 @@ class RobustAvatar extends StatelessWidget {
         backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
       );
     } catch (e) {
+      // If Base64 decoding fails, don't crash, just show the icon
       return _buildPlaceholder();
     }
   }
 
+  // Unified fallback UI
   Widget _buildPlaceholder() {
     return CircleAvatar(
       radius: radius,
       backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
-      child: Icon(Icons.person, color: isDark ? Colors.grey[500] : Colors.grey, size: radius * 1.2),
+      child: Icon(
+        Icons.person, 
+        color: isDark ? Colors.grey[500] : Colors.grey, 
+        size: radius * 1.2
+      ),
     );
   }
 }

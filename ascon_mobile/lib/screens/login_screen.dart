@@ -1,18 +1,14 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:go_router/go_router.dart'; 
-import 'edit_profile_screen.dart'; 
 
 import '../services/auth_service.dart';
 import '../services/notification_service.dart'; 
 import '../services/socket_service.dart'; 
 import '../services/biometric_service.dart'; 
-import '../config.dart'; 
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
-import 'welcome_dialog.dart'; 
 
 class LoginScreen extends StatefulWidget {
   final Map<String, dynamic>? pendingNavigation;
@@ -30,20 +26,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final BiometricService _biometricService = BiometricService(); 
   
   bool _isEmailLoading = false;
-  // bool _isGoogleLoading = false; // Optional: Can comment this out too since Google Login is disabled
   bool _obscurePassword = true; 
   bool _canCheckBiometrics = false;
 
   @override
   void initState() {
     super.initState();
-    // ✅ Only check biometrics if NOT running on Web
     if (!kIsWeb) {
       _checkBiometrics();
     }
   }
 
-  // ✅ Best Practice: Dispose controllers to prevent memory leaks
   @override
   void dispose() {
     _emailController.dispose();
@@ -56,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (mounted) setState(() => _canCheckBiometrics = available);
   }
 
-  // ✅ Pass email and password into the dialog
+  // ✅ FIX 1: Pass email and password into the Dialog
   void _showBiometricOptInDialog(Map<String, dynamic> user, String email, String password) {
     showDialog(
       context: context,
@@ -73,7 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              // ✅ Save credentials securely to the Keystore
+              // ✅ FIX 2: Pass email and password to the Auth Service
               await _authService.enableBiometrics(email, password); 
               if (mounted) {
                 Navigator.pop(context);
@@ -100,11 +93,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (authenticated) {
       setState(() => _isEmailLoading = true); 
 
-      // 1. Fetch hardware-encrypted credentials
+      // ✅ FIX 3: Fetch the stored credentials to perform a silent login
       final creds = await _authService.getBiometricCredentials();
       
       if (creds != null) {
-        // 2. Perform a fresh login silently in the background
         final result = await _authService.login(creds['email']!, creds['password']!);
         if (mounted) setState(() => _isEmailLoading = false);
 
@@ -116,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       } else {
-        // 3. Fallback if credentials are missing from secure storage
+        // Fallback to token if credentials missing
         String? validToken = await _authService.getToken();
         if (mounted) setState(() => _isEmailLoading = false);
 
@@ -146,11 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
       SocketService().connectUser(userId);
     }
 
-    String safeName = user['fullName'] ?? "Alumni"; 
-
-    // Handle Pending Navigation from Push Notifications
     if (widget.pendingNavigation != null) {
-      debugPrint("🚀 Handling Pending Navigation after Login...");
       context.go('/home');
       Future.delayed(const Duration(milliseconds: 600), () {
         NotificationService().handleNavigation(widget.pendingNavigation!);
@@ -158,69 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return; 
     }
 
-    // ✅ Check if the profile is incomplete before routing
-    var year = user['yearOfAttendance'];
-    bool isProfileIncomplete = year == null || 
-                               year == 0 || 
-                               year == "null" || 
-                               year.toString().trim().isEmpty;
-
-    bool hasSeenWelcome = user['hasSeenWelcome'] ?? false;
-
-    if (hasSeenWelcome) {
-      if (isProfileIncomplete) {
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => EditProfileScreen(
-              userData: user,
-              isFirstTime: true,
-            ),
-          ),
-        );
-      } else {
-        _navigateToHome(safeName);
-      }
-    } else {
-      // First time login: Show Welcome Dialogue first
-      if (!mounted) return;
-      
-      // ✅ 1. AWAIT the dialog to finish and close completely
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => WelcomeDialog( 
-          userName: safeName,
-          onGetStarted: () {
-            // ✅ 2. ONLY pop the dialog layer here. NO async delays!
-            if (Navigator.canPop(dialogContext)) {
-              Navigator.pop(dialogContext);
-            }
-          }, 
-        ),
-      );
-
-      // ✅ 3. Fire the backend update in the background (Do NOT await it)
-      _markWelcomeAsSeen();
-            
-      // ✅ 4. Only route AFTER the dialog is completely gone
-      if (!mounted) return; 
-      
-      if (isProfileIncomplete) {
-        Navigator.pushReplacement(
-          context, 
-          MaterialPageRoute(
-            builder: (_) => EditProfileScreen(
-              userData: user,
-              isFirstTime: true,
-            ),
-          ),
-        );
-      } else {
-        _navigateToHome(safeName); 
-      }
-    }
+    _navigateToHome(); 
   }
 
   Future<void> _syncNotificationToken() async {
@@ -232,15 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _markWelcomeAsSeen() async {
-    try {
-      await _authService.markWelcomeSeen(); 
-    } catch (e) {
-      debugPrint("❌ Failed to mark welcome as seen: $e");
-    }
-  }
-
-  void _navigateToHome(String userName) {
+  void _navigateToHome() {
     if (!mounted) return;
     context.go('/home');
   }
@@ -268,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> {
         bool hardwareAvailable = await _biometricService.isBiometricAvailable;
 
         if (!alreadyEnabled && hardwareAvailable && mounted) {
-          // ✅ Pass the email and password variables to the dialog
+          // ✅ FIX 4: Pass the typed email and password here
           _showBiometricOptInDialog(result['data']['user'], email, password);
         } else {
           _handleLoginSuccess(result['data']['user']);
@@ -283,143 +201,34 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ==========================================
-  // COMMENTED OUT GOOGLE LOGIN LOGIC
-  // ==========================================
-  /*
-  Future<void> signInWithGoogle() async {
-    try {
-      setState(() => _isGoogleLoading = true);
-      
-      GoogleSignInAccount? googleUser;
-      
-      try { 
-        // ✅ FIX: Removed signInSilently() from the button action. 
-        // When a user actively clicks the button, we should strictly trigger the active signIn flow.
-        googleUser = await AuthService.googleSignIn.signIn(); 
-      } catch (error) {
-        if (mounted) {
-          setState(() => _isGoogleLoading = false);
-          debugPrint("🔴 Google Sign-In Error: $error");
-          
-          // Provide a cleaner error message for web users
-          String errorMsg = kIsWeb 
-              ? "Google Sign-In Failed. Ensure popups/cookies are allowed." 
-              : "Google Sign-In Failed: ${error.toString()}";
-              
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorMsg), 
-              backgroundColor: Colors.red
-            ),
-          );
-        }
-        return; 
-      }
-      
-      if (googleUser == null) {
-        setState(() => _isGoogleLoading = false);
-        return;
-      }
-      
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final String? tokenToSend = googleAuth.idToken ?? googleAuth.accessToken;
-
-      if (tokenToSend == null) {
-        setState(() => _isGoogleLoading = false);
-        return;
-      }
-      
-      final result = await _authService.googleLogin(tokenToSend);
-      if (!mounted) return;
-      setState(() => _isGoogleLoading = false);
-
-      if (result['statusCode'] == 404) {
-        final responseData = result['data'] ?? result;
-        final googleData = responseData['googleData'] ?? {};
-
-        Navigator.push(context, MaterialPageRoute(builder: (_) => RegisterScreen(
-          prefilledName: googleData['fullName'], 
-          prefilledEmail: googleData['email'],
-          googleToken: tokenToSend, 
-        )));
-        return; 
-      }
-
-      if (result['success']) {
-        _handleLoginSuccess(result['data']['user']);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] ?? "Google Login Failed"), 
-            backgroundColor: Colors.red
-          )
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isGoogleLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("An error occurred during Google Login."), backgroundColor: Colors.red)
-        );
-      }
-    }
-  }
-  */
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = Theme.of(context).primaryColor;
     final subTextColor = Theme.of(context).textTheme.bodyMedium?.color;
-    final cardColor = Theme.of(context).cardColor;
-    final bool isAnyLoading = _isEmailLoading; // || _isGoogleLoading;
+    final bool isAnyLoading = _isEmailLoading; 
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF0F4F8),
       body: Stack(
         children: [
-          // ==========================================
-          // 1. FLOATING BACKGROUND ORBS
-          // ==========================================
           Positioned(
-            top: -50,
-            left: -50,
+            top: -50, left: -50,
             child: Container(
-              height: 250,
-              width: 250,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: primaryColor.withOpacity(isDark ? 0.3 : 0.2),
-              ),
+              height: 250, width: 250,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: primaryColor.withOpacity(isDark ? 0.3 : 0.2)),
             ),
           ),
           Positioned(
-            bottom: -100,
-            right: -50,
+            bottom: -100, right: -50,
             child: Container(
-              height: 300,
-              width: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: primaryColor.withOpacity(isDark ? 0.4 : 0.15),
-              ),
+              height: 300, width: 300,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: primaryColor.withOpacity(isDark ? 0.4 : 0.15)),
             ),
           ),
-          
-          // ==========================================
-          // 2. FROSTED GLASS EFFECT
-          // ==========================================
           Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 60.0, sigmaY: 60.0), 
-              child: const SizedBox(), 
-            ),
+            child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 60.0, sigmaY: 60.0), child: const SizedBox()),
           ),
-
-          // ==========================================
-          // 3. THE FOREGROUND LOGIN CONTENT
-          // ==========================================
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -429,17 +238,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: BoxDecoration(
                     color: isDark ? Colors.black.withOpacity(0.4) : Colors.white.withOpacity(0.6),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: isDark ? Colors.white.withOpacity(0.1) : Colors.white.withOpacity(0.8),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      )
-                    ],
+                    border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.white.withOpacity(0.8), width: 1.5),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10))],
                   ),
                   child: Column(
                     children: [
@@ -447,19 +247,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Container(
                           height: 90, width: 90,
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle, 
-                            color: Colors.white, 
-                            boxShadow: [
-                              BoxShadow(
-                                color: primaryColor.withOpacity(0.2), 
-                                blurRadius: 15, 
-                                offset: const Offset(0, 8)
-                              )
-                            ]
+                            shape: BoxShape.circle, color: Colors.white, 
+                            boxShadow: [BoxShadow(color: primaryColor.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 8))]
                           ),
-                          child: ClipOval(
-                            child: Image.asset('assets/logo.png', fit: BoxFit.cover, errorBuilder: (c, o, s) => Icon(Icons.school, size: 70, color: primaryColor))
-                          ),
+                          child: ClipOval(child: Image.asset('assets/logo.png', fit: BoxFit.cover, errorBuilder: (c, o, s) => Icon(Icons.school, size: 70, color: primaryColor))),
                         ),
                       ),
                       const SizedBox(height: 16), 
@@ -469,26 +260,19 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 28), 
 
                       TextFormField(
-                        controller: _emailController, 
-                        enabled: !isAnyLoading, 
+                        controller: _emailController, enabled: !isAnyLoading, 
                         decoration: InputDecoration(
-                          labelText: 'Email Address', 
-                          prefixIcon: Icon(Icons.email_outlined, color: primaryColor, size: 20),
-                          filled: true,
-                          fillColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5), 
+                          labelText: 'Email Address', prefixIcon: Icon(Icons.email_outlined, color: primaryColor, size: 20),
+                          filled: true, fillColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5), 
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                         )
                       ),
                       const SizedBox(height: 12), 
                       TextFormField(
-                        controller: _passwordController, 
-                        enabled: !isAnyLoading, 
-                        obscureText: _obscurePassword,
+                        controller: _passwordController, enabled: !isAnyLoading, obscureText: _obscurePassword,
                         decoration: InputDecoration(
-                          labelText: 'Password', 
-                          prefixIcon: Icon(Icons.lock_outline, color: primaryColor, size: 20),
-                          filled: true,
-                          fillColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
+                          labelText: 'Password', prefixIcon: Icon(Icons.lock_outline, color: primaryColor, size: 20),
+                          filled: true, fillColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                           suffixIcon: IconButton(icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey, size: 20), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)),
                         ),
@@ -505,10 +289,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: ElevatedButton(
                                 onPressed: isAnyLoading ? null : loginUser, 
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: primaryColor, 
-                                  foregroundColor: Colors.white, 
-                                  elevation: 5,
-                                  shadowColor: primaryColor.withOpacity(0.5),
+                                  backgroundColor: primaryColor, foregroundColor: Colors.white, 
+                                  elevation: 5, shadowColor: primaryColor.withOpacity(0.5),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                                 ), 
                                 child: _isEmailLoading 
@@ -523,47 +305,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               height: 45, width: 45, 
                               decoration: BoxDecoration(
                                 color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: primaryColor.withOpacity(0.3))
+                                borderRadius: BorderRadius.circular(12), border: Border.all(color: primaryColor.withOpacity(0.3))
                               ),
-                              child: IconButton(
-                                icon: Icon(Icons.fingerprint, color: primaryColor, size: 24), 
-                                onPressed: isAnyLoading ? null : _handleBiometricLogin,
-                              ),
+                              child: IconButton(icon: Icon(Icons.fingerprint, color: primaryColor, size: 24), onPressed: isAnyLoading ? null : _handleBiometricLogin),
                             )
                           ]
                         ],
                       ),
                       const SizedBox(height: 16), 
-
-                      // ==========================================
-                      // COMMENTED OUT GOOGLE LOGIN BUTTON
-                      // ==========================================
-                      /*
-                      SizedBox(
-                        width: double.infinity, 
-                        height: 45, 
-                        child: OutlinedButton(
-                          onPressed: isAnyLoading ? null : signInWithGoogle, 
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: primaryColor.withOpacity(0.5), width: 1.5), 
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), 
-                            backgroundColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5)
-                          ), 
-                          child: _isGoogleLoading 
-                            ? SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: primaryColor, strokeWidth: 2)) 
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center, 
-                                children: [
-                                  Image.asset('assets/images/google_logo.png', height: 20), 
-                                  const SizedBox(width: 10), 
-                                  Text("Continue with Google", style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 14)) 
-                                ]
-                              )
-                        )
-                      ),
-                      const SizedBox(height: 24),
-                      */
 
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center, 

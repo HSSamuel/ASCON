@@ -26,7 +26,6 @@ class AuthService {
   static String? _tokenCache;
   final _secureStorage = StorageConfig.storage;
 
-  // ✅ Made static so it only initializes ONCE for the entire app lifecycle
   static final GoogleSignIn googleSignIn = GoogleSignIn(
     clientId: kIsWeb ? AppConfig.googleWebClientId : null,
     serverClientId: kIsWeb ? null : AppConfig.googleWebClientId,
@@ -61,14 +60,12 @@ class AuthService {
     }
   }
 
-  // ✅ Securely stash credentials in the hardware Keystore/Keychain
   Future<void> enableBiometrics(String email, String password) async {
     await _secureStorage.write(key: 'use_biometrics', value: 'true');
     await _secureStorage.write(key: 'bio_email', value: email);
     await _secureStorage.write(key: 'bio_password', value: password);
   }
 
-  // ✅ Retrieve them for silent background login
   Future<Map<String, String>?> getBiometricCredentials() async {
     String? email = await _secureStorage.read(key: 'bio_email');
     String? password = await _secureStorage.read(key: 'bio_password');
@@ -78,7 +75,6 @@ class AuthService {
     return null;
   }
 
-  // ✅ Check if the user has opted into biometrics
   Future<bool> isBiometricEnabled() async {
     String? enabled = await _secureStorage.read(key: 'use_biometrics');
     return enabled == 'true';
@@ -119,14 +115,17 @@ class AuthService {
     }
   }
 
+  // ✅ UPDATED: Removed phoneNumber requirement
   Future<Map<String, dynamic>> register({
     required String fullName,
     required String email,
     required String password,
-    required String phoneNumber,
     required String programmeTitle,
     required String yearOfAttendance,
-    String? dateOfBirth,
+    String? customProgramme,
+    String? jobTitle,
+    String? organization,
+    String? bio,
     String? googleToken,
   }) async {
     try {
@@ -135,10 +134,12 @@ class AuthService {
         'fullName': fullName,
         'email': email,
         'password': password,
-        'phoneNumber': phoneNumber,
         'programmeTitle': programmeTitle,
+        'customProgramme': customProgramme ?? "",
         'yearOfAttendance': yearOfAttendance,
-        'dateOfBirth': dateOfBirth,
+        'jobTitle': jobTitle ?? "",
+        'organization': organization ?? "",
+        'bio': bio ?? "",
         'googleToken': googleToken,
         'fcmToken': fcmToken ?? "",
       }, requiresAuth: false);
@@ -216,12 +217,19 @@ class AuthService {
   Future<void> markWelcomeSeen() async {
     try {
       await _api.put('/api/profile/welcome-seen', {});
-    } catch (e) {}
+      
+      final userMap = await getCachedUser();
+      if (userMap != null) {
+        userMap['hasSeenWelcome'] = true;
+        await _secureStorage.write(key: 'cached_user', value: jsonEncode(userMap));
+      }
+    } catch (e) {
+      debugPrint("Failed to mark welcome as seen: $e");
+    }
   }
 
   Future<String?> _performSilentRefresh() async {
     if (_isRefreshing) {
-      debugPrint("⏳ Waiting for pending refresh in AuthService...");
       return await _refreshCompleter?.future;
     }
 
@@ -253,11 +261,6 @@ class AuthService {
           return newToken;
         }
       } else {
-        // ==============================================================
-        // 🚨 THE HARD FALLBACK LAYER 
-        // ==============================================================
-        
-        // 1. Try Google Silent Auth First (ONLY IF NOT ON WEB)
         if (!kIsWeb) {
           try {
             if (await googleSignIn.isSignedIn()) {
@@ -276,14 +279,12 @@ class AuthService {
           }
         }
 
-        // 2. Refresh failed. Purge session and kick to login.
         debugPrint("Token refresh failed. Forcing logout.");
         await logout();
         _refreshCompleter?.complete(null);
         return null;
       }
     } catch (e) {
-      // If it's a network error, do not force logout. Just return null to fail gracefully.
       _refreshCompleter?.complete(null);
       return null;
     } finally {
@@ -365,10 +366,8 @@ class AuthService {
   }
 
   Future<void> logout({bool clearBiometrics = false}) async {
-    // 1. ATTEMPT REMOTE CLEANUP WITH A STRICT 3-SECOND TIMEOUT
     try {
       await Future(() async {
-        // Fetch FCM token with its own 1-second fallback so it doesn't hold up the API call
         final String? fcmToken = await _getFcmToken().timeout(const Duration(seconds: 1), onTimeout: () => null);
         final String? refreshToken = await _secureStorage.read(key: 'refresh_token');
         final String? userId = await currentUserId;
@@ -385,21 +384,18 @@ class AuthService {
           );
         }
 
-        // Fire Google disconnects (These are notorious for hanging on bad networks)
         if (googleSignIn.currentUser != null) {
           await googleSignIn.disconnect();
         }
         await googleSignIn.signOut();
         
-        // Disconnect Socket
         SocketService().disconnect();
 
-      }).timeout(const Duration(seconds: 3)); // 👈 Forces the entire block to fail fast after 3 seconds
+      }).timeout(const Duration(seconds: 3)); 
     } catch (e) {
       debugPrint("⚠️ Remote cleanup timed out or failed: $e. Proceeding to local cleanup.");
     }
 
-    // 2. INSTANT LOCAL CLEANUP (Always executes immediately if network fails)
     try {
       providerContainer.read(chatProvider.notifier).clearState();
       providerContainer.read(directoryProvider.notifier).clearState();
@@ -427,8 +423,6 @@ class AuthService {
     _api.clearAuthToken();
 
     if (kIsWeb) await Future.delayed(const Duration(milliseconds: 200));
-
-    // 3. REDIRECT VIA GLOBAL ROUTER
     appRouter.go('/login');
   }
 
