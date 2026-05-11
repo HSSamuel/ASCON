@@ -19,10 +19,8 @@ import 'screens/call_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/event_detail_screen.dart';
 import 'screens/programme_detail_screen.dart';
-import 'screens/facility_detail_screen.dart';
-import 'screens/mentorship_dashboard_screen.dart';
 
-// ✅ Global Keys used for Context-less Navigation
+// Global Keys used for Context-less Navigation
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> homeNavKey = GlobalKey<NavigatorState>();
 final GlobalKey<NavigatorState> chatNavKey = GlobalKey<NavigatorState>();
@@ -78,7 +76,7 @@ final GoRouter appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/chat',
-              builder: (context, state) => const ChatListScreen(), // <--- Changed screen
+              builder: (context, state) => const ChatListScreen(), 
             ),
           ],
         ),
@@ -168,13 +166,6 @@ final GoRouter appRouter = GoRouter(
       },
     ),
 
-    // ✅ ADDED: Detail Routes for Deep Linking
-    GoRoute(
-      path: '/mentorship_requests',
-      parentNavigatorKey: rootNavigatorKey,
-      builder: (context, state) => const MentorshipDashboardScreen(),
-    ),
-
     GoRoute(
       path: '/event_detail',
       parentNavigatorKey: rootNavigatorKey,
@@ -194,22 +185,11 @@ final GoRouter appRouter = GoRouter(
     ),
 
     GoRoute(
-      path: '/facility_detail',
-      parentNavigatorKey: rootNavigatorKey,
-      builder: (context, state) {
-        final args = state.extra as Map<String, dynamic>;
-        return FacilityDetailScreen(facility: args['facility']);
-      },
-    ),
-
-    GoRoute(
       path: '/alumni_detail',
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) {
-        // ✅ Defensively cast the arguments to prevent Null Pointer Exceptions
         final args = state.extra as Map<String, dynamic>? ?? {};
         
-        // Provide an absolute fallback so it never crashes the build method
         final Map<String, dynamic> fallbackData = {'_id': '', 'fullName': 'Alumni'};
         final Map<String, dynamic> alumniData = args['alumniData'] as Map<String, dynamic>? ?? fallbackData;
         

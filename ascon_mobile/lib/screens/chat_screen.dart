@@ -21,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../viewmodels/chat_detail_view_model.dart'; 
 import '../viewmodels/chat_view_model.dart';
 import '../viewmodels/profile_view_model.dart'; 
+import '../viewmodels/badge_view_model.dart'; // ✅ ADDED: Required to clear the global app badge
 import '../models/chat_objects.dart';
 import '../utils/presence_formatter.dart';
 import 'group_info_screen.dart';
@@ -31,7 +32,7 @@ import '../widgets/chat/poll_creation_sheet.dart';
 import '../widgets/active_poll_card.dart';
 import '../widgets/chat/message_bubble.dart'; 
 import '../widgets/chat/chat_input_area.dart'; 
-import '../widgets/robust_avatar.dart'; // ✅ NEW IMPORT
+import '../widgets/robust_avatar.dart'; 
 
 import '../services/socket_service.dart';
 import '../services/data_service.dart';
@@ -125,10 +126,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _fetchGroupParticipants(); 
     }
     
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-       if (widget.conversationId != null) {
-         ref.read(_provider.notifier).markUnreadAsRead();
-       }
+    // ✅ INJECTED: Call the Sync and Optimize function
+    _syncAndOptimizeChat();
+  }
+
+  // ==========================================================
+  // 🚀 CORE OPTIMIZATION & SYNC LAYER
+  // ==========================================================
+  void _syncAndOptimizeChat() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      // 1. Clear global message badges to remove red dots immediately
+      try {
+        ref.read(badgeProvider.notifier).clearMessageBadge();
+      } catch (e) {}
+
+      // 2. Mark unread messages as read instantly
+      if (widget.conversationId != null) {
+        try {
+          ref.read(_provider.notifier).markUnreadAsRead();
+        } catch (e) {}
+      }
+
+      // 3. Force fetch the absolute latest messages from the server silently
+      try {
+        await ref.read(_provider.notifier).refreshMessages();
+      } catch (e) {
+        debugPrint("Silent chat sync failed: $e");
+      }
     });
   }
 
@@ -219,8 +245,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     
-    // ✅ ADD THIS: Force the ChatList to sync globally when leaving the screen.
-    // This perfectly catches users who entered via a Push Notification Deep Link.
+    // Force the ChatList to sync globally when leaving the screen.
     Future.microtask(() {
       try {
         ref.read(chatProvider.notifier).loadConversations();
@@ -651,7 +676,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onTap: _openDetails,
               child: Row(
                 children: [
-                  // ✅ UPDATED: Call RobustAvatar directly instead of old 13-line Container
                   RobustAvatar(imageUrl: widget.receiverProfilePic, radius: 20),
                   const SizedBox(width: 10),
                   Expanded(

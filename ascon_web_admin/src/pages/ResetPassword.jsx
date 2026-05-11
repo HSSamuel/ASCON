@@ -83,11 +83,17 @@ export default function ResetPassword() {
           className="reset-card"
           style={{ textAlign: "center", padding: "40px 20px" }}
         >
-          <FaCheckCircle
-            size={60}
-            color="#1B5E3A"
-            style={{ marginBottom: "20px" }}
-          />
+          {/* ✅ FIX: Wrapped the icon in a flex container to guarantee strict centering */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              width: "100%",
+              marginBottom: "20px",
+            }}
+          >
+            <FaCheckCircle size={60} color="#1B5E3A" />
+          </div>
 
           <h2 className="reset-title" style={{ color: "#1B5E3A" }}>
             Success!
@@ -100,18 +106,45 @@ export default function ResetPassword() {
             Your password has been reset successfully.
           </p>
 
-          <div style={{ marginTop: "30px", padding: "15px", backgroundColor: "#f0fdf4", borderRadius: "8px", border: "1px solid #bbf7d0" }}>
-            <p style={{ fontWeight: 'bold', color: '#166534', margin: 0 }}>
+          <div
+            style={{
+              marginTop: "30px",
+              padding: "15px",
+              backgroundColor: "#f0fdf4",
+              borderRadius: "8px",
+              border: "1px solid #bbf7d0",
+            }}
+          >
+            <p style={{ fontWeight: "bold", color: "#166534", margin: 0 }}>
               📱 Mobile App Users:
             </p>
-            <p style={{ fontSize: '0.95rem', color: '#166534', marginTop: '5px' }}>
-              Please return to the ASCON Alumni App to login with your new password.
+            <p
+              style={{
+                fontSize: "0.95rem",
+                color: "#166534",
+                marginTop: "5px",
+              }}
+            >
+              Please return to the ASCON Alumni App to login with your new
+              password.
             </p>
           </div>
 
-          <div style={{ marginTop: "25px", borderTop: "1px solid #eee", paddingTop: "20px" }}>
-            <p style={{ fontSize: '0.85rem', color: '#888' }}>
-              Are you an Admin? <Link to="/login" style={{ color: "#1B5E3A", fontWeight: "bold" }}>Login to Portal here</Link>
+          <div
+            style={{
+              marginTop: "25px",
+              borderTop: "1px solid #eee",
+              paddingTop: "20px",
+            }}
+          >
+            <p style={{ fontSize: "0.85rem", color: "#888" }}>
+              Are you an Admin?{" "}
+              <Link
+                to="/login"
+                style={{ color: "#1B5E3A", fontWeight: "bold" }}
+              >
+                Login to Portal here
+              </Link>
             </p>
           </div>
         </div>

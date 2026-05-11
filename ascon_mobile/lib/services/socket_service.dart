@@ -27,24 +27,29 @@ class SocketService with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
-  // ✅ UPDATED: Robust Socket Wake-Up on App Resume
+  // =======================================================================
+  // 🚀 PRESENCE FIX: Strict Lifecycle Management
+  // =======================================================================
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // App came back to foreground -> Connect & Announce Presence
       _storage.read(key: "auth_token").then((token) {
         if (token != null) {
           if (socket == null || !socket!.connected) {
-            // Reconnect completely if the socket died in the background
             initSocket();
           } else {
-            // ✅ FIX: Socket thinks it's connected, but TCP might be stale.
-            // Forcefully disconnect and reconnect to ensure network freshness
-            // and flush any queued background messages/calls.
+            // Force TCP refresh
             socket!.disconnect();
             socket!.connect();
           }
         }
       });
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      // App went to background -> Disconnect immediately to trigger "Offline" on server
+      if (socket != null && socket!.connected) {
+         socket!.disconnect();
+      }
     }
   }
 
@@ -72,12 +77,10 @@ class SocketService with WidgetsBindingObserver {
         socket!.dispose();
       }
 
-      debugPrint("🔌 Socket Connecting to: $socketUrl as User: $_currentUserId");
-
       socket = IO.io(socketUrl, <String, dynamic>{
-        'transports': ['websocket', 'polling'], // Allow polling fallback for strict networks
+        'transports': ['websocket', 'polling'], 
         'autoConnect': false,
-        'timeout': 20000, // Explicitly give the initial connection 20 seconds
+        'timeout': 20000, 
         'reconnection': true,
         'reconnectionDelay': AppConfig.socketReconnectionDelayMs,
         'auth': {'token': token},
@@ -96,23 +99,23 @@ class SocketService with WidgetsBindingObserver {
     if (socket == null) return;
 
     socket!.onConnect((_) {
-      debugPrint('✅ Socket Connected');
       if (_currentUserId != null) {
         socket!.emit("user_connected", _currentUserId);
       }
     });
 
     socket!.onReconnect((_) {
-      debugPrint('🔄 Socket Reconnected');
       if (_currentUserId != null) {
         socket!.emit("user_connected", _currentUserId);
       }
     });
 
+    // Handle generic broadcast updates
     socket!.on('user_status_update', (data) {
       if (data != null) _userStatusController.add(Map<String, dynamic>.from(data));
     });
 
+    // Handle direct target requests
     socket!.on('user_status_result', (data) {
       if (data != null) _userStatusController.add(Map<String, dynamic>.from(data));
     });
@@ -148,12 +151,6 @@ class SocketService with WidgetsBindingObserver {
 
     socket!.on('call_ended', (data) {
        _callEventsController.add({'type': 'ended', 'data': data});
-    });
-
-    socket!.onDisconnect((_) => debugPrint('❌ Socket Disconnected'));
-    socket!.onError((data) {
-      if (data.toString().contains('timeout')) return; // Ignore expected mobile background timeouts
-      debugPrint('⚠️ Socket Error: $data');
     });
   }
 
@@ -204,7 +201,6 @@ class SocketService with WidgetsBindingObserver {
     }
   }
 
-  // ✅ ADDED: Function to send a heartbeat to keep the call alive
   void sendCallHeartbeat(String channelName) {
     if (socket != null && socket!.connected) {
       socket!.emit('call_heartbeat', {'channelName': channelName});

@@ -265,11 +265,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(height: 12),
                       _buildTextField("Class Year (e.g. 2023)", _yearController, Icons.calendar_today_outlined, isNumber: true),
                       const SizedBox(height: 12),
-                      _buildTextField("Job Title (Optional)", _jobController, Icons.work_outline),
+                      _buildTextField("Job Title", _jobController, Icons.work_outline),
                       const SizedBox(height: 12),
-                      _buildTextField("Organization (Optional)", _orgController, Icons.business_outlined),
+                      _buildTextField("Organization", _orgController, Icons.business_outlined),
                       const SizedBox(height: 12),
-                      _buildTextField("Short Bio (Optional)", _bioController, Icons.person_outline, maxLines: 3),
+                      _buildTextField("Short Bio", _bioController, Icons.person_outline, maxLines: 3),
 
                       const SizedBox(height: 32),
 

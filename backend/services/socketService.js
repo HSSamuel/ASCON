@@ -6,7 +6,6 @@ const mongoose = require("mongoose");
 const admin = require("firebase-admin");
 const UserAuth = require("../models/UserAuth");
 const UserProfile = require("../models/UserProfile");
-const User = require("../models/User");
 const Group = require("../models/Group");
 const Message = require("../models/Message");
 const CallLog = require("../models/CallLog");
@@ -16,12 +15,10 @@ let io;
 let redisClient;
 const disconnectTimers = new Map();
 
-// ✅ COST SAFEGUARD TIMERS
 const activeCallTimers = new Map();
-const MAX_RING_TIME = 60 * 1000; // 60 Seconds
-const MAX_CALL_DURATION = 45 * 60 * 1000; // 45 Minutes
+const MAX_RING_TIME = 60 * 1000;
+const MAX_CALL_DURATION = 45 * 60 * 1000;
 
-// ✅ NATIVE SOCKET.IO ROOM TRACKING (Replaces Buggy Redis Manual Sets)
 const getSocketCount = async (userId) => {
   try {
     if (!io) return 0;
@@ -40,8 +37,8 @@ const initializeSocket = async (server) => {
       methods: ["GET", "POST"],
       credentials: true,
     },
-    pingTimeout: 60000,
-    pingInterval: 25000,
+    pingTimeout: 30000,
+    pingInterval: 10000,
   };
 
   io = new Server(server, ioConfig);
@@ -93,7 +90,7 @@ const initializeSocket = async (server) => {
         return next(new Error("Authentication error: User no longer exists"));
       }
 
-      socket.userId = decoded._id;
+      socket.userId = decoded._id.toString();
       return next();
     } catch (err) {
       logger.error(`Socket Auth Error: ${err.message}`);
@@ -126,18 +123,30 @@ const initializeSocket = async (server) => {
       }
     });
 
+    socket.on("user_logout", async (uid) => {
+      if (uid === userId) {
+        await forceOffline(userId);
+      }
+    });
+
     socket.on("check_user_status", async ({ userId: targetId }) => {
       try {
         const count = await getSocketCount(targetId);
         const isOnline = count > 0;
 
         let lastSeen = new Date();
-        if (!isOnline) {
-          const userAuth = await UserAuth.findById(targetId).select("lastSeen");
-          if (userAuth) lastSeen = userAuth.lastSeen;
+        const userAuth =
+          await UserAuth.findById(targetId).select("lastSeen isOnline");
+
+        if (userAuth) {
+          lastSeen = userAuth.lastSeen;
+          if (!isOnline && userAuth.isOnline) {
+            userAuth.isOnline = false;
+            await userAuth.save();
+          }
         }
 
-        socket.emit("user_status_update", {
+        socket.emit("user_status_result", {
           userId: targetId,
           isOnline: isOnline,
           lastSeen: lastSeen,
@@ -183,10 +192,6 @@ const initializeSocket = async (server) => {
         logger.error("Delivered status error:", error);
       }
     });
-
-    // ==========================================
-    // --- REAL-TIME TYPING INDICATORS ---
-    // ==========================================
 
     socket.on("typing", ({ receiverId, conversationId, groupId }) => {
       if (groupId) {
@@ -240,14 +245,9 @@ const initializeSocket = async (server) => {
       }
     });
 
-    // ==========================================
-    // --- AGORA CALL SIGNALING & DB LOGGING ---
-    // ==========================================
-
     socket.on(
       "initiate_call",
       async ({ targetUserId, channelName, callerData }) => {
-        // ✅ ADDED: Cross-Call Collision & Busy Detection
         let isTargetBusy = false;
         let mutualChannel = null;
 
@@ -307,7 +307,8 @@ const initializeSocket = async (server) => {
             });
           }
 
-          const targetUser = await User.findById(targetUserId);
+          // ✅ FIX: Querying UserAuth instead of the old User model!
+          const targetUser = await UserAuth.findById(targetUserId);
           if (
             targetUser &&
             targetUser.fcmTokens &&
@@ -375,9 +376,6 @@ const initializeSocket = async (server) => {
       },
     );
 
-    // ==========================================
-    // --- CALL HEARTBEAT & STUCK CALL FIX ---
-    // ==========================================
     socket.on("answer_call", async ({ targetUserId, channelName }) => {
       try {
         await CallLog.findOneAndUpdate(
@@ -489,9 +487,6 @@ const initializeSocket = async (server) => {
       socket.to(targetUserId).emit("call_ended", { channelName });
     });
 
-    // ==========================================
-    // --- BUSY SIGNAL / CALL REJECTION ---
-    // ==========================================
     socket.on("reject_call", async ({ targetUserId, reason }) => {
       if (targetUserId) {
         io.to(targetUserId).emit("call_rejected", {
@@ -526,6 +521,12 @@ const initializeSocket = async (server) => {
   return io;
 };
 
+const forceOffline = async (userId) => {
+  const lastSeen = new Date();
+  await UserAuth.findByIdAndUpdate(userId, { isOnline: false, lastSeen });
+  io.emit("user_status_update", { userId, isOnline: false, lastSeen });
+};
+
 const handleConnection = async (socket, userId) => {
   if (disconnectTimers.has(userId)) {
     clearTimeout(disconnectTimers.get(userId));
@@ -534,7 +535,7 @@ const handleConnection = async (socket, userId) => {
 
   const count = await getSocketCount(userId);
 
-  if (count === 1) {
+  if (count === 1 || count === 0) {
     await UserAuth.findByIdAndUpdate(userId, { isOnline: true }).catch((e) =>
       logger.error(e),
     );
@@ -547,11 +548,9 @@ const handleDisconnect = async (socket, userId) => {
     const count = await getSocketCount(userId);
 
     if (count === 0) {
-      const lastSeen = new Date();
-      await UserAuth.findByIdAndUpdate(userId, { isOnline: false, lastSeen });
-      io.emit("user_status_update", { userId, isOnline: false, lastSeen });
+      await forceOffline(userId);
     }
-  }, 5000);
+  }, 3000);
 
   disconnectTimers.set(userId, timer);
 };

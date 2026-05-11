@@ -14,64 +14,40 @@ class DirectoryState {
   final List<dynamic> allAlumni;
   final List<dynamic> searchResults;
   final Map<String, List<dynamic>> groupedAlumni;
-  final List<dynamic> recommendedAlumni;
   final List<dynamic> smartMatches;
-  final List<dynamic> nearbyAlumni;
   
   final bool isLoadingDirectory;
   final bool isLoadingMatches;
-  final bool isLoadingNearMe;
-  final bool hasRecommendations;
-  final bool shouldShowPopup;
   
   final String activeFilter; 
-  final String nearMeFilter;
 
   const DirectoryState({
     this.allAlumni = const [],
     this.searchResults = const [],
     this.groupedAlumni = const {},
-    this.recommendedAlumni = const [],
     this.smartMatches = const [],
-    this.nearbyAlumni = const [],
     this.isLoadingDirectory = false,
     this.isLoadingMatches = false,
-    this.isLoadingNearMe = false,
-    this.hasRecommendations = false,
-    this.shouldShowPopup = false,
     this.activeFilter = "All",
-    this.nearMeFilter = "",
   });
 
   DirectoryState copyWith({
     List<dynamic>? allAlumni,
     List<dynamic>? searchResults,
     Map<String, List<dynamic>>? groupedAlumni,
-    List<dynamic>? recommendedAlumni,
     List<dynamic>? smartMatches,
-    List<dynamic>? nearbyAlumni,
     bool? isLoadingDirectory,
     bool? isLoadingMatches,
-    bool? isLoadingNearMe,
-    bool? hasRecommendations,
-    bool? shouldShowPopup,
     String? activeFilter,
-    String? nearMeFilter,
   }) {
     return DirectoryState(
       allAlumni: allAlumni ?? this.allAlumni,
       searchResults: searchResults ?? this.searchResults,
       groupedAlumni: groupedAlumni ?? this.groupedAlumni,
-      recommendedAlumni: recommendedAlumni ?? this.recommendedAlumni,
       smartMatches: smartMatches ?? this.smartMatches,
-      nearbyAlumni: nearbyAlumni ?? this.nearbyAlumni,
       isLoadingDirectory: isLoadingDirectory ?? this.isLoadingDirectory,
       isLoadingMatches: isLoadingMatches ?? this.isLoadingMatches,
-      isLoadingNearMe: isLoadingNearMe ?? this.isLoadingNearMe,
-      hasRecommendations: hasRecommendations ?? this.hasRecommendations,
-      shouldShowPopup: shouldShowPopup ?? this.shouldShowPopup,
       activeFilter: activeFilter ?? this.activeFilter,
-      nearMeFilter: nearMeFilter ?? this.nearMeFilter,
     );
   }
 }
@@ -89,7 +65,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
 
   void init() {
     loadDirectory();
-    loadRecommendations();
     loadSmartMatches();
   }
 
@@ -107,17 +82,9 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
 
   void setFilter(String filter) {
     state = state.copyWith(activeFilter: filter);
-    
-    if (filter == "Near Me") {
-      loadNearMe();
-    } else {
-      loadDirectory(); 
-    }
+    loadDirectory(); 
   }
 
-  // =========================================================================
-  // ✅ THE CORE OF OFFLINE-FIRST ARCHITECTURE (WITH CACHE EXPIRATION)
-  // =========================================================================
   Future<void> loadDirectory({String query = ""}) async {
     final String cacheKey = 'dir_cache_${state.activeFilter}';
     final String timeKey = 'dir_cache_time_${state.activeFilter}';
@@ -130,7 +97,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
 
       if (cachedDataString != null && cacheTimestamp != null) {
         final now = DateTime.now().millisecondsSinceEpoch;
-        // 7 days = 604,800,000 milliseconds
         if (now - cacheTimestamp < 604800000) {
           isCacheValid = true;
           try {
@@ -142,14 +108,11 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
                 groupedAlumni: _groupUsersByYear(cachedList),
                 isLoadingDirectory: false, 
               );
-              debugPrint("⚡ Loaded ${cachedList.length} alumni instantly from cache.");
             }
           } catch (e) {
-            debugPrint("Cache read error: $e");
             isCacheValid = false;
           }
         } else {
-          debugPrint("🧹 Cache expired (older than 7 days). Purging...");
           _cacheBox.delete(cacheKey);
           _cacheBox.delete(timeKey);
         }
@@ -164,7 +127,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
     bool isOffline = connectivityResult.contains(ConnectivityResult.none);
     
     if (isOffline) {
-      debugPrint("🚫 Offline. Relying entirely on cache.");
       if (mounted && state.isLoadingDirectory) state = state.copyWith(isLoadingDirectory: false);
       return; 
     }
@@ -172,7 +134,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
     try {
       String endpoint = '/api/directory?search=$query';
       
-      if (state.activeFilter == "Mentors") endpoint += '&mentorship=true';
       if (state.activeFilter == "Classmates") endpoint += '&classmates=true';
 
       final response = await _api.get(endpoint);
@@ -202,14 +163,11 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
         }
       }
     } catch (e) {
-      debugPrint("Directory Background Sync Error: $e");
       if (mounted) state = state.copyWith(isLoadingDirectory: false);
     }
   }
 
   void onSearchChanged(String query) {
-    if (state.activeFilter == "Near Me") return; 
-
     if (query.isEmpty) {
       state = state.copyWith(
         searchResults: state.allAlumni,
@@ -232,34 +190,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
     }
   }
 
-  Future<void> loadRecommendations() async {
-    try {
-      final result = await _dataService.fetchRecommendations();
-      if (result['success'] == true) {
-        final recs = result['matches'] ?? [];
-        bool shouldPopup = false;
-        
-        if (recs.isNotEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          final lastShown = prefs.getInt('last_recommendation_popup_time') ?? 0;
-          final now = DateTime.now().millisecondsSinceEpoch;
-          if (now - lastShown > 86400000) {
-            shouldPopup = true;
-            prefs.setInt('last_recommendation_popup_time', now);
-          }
-        }
-        
-        if (mounted) {
-          state = state.copyWith(
-            recommendedAlumni: recs, 
-            hasRecommendations: recs.isNotEmpty,
-            shouldShowPopup: shouldPopup
-          );
-        }
-      }
-    } catch (_) {}
-  }
-
   Future<void> loadSmartMatches() async {
     if (state.smartMatches.isEmpty) {
       state = state.copyWith(isLoadingMatches: true);
@@ -270,22 +200,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
     } catch (_) {
       if (mounted) state = state.copyWith(isLoadingMatches: false);
     }
-  }
-
-  Future<void> loadNearMe({String? city}) async {
-    if (state.nearbyAlumni.isEmpty) {
-      state = state.copyWith(isLoadingNearMe: true);
-    }
-    try {
-      final nearby = await _dataService.fetchAlumniNearMe(city: city);
-      if (mounted) state = state.copyWith(nearbyAlumni: nearby, isLoadingNearMe: false);
-    } catch (_) {
-      if (mounted) state = state.copyWith(isLoadingNearMe: false);
-    }
-  }
-
-  void setNearMeFilter(String val) {
-    state = state.copyWith(nearMeFilter: val);
   }
 
   Map<String, List<dynamic>> _groupUsersByYear(List<dynamic> users) {

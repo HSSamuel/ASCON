@@ -6,33 +6,32 @@ const Group = require("../models/Group");
 const verifyToken = require("./verifyToken");
 const upload = require("../config/cloudinary");
 const { generateAlumniId } = require("../utils/idGenerator");
-
-// ✅ ADDED: Import the peer notification function
 const { notifyPeersOfNewUser } = require("../utils/notificationHandler");
 
-// ✅ Centralized Profile Completeness Logic
+// =========================================================
+// ✅ CLEANED: Profile Completeness Logic
+// =========================================================
 const calculateProfileCompleteness = (profile) => {
   let totalScore = 0;
-  const maxScore = 8;
+  // We now base completion strictly on the 5 available core fields
+  const maxScore = 5;
 
-  if (profile.profilePicture) totalScore++;
-  if (profile.jobTitle) totalScore++;
-  if (profile.organization) totalScore++;
-  if (profile.industry) totalScore++;
-  if (profile.city) totalScore++;
-  if (profile.bio) totalScore++;
-  if (profile.linkedin) totalScore++;
-  if (profile.dateOfBirth) totalScore++;
+  if (profile.profilePicture && profile.profilePicture.trim() !== "")
+    totalScore++;
+  if (profile.jobTitle && profile.jobTitle.trim() !== "") totalScore++;
+  if (profile.organization && profile.organization.trim() !== "") totalScore++;
+  if (profile.bio && profile.bio.trim() !== "") totalScore++;
+  if (profile.yearOfAttendance) totalScore++;
 
   const percent = totalScore / maxScore;
   return {
     percent: percent,
-    isComplete: percent >= 0.85,
+    isComplete: percent >= 0.99, // Using 0.99 to account for tiny JS float math discrepancies
   };
 };
 
 // =========================================================
-// 1. UPDATE PROFILE & SETTINGS
+// 1. UPDATE PROFILE
 // =========================================================
 router.put("/update", verifyToken, (req, res) => {
   const uploadMiddleware = upload.single("profilePicture");
@@ -53,7 +52,7 @@ router.put("/update", verifyToken, (req, res) => {
         newYear = null;
       }
 
-      // 2. ✅ CRITICAL: Fetch Current Profile (To detect changes)
+      // 2. Fetch Current Profile
       const currentProfile = await UserProfile.findOne({
         userId: req.user._id,
       });
@@ -61,32 +60,18 @@ router.put("/update", verifyToken, (req, res) => {
         return res.status(404).json({ message: "User profile not found" });
       }
 
-      // ✅ NEW: GENERATE ID IF MISSING
-      // If the user doesn't have an ID yet, generate it now based on the NEW year provided.
+      // Generate Alumni ID if missing
       let generatedAlumniId = currentProfile.alumniId;
-
-      // ✅ Track if this is their first time completing the profile
       let isFirstTimeSetup = false;
 
       if (!generatedAlumniId && newYear) {
-        console.log(
-          `🆕 First-time setup: Generating Alumni ID for Year ${newYear}`,
-        );
         generatedAlumniId = await generateAlumniId(newYear);
-        isFirstTimeSetup = true; // ✅ Mark as true
+        isFirstTimeSetup = true;
       }
 
-      // 3. ✅ GROUP SYNC LOGIC (Year Change)
+      // 3. GROUP SYNC LOGIC (Year Change)
       const oldYear = currentProfile.yearOfAttendance;
-
-      // Check if year changed (using loose equality to handle string/number diffs)
-      // OR if we are assigning it for the first time (oldYear is null)
       if (newYear && newYear != oldYear) {
-        console.log(
-          `🔄 Year changed from ${oldYear} to ${newYear}. Syncing Groups...`,
-        );
-
-        // A. Remove from Old Group (Only if exists)
         if (oldYear) {
           const oldGroupName = `Class of ${oldYear}`;
           await Group.findOneAndUpdate(
@@ -94,8 +79,6 @@ router.put("/update", verifyToken, (req, res) => {
             { $pull: { members: req.user._id } },
           );
         }
-
-        // B. Add to New Group
         const newGroupName = `Class of ${newYear}`;
         await Group.findOneAndUpdate(
           { name: newGroupName, type: "Class" },
@@ -109,69 +92,34 @@ router.put("/update", verifyToken, (req, res) => {
         );
       }
 
-      // Handle Boolean Toggles
-      const isMentor = req.body.isOpenToMentorship === "true";
-      const isLocationVisible = req.body.isLocationVisible === "true";
-      const isBirthdayVisible = req.body.isBirthdayVisible === "true";
-
-      // Handle Skills Array
-      let skillsArray = [];
-      if (req.body.skills && typeof req.body.skills === "string") {
-        skillsArray = req.body.skills
-          .split(",")
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-      }
-
-      // ✅ 4. PREPARE PROFILE DATA
+      // 4. ✅ CLEANED: PREPARE PROFILE DATA (Old fields completely removed)
       const profileUpdateData = {
         fullName: req.body.fullName,
         bio: req.body.bio,
         jobTitle: req.body.jobTitle,
         organization: req.body.organization,
-        linkedin: req.body.linkedin,
-        phoneNumber: req.body.phoneNumber,
-        yearOfAttendance: newYear, // Use sanitized year
-        alumniId: generatedAlumniId, // ✅ Save the potentially new ID
+        yearOfAttendance: newYear,
+        alumniId: generatedAlumniId,
         programmeTitle: req.body.programmeTitle,
         customProgramme: req.body.customProgramme,
-        industry: req.body.industry || "",
-        city: req.body.city || "",
-        state: req.body.state || "",
-        skills: skillsArray,
       };
-
-      if (req.body.dateOfBirth && req.body.dateOfBirth !== "null") {
-        profileUpdateData.dateOfBirth = new Date(req.body.dateOfBirth);
-      }
 
       if (req.file) {
         profileUpdateData.profilePicture = req.file.path;
       }
 
-      // ✅ 5. PREPARE SETTINGS DATA
-      const settingsUpdateData = {
-        isLocationVisible: isLocationVisible,
-        isOpenToMentorship: isMentor,
-        isBirthdayVisible: isBirthdayVisible,
-      };
+      // 5. UPDATE PROFILE
+      const updatedProfile = await UserProfile.findOneAndUpdate(
+        { userId: req.user._id },
+        { $set: profileUpdateData },
+        { new: true, runValidators: true },
+      );
 
-      // ✅ 6. RUN UPDATES IN PARALLEL
-      const [updatedProfile, updatedSettings] = await Promise.all([
-        UserProfile.findOneAndUpdate(
-          { userId: req.user._id },
-          { $set: profileUpdateData },
-          { new: true, runValidators: true },
-        ),
-        UserSettings.findOneAndUpdate(
-          { userId: req.user._id },
-          { $set: settingsUpdateData },
-          { new: true },
-        ),
-      ]);
+      // Fetch settings just to maintain UI data contract safely
+      const currentSettings =
+        (await UserSettings.findOne({ userId: req.user._id })) || {};
 
-      // ✅ 7. NOTIFY PEERS (Only on first-time setup!)
-      // We don't use 'await' here so it doesn't slow down the UI response for the user saving their profile.
+      // 6. NOTIFY PEERS (Only on first-time setup)
       if (isFirstTimeSetup) {
         notifyPeersOfNewUser(updatedProfile).catch((err) =>
           console.error("❌ Peer notification failed:", err),
@@ -180,7 +128,10 @@ router.put("/update", verifyToken, (req, res) => {
 
       res
         .status(200)
-        .json({ ...updatedProfile.toObject(), ...updatedSettings.toObject() });
+        .json({
+          ...updatedProfile.toObject(),
+          ...(currentSettings.toObject ? currentSettings.toObject() : {}),
+        });
     } catch (dbError) {
       console.error("❌ DATABASE ERROR:", dbError);
       res
@@ -215,7 +166,7 @@ router.get("/me", verifyToken, async (req, res) => {
       isOnline: auth.isOnline,
       lastSeen: auth.lastSeen,
       ...profile.toObject(),
-      ...settings.toObject(),
+      ...(settings ? settings.toObject() : {}),
       profileCompletionPercent: completeness.percent,
       isProfileComplete: completeness.isComplete,
     };

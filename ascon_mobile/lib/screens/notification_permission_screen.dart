@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:permission_handler/permission_handler.dart'; // ✅ ADD THIS
+import 'package:permission_handler/permission_handler.dart'; 
 import 'package:flutter/foundation.dart';
 import 'dart:ui'; 
 import '../services/notification_service.dart';
@@ -42,10 +42,15 @@ class _NotificationPermissionScreenState extends State<NotificationPermissionScr
     await prefs.setBool('has_seen_notification_prompt', true);
 
     if (granted) {
+      // ✅ FIX: Explicitly trigger the native OS permission popup FIRST
+      if (!kIsWeb) {
+        await Permission.notification.request();
+      }
+
+      // Then initialize Firebase's internal permission state
       await NotificationService().requestPermission();
       
-      // ✅ Web-Safe Check: Prevents crash by verifying it's NOT web first,
-      // and then safely checks if the target platform is Android.
+      // Web-Safe Check: Request System Alert for CallKit if Android
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
          final status = await Permission.systemAlertWindow.status;
          if (!status.isGranted) {
@@ -84,7 +89,6 @@ class _NotificationPermissionScreenState extends State<NotificationPermissionScr
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // ✅ FIX: Dynamic sizing to fit any screen
                 final double availableHeight = constraints.maxHeight;
                 final double imageHeight = availableHeight * 0.45; // Take 45% of height
 

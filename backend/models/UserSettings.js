@@ -8,18 +8,8 @@ const userSettingsSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    // Privacy Controls
-    isEmailVisible: { type: Boolean, default: true },
-    isPhoneVisible: { type: Boolean, default: false },
-    isLocationVisible: { type: Boolean, default: false },
-    isOpenToMentorship: { type: Boolean, default: false },
-
-    // ✅ NEW: Birthday Privacy
-    isBirthdayVisible: { type: Boolean, default: true },
-
-    // App State
+    // The only setting we kept for the app's functionality
     hasSeenWelcome: { type: Boolean, default: false },
-    fcmToken: { type: String, default: "" },
   },
   { timestamps: true },
 );

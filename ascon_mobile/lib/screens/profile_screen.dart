@@ -99,10 +99,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     if (profileState.isLoading) return Scaffold(backgroundColor: scaffoldBg, body: const ProfileSkeleton());
 
+    // ✅ CLEANED: Removed 'industry' and other old fields. Strict adherence to slim profile.
     final String fullName = userProfile?['fullName'] ?? widget.userName ?? "Alumni";
     final String jobTitle = userProfile?['jobTitle'] ?? '';
     final String org = userProfile?['organization'] ?? '';
-    final String industry = userProfile?['industry'] ?? '';
 
     final String programme = (userProfile?['programmeTitle']?.toString().isNotEmpty ?? false)
         ? userProfile!['programmeTitle'] : 'Add Programme';
@@ -277,7 +277,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 const SizedBox(height: 20),
               ],
 
-              if (jobTitle.isNotEmpty || org.isNotEmpty || industry.isNotEmpty) 
+              // ✅ CLEANED: Removed 'industry' checks here too
+              if (jobTitle.isNotEmpty || org.isNotEmpty) 
                 Container(
                   width: double.infinity,
                   margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),

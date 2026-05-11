@@ -25,7 +25,7 @@ class HighlightCard extends StatelessWidget {
           Navigator.push(context, MaterialPageRoute(builder: (_) => ProgrammeDetailScreen(programme: item)));
         },
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center, // ✅ CENTER ALL CHILDREN
           children: [
             Expanded(
               child: ClipRRect(
@@ -41,6 +41,7 @@ class HighlightCard extends StatelessWidget {
                 title, 
                 maxLines: 2, 
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center, // ✅ CENTER THE TEXT DIRECTLY
                 style: GoogleFonts.lato(fontSize: 11, fontWeight: FontWeight.bold)
               ),
             )

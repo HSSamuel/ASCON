@@ -26,7 +26,8 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   
   String? _myUserId;
-  final List<String> _filters = ["All", "Mentors", "Classmates", "Near Me"];
+  // ✅ CLEANED: Removed "Mentors" and "Near Me" from the filter list
+  final List<String> _filters = ["All", "Classmates"];
   
   final Set<String> _expandedSections = {}; 
 
@@ -79,103 +80,70 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
 
     Widget content;
 
-    if (state.activeFilter == "Near Me") {
-      if (state.isLoadingNearMe && state.nearbyAlumni.isEmpty) {
-        content = const DirectorySkeleton();
-      } 
-      else if (state.nearbyAlumni.isEmpty && !state.isLoadingNearMe) {
-        content = RefreshIndicator(
-          onRefresh: () async => await notifier.loadNearMe(),
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.6,
-              child: _buildEmptyState(context, "No alumni found nearby. Try another city.")
-            ),
+    if (state.isLoadingDirectory && sortedKeys.isEmpty) {
+      content = const DirectorySkeleton();
+    } 
+    else if (sortedKeys.isEmpty && !state.isLoadingDirectory) {
+      content = RefreshIndicator(
+        onRefresh: () async => await notifier.loadDirectory(),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: _buildEmptyState(context, "No alumni found.")
           ),
-        );
-      } 
-      else {
-        content = RefreshIndicator(
-          onRefresh: () async => await notifier.loadNearMe(),
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(), 
-            padding: const EdgeInsets.all(16),
-            itemCount: state.nearbyAlumni.length,
-            itemBuilder: (context, index) {
-              final rawUser = state.nearbyAlumni[index];
-              final userMap = rawUser is Map ? Map<String, dynamic>.from(rawUser) : <String, dynamic>{};
-              return _buildAlumniCard(userMap, context, isDark, primaryColor, showLocation: true);
-            },
-          ),
-        );
-      }
-    } else {
-      if (state.isLoadingDirectory && sortedKeys.isEmpty) {
-        content = const DirectorySkeleton();
-      } 
-      else if (sortedKeys.isEmpty && !state.isLoadingDirectory) {
-        content = RefreshIndicator(
-          onRefresh: () async => await notifier.loadDirectory(),
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.6,
-              child: _buildEmptyState(context, "No alumni found.")
-            ),
-          ),
-        );
-      } 
-      else {
-        List<Map<String, dynamic>> flattenedList = [];
+        ),
+      );
+    } 
+    else {
+      List<Map<String, dynamic>> flattenedList = [];
+      
+      for (String year in sortedKeys) {
+        flattenedList.add({
+          'type': 'header', 
+          'year': year, 
+          'count': state.groupedAlumni[year]?.length ?? 0
+        });
         
-        for (String year in sortedKeys) {
-          flattenedList.add({
-            'type': 'header', 
-            'year': year, 
-            'count': state.groupedAlumni[year]?.length ?? 0
-          });
-          
-          if (_expandedSections.contains(year)) {
-            final users = state.groupedAlumni[year] ?? [];
-            for (var user in users) {
-              flattenedList.add({
-                'type': 'user', 
-                'data': user
-              });
-            }
+        if (_expandedSections.contains(year)) {
+          final users = state.groupedAlumni[year] ?? [];
+          for (var user in users) {
+            flattenedList.add({
+              'type': 'user', 
+              'data': user
+            });
           }
         }
-
-        content = RefreshIndicator(
-          onRefresh: () async => await notifier.loadDirectory(),
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 40),
-            itemCount: flattenedList.length, 
-            itemBuilder: (context, index) {
-              final item = flattenedList[index];
-
-              if (item['type'] == 'header') {
-                return _buildYearHeader(
-                  item['year'], 
-                  item['count'], 
-                  primaryColor, 
-                  isDark, 
-                  _expandedSections.contains(item['year'])
-                );
-              } 
-              else {
-                final userMap = item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{};
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: _buildAlumniCard(userMap, context, isDark, primaryColor),
-                );
-              }
-            },
-          ),
-        );
       }
+
+      content = RefreshIndicator(
+        onRefresh: () async => await notifier.loadDirectory(),
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 40),
+          itemCount: flattenedList.length, 
+          itemBuilder: (context, index) {
+            final item = flattenedList[index];
+
+            if (item['type'] == 'header') {
+              return _buildYearHeader(
+                item['year'], 
+                item['count'], 
+                primaryColor, 
+                isDark, 
+                _expandedSections.contains(item['year'])
+              );
+            } 
+            else {
+              final userMap = item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{};
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: _buildAlumniCard(userMap, context, isDark, primaryColor),
+              );
+            }
+          },
+        ),
+      );
     }
 
     return Scaffold(
@@ -243,39 +211,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                       }).toList(),
                     ),
                   ),
-                  
-                  // ✅ RESTORED: Near Me City Filter UI
-                  if (state.activeFilter == "Near Me") ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Icon(Icons.my_location, size: 16, color: primaryColor),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Container(
-                            height: 36,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: isDark ? Colors.grey[800] : Colors.grey[100],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: TextField(
-                              onSubmitted: (val) {
-                                notifier.setNearMeFilter(val);
-                                notifier.loadNearMe(city: val);
-                              },
-                              style: const TextStyle(fontSize: 13),
-                              decoration: const InputDecoration(
-                                hintText: "Enter your city (e.g. Lagos, Abuja)...",
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.only(bottom: 14),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -321,14 +256,11 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     );
   }
 
-  Widget _buildAlumniCard(Map<String, dynamic> user, BuildContext context, bool isDark, Color primaryColor, {bool showLocation = false}) {
+  Widget _buildAlumniCard(Map<String, dynamic> user, BuildContext context, bool isDark, Color primaryColor) {
     final String name = user['fullName'] ?? "Alumnus";
     final String job = user['jobTitle'] ?? "";
     final String org = user['organization'] ?? "";
     final String img = user['profilePicture'] ?? "";
-    final String city = user['city'] ?? "";
-    final String state = user['state'] ?? "";
-    final bool isMentor = user['isOpenToMentorship'] == true;
     final String userId = user['userId'] ?? user['_id'] ?? '';
     
     if (userId == _myUserId || userId.isEmpty) return const SizedBox.shrink();
@@ -340,7 +272,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         );
       },
       child: Container(
-        margin: showLocation ? const EdgeInsets.only(bottom: 12) : null,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
@@ -352,20 +283,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Stack(
-              children: [
-                RobustAvatar(imageUrl: img, radius: 30),
-                if (isMentor)
-                  Positioned(
-                    right: 0, bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(color: Colors.amber[700], shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
-                      child: const Icon(Icons.star, color: Colors.white, size: 10),
-                    ),
-                  )
-              ],
-            ),
+            RobustAvatar(imageUrl: img, radius: 30), // ✅ CLEANED: Removed the Mentor Star Badge
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -382,18 +300,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                     )
                   else 
                     Text("Alumni Member", style: GoogleFonts.lato(fontSize: 12, color: Colors.grey[400], fontStyle: FontStyle.italic)),
-                  
-                  if (showLocation && (city.isNotEmpty || state.isNotEmpty))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Row(
-                        children: [
-                          Icon(Icons.location_on, size: 12, color: primaryColor),
-                          const SizedBox(width: 4),
-                          Text("$city${(city.isNotEmpty && state.isNotEmpty) ? ', ' : ''}$state", style: TextStyle(fontSize: 11, color: primaryColor)),
-                        ],
-                      ),
-                    )
                 ],
               ),
             ),

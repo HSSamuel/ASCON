@@ -1,4 +1,5 @@
 import 'dart:convert';
+// ✅ FIX: Corrected the firebase_messaging import path
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
@@ -83,7 +84,9 @@ class NotificationService {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       debugPrint("🔔 Foreground Message: ${message.data}");
 
-      if (message.data['type'] == 'call_offer' || message.data['type'] == 'video_call') {
+      if (message.data['type'] == 'call_offer' || 
+          message.data['type'] == 'video_call' || 
+          message.data['type'] == 'incoming_call') {
         return; 
       }
 
@@ -100,7 +103,6 @@ class NotificationService {
 
     RemoteMessage? initialMessage = await _firebaseMessaging.getInitialMessage();
     if (initialMessage != null) {
-      // ✅ Reduced delay since we no longer rely on BuildContext to be ready
       Future.delayed(const Duration(milliseconds: 300), () {
         handleNavigation(initialMessage.data);
       });
@@ -125,21 +127,23 @@ class NotificationService {
     }
 
     if (token == null) {
-      // ✅ Use global appRouter instead of context
       appRouter.go('/login', extra: data); 
       return;
     }
 
     // ✅ CALL ROUTING
-    if (type == 'call_offer' || type == 'video_call') {
+    if (type == 'call_offer' || type == 'video_call' || type == 'incoming_call') {
       SocketService().initSocket(); 
       bool isVideo = data['isVideoCall'].toString().toLowerCase() == 'true' || type == 'video_call';
       bool isGroup = data['isGroupCall'].toString().toLowerCase() == 'true';
 
+      final String currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+      if (currentRoute.contains('/call')) return;
+
       appRouter.push('/call', extra: {
         'remoteName': data['callerName'] ?? "Unknown Caller",
         'remoteId': data['callerId'],
-        'remoteAvatar': data['callerPic'],
+        'remoteAvatar': data['callerAvatar'] ?? data['callerPic'], 
         'isIncoming': true, 
         'isVideoCall': isVideo,
         'isGroupCall': isGroup,
@@ -177,7 +181,7 @@ class NotificationService {
       return;
     }
 
-// ✅ NEW ALUMNI ROUTING
+    // ✅ ALUMNI ROUTING
     if (route == 'alumni_detail' || type == 'new_alumni') {
       appRouter.push('/alumni_detail', extra: {
         'alumniData': {
@@ -191,7 +195,7 @@ class NotificationService {
       return;
     }
 
-    // ✅ TAB ROUTING (Uses go to swap bottom nav shell)
+    // ✅ TAB ROUTING
     if (type == 'new_update' || route == 'updates') {
       appRouter.go('/updates'); 
       return;
@@ -202,12 +206,7 @@ class NotificationService {
       return;
     }
 
-    // ✅ DETAIL SCREEN ROUTING (Uses push to enable back button)
-    if (route == 'mentorship_requests' || type == 'mentorship_request') {
-      appRouter.push('/mentorship_requests');
-      return;
-    }
-    
+    // ✅ DETAIL SCREEN ROUTING
     if (route == 'polls' || type == 'poll') {
       appRouter.push('/polls');
       return;
@@ -218,9 +217,7 @@ class NotificationService {
         appRouter.push('/event_detail', extra: {'eventData': {'_id': id.toString(), 'title': 'Loading...'}});
       } else if (route == 'programme_detail' || type == 'programme') {
         appRouter.push('/programme_detail', extra: {'programme': {'_id': id.toString(), 'title': 'Loading...'}});
-      } else if (route == 'facility_detail' || type == 'facility') {
-        appRouter.push('/facility_detail', extra: {'facility': {'_id': id.toString(), 'title': 'Loading...'}});
-      }
+      } 
     }
   }
 
@@ -228,7 +225,7 @@ class NotificationService {
     String originalTitle = message.notification?.title ?? 'New Message';
     String body = message.notification?.body ?? '';
     
-    bool isCall = message.data['type'] == 'call_offer' || message.data['type'] == 'video_call';
+    bool isCall = message.data['type'] == 'call_offer' || message.data['type'] == 'video_call' || message.data['type'] == 'incoming_call';
     String channelId = isCall ? AppConfig.callChannelId : AppConfig.notificationChannelId;
     String channelName = isCall ? AppConfig.callChannelName : AppConfig.notificationChannelName;
 

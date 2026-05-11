@@ -30,7 +30,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   if (kIsWeb) return;
 
-  // ✅ FIX: Catch 'call_offer', 'video_call', AND 'incoming_call'
   final type = message.data['type'];
   if (type == 'incoming_call' || type == 'call_offer' || type == 'video_call') {
     
@@ -52,7 +51,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       duration: 30000, // Ring for 30 seconds
       extra: <String, dynamic>{
         'channelName': message.data['channelName'],
-        'callerId': message.data['callerId']
+        'callerId': message.data['callerId'],
+        'callerAvatar': message.data['callerAvatar'] // ✅ FIX 1: Pass the avatar into the extra map so it survives the CallKit transition
       },
       android: const AndroidParams(
         isCustomNotification: true,
@@ -164,7 +164,6 @@ void main() async {
     }
 
     if (isMobile) {
-       // Register the single, unified background handler for calls and notifications
        FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     }
 
@@ -193,18 +192,15 @@ class _MyAppState extends State<MyApp> {
     super.initState();
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
-    _setupInteractedMessage(); // ✅ NEW: Initialize Notification Tap Listeners
+    _setupInteractedMessage(); 
   }
 
-  // ✅ NEW: Handle taps on standard FCM Notifications (Crucial for Web & App-Closed states)
   Future<void> _setupInteractedMessage() async {
-    // 1. App launched from a terminated state via a notification click
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
     if (initialMessage != null) {
       _handleNotificationClick(initialMessage);
     }
 
-    // 2. App opened from the background via a notification click
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationClick);
   }
 
@@ -213,12 +209,17 @@ class _MyAppState extends State<MyApp> {
     
     // Fallback Routing for Calls (Web/Standard Push)
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
+      // ✅ FIX 2: Added identical navigation guard to prevent double-pushing
+      final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+      if (currentRoute.contains('/call')) return;
+
       appRouter.push('/call', extra: {
         'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
         'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
         'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
         'remoteId': data['callerId'] ?? "",
         'channelName': data['channelName'] ?? "",
+        'remoteAvatar': data['callerAvatar'] ?? data['callerPic'], // ✅ Added caller avatar map
         'isIncoming': true,
       });
     } 
@@ -238,18 +239,24 @@ class _MyAppState extends State<MyApp> {
           String channelName = data['extra']?['channelName'] ?? data['id'] ?? "";
           String callerId = data['extra']?['callerId'] ?? "";
           
+          // ✅ FIX 3: Plucked the avatar string from the custom 'extra' dictionary or 'avatar' root
+          String callerAvatar = data['extra']?['callerAvatar'] ?? data['avatar'] ?? ""; 
+
+          final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+          if (currentRoute.contains('/call')) return;
+
           appRouter.push('/call', extra: {
             'isGroupCall': false, 
             'isVideoCall': data['type'] == 1,
             'remoteName': data['nameCaller'] ?? "Alumni User",
             'remoteId': callerId,
             'channelName': channelName,
+            'remoteAvatar': callerAvatar, // ✅ Passed securely into the route
             'isIncoming': true,
           });
           break;
           
         case Event.actionCallDecline:
-          // Emit a reject signal to the server if they decline from the lock screen
           SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
           break;
           

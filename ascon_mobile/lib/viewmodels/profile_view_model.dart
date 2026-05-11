@@ -16,7 +16,7 @@ class ProfileState {
 
   const ProfileState({
     this.userProfile,
-    this.isLoading = false, // ✅ FIX: Start false so cache paints instantly without a spinner frame
+    this.isLoading = false, 
     this.isOnline = false,
     this.lastSeen,
     this.completionPercent = 0.0,
@@ -125,15 +125,17 @@ class ProfileNotifier extends StateNotifier<ProfileState> {
     });
   }
 
+  // ✅ FIX: Synced to strictly check the 5 active fields left in our schema
   double _calculateCompletion(Map<String, dynamic> data) {
-    int total = 6; 
+    int total = 5; 
     int filled = 0;
-    if (data['fullName'] != null && data['fullName'].toString().isNotEmpty) filled++;
+    
     if (data['profilePicture'] != null && data['profilePicture'].toString().isNotEmpty) filled++;
     if (data['jobTitle'] != null && data['jobTitle'].toString().isNotEmpty) filled++;
+    if (data['organization'] != null && data['organization'].toString().isNotEmpty) filled++;
     if (data['bio'] != null && data['bio'].toString().isNotEmpty) filled++;
-    if (data['city'] != null && data['city'].toString().isNotEmpty) filled++;
-    if (data['phoneNumber'] != null && data['phoneNumber'].toString().isNotEmpty) filled++;
+    if (data['yearOfAttendance'] != null && data['yearOfAttendance'].toString().isNotEmpty) filled++;
+    
     return filled / total;
   }
 

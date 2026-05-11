@@ -1,14 +1,7 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart'; 
-import 'package:firebase_messaging/firebase_messaging.dart'; 
-import 'package:go_router/go_router.dart'; 
-
 import '../services/auth_service.dart';
-import '../services/notification_service.dart';
-import '../services/socket_service.dart';
-import 'edit_profile_screen.dart'; 
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -18,170 +11,111 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-  final AuthService _authService = AuthService();
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
+    _setupAnimations();
+    _checkAuthState();
+  }
 
-    _controller = AnimationController(
-      duration: const Duration(seconds: 2),
+  void _setupAnimations() {
+    _animationController = AnimationController(
       vsync: this,
+      duration: const Duration(milliseconds: 1500),
     );
-    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: const Interval(0.0, 0.5, curve: Curves.easeIn)),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: const Interval(0.0, 0.5, curve: Curves.easeOutBack)),
+    );
+
+    _animationController.forward();
+  }
+
+  Future<void> _checkAuthState() async {
+    // 1. Give the animation time to play
+    await Future.delayed(const Duration(milliseconds: 2000));
     
-    _controller.forward();
-    _checkSessionAndNavigate();
+    if (!mounted) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 2. Check if they have ever seen the notification prompt
+    final bool hasSeenPrompt = prefs.getBool('has_seen_notification_prompt') ?? false;
+
+    // 3. Check if they are already logged in
+    final authService = AuthService();
+    final bool isLoggedIn = await authService.isSessionValid();
+
+    if (!mounted) return;
+
+    // 4. Routing Logic
+    if (isLoggedIn) {
+      context.go('/home');
+    } else if (!hasSeenPrompt) {
+      // Send them to the permission screen, and tell it to go to /login next
+      context.go('/notification_permission', extra: '/login');
+    } else {
+      context.go('/login');
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _animationController.dispose();
     super.dispose();
-  }
-
-  Future<void> _checkSessionAndNavigate() async {
-    // 1. Wait for animation
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
-
-    // 2. Check Session Validity
-    final bool isValid = await _authService.isSessionValid();
-    
-    // 3. Determine Next Destination (Default)
-    String nextPath = isValid ? '/home' : '/login';
-
-    // ✅ PROACTIVE PRODUCTION FIX: 
-    // We strictly check our internal flag. We DO NOT check the OS authorization status here.
-    // This guarantees every user sees your explanation screen during initial onboarding, 
-    // regardless of whether Android/iOS defaulted the permission to true or false in the background.
-    final prefs = await SharedPreferences.getInstance();
-    bool hasSeenPrompt = prefs.getBool('has_seen_notification_prompt') ?? false;
-
-    if (!hasSeenPrompt) {
-      if (mounted) {
-        context.go('/notification_permission', extra: nextPath);
-      }
-      return; // 🛑 STOP HERE
-    }
-
-    // 4. Session & Profile Checks (Only if Logged In)
-    if (isValid) {
-      try {
-        SocketService().initSocket();
-        NotificationService().init();
-      } catch (e) {
-        debugPrint("⚠️ Init error: $e");
-      }
-
-      // 4b. Splash Guard: Check Profile Completeness
-      final user = await _authService.getCachedUser();
-      var year = user?['yearOfAttendance'];
-      
-      bool isProfileIncomplete = year == null || 
-                                 year == 0 || 
-                                 year == "null" || 
-                                 year.toString().trim().isEmpty;
-
-      if (isProfileIncomplete) {
-        debugPrint("⚠️ Splash Guard: Incomplete Profile. Redirecting.");
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => EditProfileScreen(
-                userData: user ?? {},
-                isFirstTime: true,
-              ),
-            ),
-          );
-        }
-        return; 
-      }
-      
-      // 4c. Check for Deep Links (Chat/Notifications)
-      RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-      if (initialMessage != null && _isChatMessage(initialMessage)) {
-        // The router/notification service will handle the specific path
-        // We just ensure we go to home first to initialize the shell
-        nextPath = '/home'; 
-      }
-    }
-
-    // 5. Final Navigation
-    if (mounted) {
-      context.go(nextPath);
-    }
-  }
-
-  bool _isChatMessage(RemoteMessage message) {
-    return message.data['type'] == 'chat_message' ||
-           message.data['route'] == 'chat_screen';
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
-    const asconGreen = Color(0xFF1B5E20); 
-    final glowColor = Colors.greenAccent.withOpacity(0.8);
-
-    double screenWidth = MediaQuery.of(context).size.width;
-    double screenHeight = MediaQuery.of(context).size.height;
-    double logoSize = (screenWidth < screenHeight ? screenWidth : screenHeight) * 0.5; 
-    if (logoSize > 300) logoSize = 300;
+    // ✅ Extract the primary color from the current active theme
+    final primaryColor = Theme.of(context).primaryColor;
 
     return Scaffold(
-      backgroundColor: scaffoldBg, 
+      backgroundColor: Colors.white,
       body: Center(
-        child: FadeTransition(
-          opacity: _animation,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: logoSize,
-                  height: logoSize,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDark ? Colors.grey[900] : Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: isDark ? Colors.black54 : Colors.black26,
-                        blurRadius: 15,
-                        offset: const Offset(0, 8),
-                      )
-                    ],
-                  ),
-                  child: ClipOval(
-                    child: Image.asset('assets/logo.png', fit: BoxFit.cover),
-                  ),
+        child: AnimatedBuilder(
+          animation: _animationController,
+          builder: (context, child) {
+            return FadeTransition(
+              opacity: _fadeAnimation,
+              child: ScaleTransition(
+                scale: _scaleAnimation,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/images/splash_logo_with_text.png', 
+                      width: 250, 
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(
+                          Icons.school,
+                          size: 100,
+                          color: primaryColor, // ✅ Uses dynamic theme color
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 40),
+                    SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(primaryColor), // ✅ Uses dynamic theme color
+                        strokeWidth: 3,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 30), 
-                Text(
-                  "... the natural place for human capacity building.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14, 
-                    fontStyle: FontStyle.italic,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white.withOpacity(0.9) : asconGreen,
-                    shadows: [
-                      Shadow(blurRadius: 15.0, color: glowColor, offset: const Offset(0, 0)),
-                      Shadow(blurRadius: 5.0, color: glowColor, offset: const Offset(0, 0)),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 50),
-                CircularProgressIndicator(color: Theme.of(context).primaryColor),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );

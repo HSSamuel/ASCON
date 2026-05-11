@@ -1,72 +1,64 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-class PostImageGallery extends StatefulWidget {
+class PostImageGallery extends StatelessWidget {
   final List<String> images;
   final bool isDark;
 
   const PostImageGallery({super.key, required this.images, required this.isDark});
 
   @override
-  State<PostImageGallery> createState() => _PostImageGalleryState();
-}
-
-class _PostImageGalleryState extends State<PostImageGallery> {
-  int _currentIndex = 0;
-
-  @override
   Widget build(BuildContext context) {
+    // Single image handles as normal to fill the space
+    if (images.length == 1) {
+      return Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(maxHeight: 240), 
+        color: isDark ? Colors.black : Colors.grey[100],
+        child: GestureDetector(
+          onTap: () {
+            Navigator.of(context, rootNavigator: true).push(
+              MaterialPageRoute(builder: (context) => FullScreenImage(imageUrl: images[0])),
+            );
+          },
+          child: CachedNetworkImage(
+            imageUrl: images[0],
+            fit: BoxFit.cover,
+            placeholder: (context, url) => Container(height: 200, color: Colors.grey[200]),
+            errorWidget: (context, url, error) => const SizedBox(height: 50),
+          ),
+        ),
+      );
+    }
+
+    // Multiple images displayed as a horizontally scrollable list
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(maxHeight: 240), 
-      color: widget.isDark ? Colors.black : Colors.grey[100],
-      child: Stack(
-        children: [
-          PageView.builder(
-            itemCount: widget.images.length,
-            onPageChanged: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-            itemBuilder: (context, index) {
-              return GestureDetector(
-                onTap: () {
-                  Navigator.of(context, rootNavigator: true).push(
-                    MaterialPageRoute(builder: (context) => FullScreenImage(imageUrl: widget.images[index])),
-                  );
-                },
-                child: CachedNetworkImage(
-                  imageUrl: widget.images[index],
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(height: 200, color: Colors.grey[200]),
-                  errorWidget: (context, url, error) => const SizedBox(height: 50),
-                ),
+      height: 240, 
+      color: isDark ? Colors.black : Colors.grey[100],
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: images.length,
+        itemBuilder: (context, index) {
+          return GestureDetector(
+            onTap: () {
+              Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute(builder: (context) => FullScreenImage(imageUrl: images[index])),
               );
             },
-          ),
-          if (widget.images.length > 1)
-            Positioned(
-              bottom: 10,
-              left: 0,
-              right: 0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  widget.images.length,
-                  (index) => Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: _currentIndex == index ? 8 : 5,
-                    height: _currentIndex == index ? 8 : 5,
-                    decoration: BoxDecoration(
-                      color: _currentIndex == index ? Colors.white : Colors.white.withOpacity(0.5),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.85, // Shows a peek of the next image
+              margin: EdgeInsets.only(right: index == images.length - 1 ? 0 : 4), // 4px gap between images
+              child: CachedNetworkImage(
+                imageUrl: images[index],
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(color: Colors.grey[200]),
+                errorWidget: (context, url, error) => const SizedBox(height: 50),
               ),
             ),
-        ],
+          );
+        },
       ),
     );
   }

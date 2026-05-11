@@ -12,7 +12,7 @@ const swaggerUi = require("swagger-ui-express");
 const http = require("http");
 
 const UserAuth = require("./models/UserAuth");
-const CallLog = require("./models/CallLog"); // ✅ NEW: Import CallLog
+const CallLog = require("./models/CallLog");
 const validateEnv = require("./utils/validateEnv");
 const errorHandler = require("./utils/errorMiddleware");
 const logger = require("./utils/logger");
@@ -34,13 +34,11 @@ validateEnv();
 app.use(compression());
 app.use(helmet());
 
-// ✅ UPDATED: Morgan Logger with a 'skip' filter for noisy browser requests
 app.use(
   morgan("combined", {
     skip: (req, res) => {
-      // Ignore favicon and Chrome devtools background requests
-      const noisyRoutes = ['/favicon.ico', '/.well-known/'];
-      return noisyRoutes.some(route => req.url.includes(route));
+      const noisyRoutes = ["/favicon.ico", "/.well-known/"];
+      return noisyRoutes.some((route) => req.url.includes(route));
     },
     stream: { write: (message) => logger.info(message.trim()) },
   }),
@@ -49,10 +47,9 @@ app.use(
 // ==========================================
 // 🛡️ RATE LIMITING
 // ==========================================
-// 1. Global API Rate Limiter
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1500, // ✅ FIX: Increased from 150 to 1500
+  windowMs: 15 * 60 * 1000,
+  max: 1500,
   message: {
     error: "Too many requests from this IP, please try again after 15 minutes.",
   },
@@ -60,10 +57,9 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// 2. Stricter Limiter for Authentication Routes
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // Limit each IP to 20 auth attempts per window
+  windowMs: 15 * 60 * 1000,
+  max: 20,
   message: {
     error: "Too many authentication attempts, please try again later.",
   },
@@ -149,12 +145,10 @@ app.use("/api/directory", require("./routes/directory"));
 app.use("/api/admin", require("./routes/admin"));
 app.use("/api/profile", require("./routes/profile"));
 app.use("/api/events", require("./routes/events"));
-app.use("/api/programme-interest", require("./routes/programmeInterest"));
 app.use("/api/notifications", require("./routes/notifications"));
-app.use("/api/event-registration", require("./routes/eventRegistration"));
 app.use("/api/chat", require("./routes/chat"));
 app.use("/api/documents", require("./routes/documents"));
-app.use("/api/mentorship", require("./routes/mentorship"));
+// ✅ REMOVED: app.use("/api/mentorship", require("./routes/mentorship"));
 app.use("/api/updates", require("./routes/updates"));
 app.use("/api/polls", require("./routes/polls"));
 app.use("/api/groups", require("./routes/groups"));
@@ -195,17 +189,14 @@ mongoose
 const gracefulShutdown = async (signal) => {
   logger.info(`\n⚠️ ${signal} received. Initiating graceful shutdown...`);
 
-  // 1. Stop accepting new HTTP requests
   server.close(async () => {
     logger.info("🛑 HTTP server stopped accepting new requests.");
 
     try {
-      // 2. Close Socket.io & Redis connections
       if (typeof closeSocket === "function") {
         await closeSocket();
       }
 
-      // 3. Close MongoDB connection cleanly
       if (mongoose.connection.readyState === 1) {
         await mongoose.connection.close(false);
         logger.info("🛑 MongoDB connection cleanly closed.");
@@ -219,13 +210,11 @@ const gracefulShutdown = async (signal) => {
     }
   });
 
-  // Force shutdown if it takes longer than 10 seconds
   setTimeout(() => {
     logger.error("⏳ Graceful shutdown timed out. Forcing exit.");
     process.exit(1);
   }, 10000);
 };
 
-// Listen for termination signals from OS / Hosting platform (Render/Heroku/Docker)
-process.on("SIGINT", () => gracefulShutdown("SIGINT")); // Ctrl+C in terminal
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM")); // Docker/Server termination
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
