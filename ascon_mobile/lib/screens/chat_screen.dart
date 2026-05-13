@@ -211,10 +211,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  void _setupScrollListener() {
+void _setupScrollListener() {
     _scrollController.addListener(() {
+      // ✅ FIX: With a reversed list, older messages are at maxScrollExtent
+      // We add a 100px buffer so it loads smoothly before hitting the exact top
       if (_scrollController.hasClients && 
-          _scrollController.position.pixels == 0 &&
+          _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 100 &&
           widget.conversationId != null) {
         ref.read(_provider.notifier).loadMoreMessages();
       }
@@ -375,12 +377,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  void _scrollToBottom() {
+void _scrollToBottom() {
     if (_scrollController.hasClients) {
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) {
+          // ✅ FIX: 0.0 is now the absolute bottom of the newest messages
           _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
+            0.0,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOut,
           );
@@ -760,20 +763,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       ),
                     )
                   : ListView.builder(
+                  reverse: true, // 🚀 THE MAGIC FLIP: Anchors items to the bottom!
                   controller: _scrollController,
                   keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                   itemCount: state.messages.length,
                   itemBuilder: (context, index) {
-                    final msg = state.messages[index];
+                    
+                    // ✅ FIX: Because the UI is reversed, index 0 is at the bottom of the screen.
+                    // We map the index backwards to access the newest message in your chronological list.
+                    final actualIndex = state.messages.length - 1 - index;
+                    final msg = state.messages[actualIndex];
                     
                     bool showDate = false;
                     bool showAvatarAndName = true;
                     
-                    if (index == 0) {
+                    if (actualIndex == 0) {
                       showDate = true;
                     } else {
-                      final prevMsg = state.messages[index - 1];
+                      final prevMsg = state.messages[actualIndex - 1];
                       if (msg.createdAt.day != prevMsg.createdAt.day || msg.createdAt.month != prevMsg.createdAt.month) {
                         showDate = true;
                       }

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart'; 
-import 'package:firebase_crashlytics/firebase_crashlytics.dart'; // ✅ Crashlytics Integration
+import 'package:firebase_crashlytics/firebase_crashlytics.dart'; 
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart'; 
 import 'package:flutter_callkit_incoming/entities/entities.dart'; 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -14,14 +14,11 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'services/notification_service.dart';
 import 'services/socket_service.dart'; 
+import 'services/auth_service.dart'; // ✅ ADDED: AuthService import for global sync
 import 'config/theme.dart';
 import 'config.dart';
 import 'router.dart'; 
 import 'utils/error_handler.dart'; 
-
-// ✅ ViewModel Imports for global background syncing
-import 'viewmodels/chat_view_model.dart';
-import 'viewmodels/badge_view_model.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = rootNavigatorKey;
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
@@ -31,7 +28,7 @@ final ProviderContainer providerContainer = ProviderContainer();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(); // Initialize isolated Firebase instance
+  await Firebase.initializeApp(); 
 
   if (kIsWeb) return;
 
@@ -161,12 +158,10 @@ void main() async {
       }
     }
 
-    // Route standard Flutter framework errors to Crashlytics
     FlutterError.onError = (errorDetails) {
       FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
     };
     
-    // Route asynchronous Dart errors to Crashlytics
     PlatformDispatcher.instance.onError = (error, stack) {
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
       return true;
@@ -187,7 +182,6 @@ void main() async {
   });
 }
 
-// ✅ FIX: Added WidgetsBindingObserver to manage global lifecycle states
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -201,17 +195,27 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // Register the observer
+    WidgetsBinding.instance.addObserver(this); 
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
     _setupInteractedMessage(); 
+    
+    // ✅ ADDED: Trigger sync immediately when app starts
+    _triggerColdStartSync();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // Clean up the observer
+    WidgetsBinding.instance.removeObserver(this); 
     _callSubscription?.cancel();
     super.dispose();
+  }
+
+  // ✅ ADDED: Verify session and fetch fresh data from backend
+  Future<void> _triggerColdStartSync() async {
+    if (await AuthService().isSessionValid()) {
+      AuthService().performGlobalSilentSync();
+    }
   }
 
   // =======================================================================
@@ -222,18 +226,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // 🔴 App minimized or closed: Explicitly go offline
       SocketService().disconnect(); 
       debugPrint("App Backgrounded: Socket Disconnected");
     } 
     else if (state == AppLifecycleState.resumed) {
-      // 🟢 App brought back to foreground: Reconnect & Sync Data globally
       debugPrint("App Resumed: Reconnecting Socket and Syncing Data");
       SocketService().initSocket(); 
       
-      // Force UI updates globally via the ProviderContainer
-      providerContainer.read(chatProvider.notifier).loadConversations();
-      providerContainer.read(badgeProvider.notifier).refreshBadges();
+      // ✅ ADDED: Delegated all data fetching logic to AuthService for cleanliness
+      AuthService().performGlobalSilentSync();
     }
   }
 
@@ -249,7 +250,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _handleNotificationClick(RemoteMessage message) {
     final data = message.data;
     
-    // Fallback Routing for Calls
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
       final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
       if (currentRoute.contains('/call')) return;
@@ -264,13 +264,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         'isIncoming': true,
       });
     } 
-    // Fallback Routing for Generic Updates/Chat
     else if (data['route'] != null) {
       appRouter.push('/${data['route']}', extra: data);
     }
   }
 
-  // Navigate to the actual call screen if user swipes "Accept" on the lock screen
   void _listenForCallKitEvents() {
     if (kIsWeb) return;
     FlutterCallkitIncoming.onEvent.listen((event) {

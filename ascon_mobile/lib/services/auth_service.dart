@@ -20,6 +20,10 @@ import 'biometric_service.dart';
 import '../viewmodels/chat_view_model.dart';
 import '../viewmodels/directory_view_model.dart';
 import '../viewmodels/events_view_model.dart';
+import '../viewmodels/profile_view_model.dart';
+import '../viewmodels/dashboard_view_model.dart';
+import '../viewmodels/updates_view_model.dart';
+import '../viewmodels/badge_view_model.dart';
 
 class AuthService {
   final ApiClient _api = ApiClient();
@@ -37,6 +41,30 @@ class AuthService {
 
   AuthService() {
     _api.onTokenRefresh = _performSilentRefresh;
+  }
+
+// =======================================================================
+  // 🚀 GLOBAL SILENT SYNC (Stale-While-Revalidate)
+  // =======================================================================
+  void performGlobalSilentSync() {
+    try {
+      // Chat & Badges
+      providerContainer.read(chatProvider.notifier).loadConversations();
+      providerContainer.read(badgeProvider.notifier).refreshBadges();
+
+      // Feeds & Directory
+      providerContainer.read(directoryProvider.notifier).loadDirectory();
+      providerContainer.read(eventsProvider.notifier).loadEvents(silent: true);
+      providerContainer.read(updatesProvider.notifier).loadData(silent: true);
+      
+      // Profile and Dashboard
+      providerContainer.read(profileProvider.notifier).loadProfile(isRefresh: true);
+      providerContainer.read(dashboardProvider.notifier).loadData(isRefresh: true);
+      
+      debugPrint("🟢 Global Silent Sync Triggered Successfully");
+    } catch (e) {
+      debugPrint("⚠️ Silent Sync Error: $e");
+    }
   }
 
   Future<bool> get isAdmin async {
@@ -115,7 +143,6 @@ class AuthService {
     }
   }
 
-  // ✅ UPDATED: Removed phoneNumber requirement
   Future<Map<String, dynamic>> register({
     required String fullName,
     required String email,
@@ -310,6 +337,9 @@ class AuthService {
       if (userId != null) {
         await _secureStorage.write(key: 'userId', value: userId);
         SocketService().connectUser(userId);
+        
+        // ✅ ADDED: Trigger sync immediately on explicit login
+        performGlobalSilentSync();
       }
 
       final prefs = await SharedPreferences.getInstance();
