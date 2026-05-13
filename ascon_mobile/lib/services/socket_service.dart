@@ -33,20 +33,22 @@ class SocketService with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // App came back to foreground -> Connect & Announce Presence
+      // ✅ FIX: App came back to foreground -> Connect & Announce Presence
       _storage.read(key: "auth_token").then((token) {
         if (token != null) {
-          if (socket == null || !socket!.connected) {
+          if (socket == null) {
             initSocket();
+          } else if (!socket!.connected) {
+            socket!.connect();
           } else {
-            // Force TCP refresh
+            // Force TCP refresh to catch any background packets
             socket!.disconnect();
             socket!.connect();
           }
         }
       });
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // App went to background -> Disconnect immediately to trigger "Offline" on server
+      // ✅ FIX: App went to background -> Disconnect immediately to trigger "Offline" on server
       if (socket != null && socket!.connected) {
          socket!.disconnect();
       }

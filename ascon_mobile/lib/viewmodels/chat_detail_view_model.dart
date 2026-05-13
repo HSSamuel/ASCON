@@ -106,7 +106,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
   final AuthService _auth = AuthService();
   final SocketService _socket = SocketService();
   
-  // ✅ Reference the fast local database
   final Box _cacheBox = Hive.box('ascon_cache');
 
   final String receiverId;
@@ -148,6 +147,8 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
       _socket.socket?.emit('leave_room', state.conversationId);
     }
     
+    _socket.socket?.off('connect');
+    _socket.socket?.off('reconnect');
     _socket.socket?.off('new_message');
     _socket.socket?.off('messages_read'); 
     _socket.socket?.off('messages_deleted_bulk');
@@ -224,7 +225,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
         final body = result['data'];
         final innerData = (body is Map && body.containsKey('data')) ? body['data'] : body;
         
-        // ✅ FIX: Strict null-check before trying to read '_id'
         if (innerData == null || innerData is! Map) {
           if (mounted) state = state.copyWith(isLoading: false); 
           return null;
@@ -254,15 +254,11 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     }
   }
 
-  // =========================================================================
-  // ✅ OFFLINE-FIRST MESSAGE THREAD LOADING
-  // =========================================================================
   Future<void> loadMessages({bool initial = false}) async {
     if (state.conversationId == null) return;
     
     final String cacheKey = 'chat_thread_${state.conversationId}';
 
-    // 1. MILLISECOND 0: Check Local Cache First (Instant Load)
     if (initial) {
       final String? cachedThread = _cacheBox.get(cacheKey);
       if (cachedThread != null) {
@@ -285,7 +281,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
       }
     }
 
-    // 2. CHECK CONNECTIVITY (Fail Fast)
     final connectivityResult = await (Connectivity().checkConnectivity());
     bool isOffline = connectivityResult.contains(ConnectivityResult.none);
     
@@ -295,7 +290,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
       return; 
     }
 
-    // 3. BACKGROUND NETWORK FETCH
     try {
       final result = await _api.get('/api/chat/${state.conversationId}');
       if (!mounted) return;
@@ -305,10 +299,8 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
         final rawList = (body is Map && body.containsKey('data')) ? body['data'] : body;
 
         if (rawList is List) {
-          // 4. OVERWRITE CACHE WITH FRESH DATA
           await _cacheBox.put(cacheKey, jsonEncode(rawList));
 
-          // 5. SILENTLY UPDATE UI
           final newMessages = rawList.map((m) => ChatMessage.fromJson(m)).toList();
           if (mounted) {
             state = state.copyWith(
@@ -332,7 +324,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     state = state.copyWith(isLoadingMore: true);
     String oldestId = state.messages.first.id;
     
-    // Fail fast for pagination if offline
     final connectivityResult = await (Connectivity().checkConnectivity());
     if (connectivityResult.contains(ConnectivityResult.none)) {
         if (mounted) state = state.copyWith(isLoadingMore: false);
@@ -563,8 +554,6 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     if (unreadIds.isNotEmpty) {
       _socket.markMessagesAsRead(state.conversationId!, unreadIds, state.myUserId);
       
-      // ✅ ADD THIS: Tell the server to broadcast the 'messages_read' event 
-      // back to the client so the ChatListScreen drops the unread badge instantly.
       _socket.socket?.emit('messages_read', {
         'conversationId': state.conversationId,
         'messageIds': unreadIds,
@@ -585,6 +574,15 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
   void _setupSocketListeners() {
     final socket = _socket.socket;
     if (socket == null) return;
+
+    // ✅ FIX: Force fetching new data when socket re-establishes connection
+    socket.on('connect', (_) {
+      if (mounted) refreshMessages();
+    });
+    
+    socket.on('reconnect', (_) {
+      if (mounted) refreshMessages();
+    });
 
     socket.on('new_message', (data) {
       if (!mounted) return;

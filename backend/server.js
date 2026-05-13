@@ -24,7 +24,10 @@ const runWeeklySmartMatch = require("./services/smartMatchCron");
 const app = express();
 const server = http.createServer(app);
 
-app.set("trust proxy", 1);
+// ✅ FIX: Allows dynamic configuration via Render/VPS environment variables, defaulting to 1
+const proxyDepth = process.env.PROXY_DEPTH || 1;
+app.set("trust proxy", Number(proxyDepth));
+
 dotenv.config();
 validateEnv();
 
@@ -102,7 +105,12 @@ const getOrigins = () => {
   if (process.env.NODE_ENV !== "production") {
     return ["http://localhost:3000", "http://localhost:5000"];
   }
-  return [];
+
+  // ✅ FIX: Hardcoded production fallbacks to prevent admin panel lockout
+  return [
+    "https://ascon.onrender.com",
+    "https://asconalumni.org",
+  ];
 };
 
 const allowedOrigins = getOrigins();
@@ -148,7 +156,6 @@ app.use("/api/events", require("./routes/events"));
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/chat", require("./routes/chat"));
 app.use("/api/documents", require("./routes/documents"));
-// ✅ REMOVED: app.use("/api/mentorship", require("./routes/mentorship"));
 app.use("/api/updates", require("./routes/updates"));
 app.use("/api/polls", require("./routes/polls"));
 app.use("/api/groups", require("./routes/groups"));

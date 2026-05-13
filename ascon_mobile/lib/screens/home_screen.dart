@@ -19,7 +19,7 @@ import 'programme_detail_screen.dart';
 import 'alumni_detail_screen.dart';
 import 'about_screen.dart';
 import 'admin/add_content_screen.dart'; 
-import 'welcome_dialog.dart'; // ✅ RESTORED IMPORT
+import 'welcome_dialog.dart'; 
 
 import '../widgets/chapter_card.dart';     
 import '../widgets/digital_id_card.dart';
@@ -28,6 +28,7 @@ import '../widgets/shimmer_utils.dart';
 import '../viewmodels/dashboard_view_model.dart';
 import '../viewmodels/events_view_model.dart'; 
 import '../viewmodels/badge_view_model.dart'; 
+import '../viewmodels/chat_view_model.dart'; // ✅ FIX: Added Chat ViewModel import
 import '../services/notification_service.dart';
 import '../services/auth_service.dart'; 
 
@@ -51,7 +52,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // ✅ RESTORED: Acts as a safety net for auto-logged-in users
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkFirstTimeWelcome());
 
     Future.delayed(const Duration(seconds: 3), () async {
@@ -62,7 +62,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     });
   }
 
-  // ✅ RESTORED: Welcome Dialog Logic
   Future<void> _checkFirstTimeWelcome() async {
     final userMap = await AuthService().getCachedUser();
     if (userMap == null) return;
@@ -112,10 +111,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.dispose();
   }
 
+  // ✅ FIX: Aggressively sync all real-time data when app wakes up from background
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(badgeProvider.notifier).refreshBadges(); 
+      ref.read(chatProvider.notifier).loadConversations(); // Fetch missed chats
     }
   }
 
@@ -444,8 +445,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
     return InkWell(
       onTap: () {
+        // ✅ FIX: Force a fresh fetch of the chat list to clear stale UI data immediately
         if (index == 1) { 
           ref.read(badgeProvider.notifier).clearMessageBadge(); 
+          ref.read(chatProvider.notifier).loadConversations(); 
         }
         _goBranch(index);
       },

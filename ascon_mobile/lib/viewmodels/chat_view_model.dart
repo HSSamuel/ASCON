@@ -79,6 +79,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       socket.off('messages_read');
       socket.off('typing_start');
       socket.off('typing_stop');
+      socket.off('connect');
+      socket.off('reconnect');
     }
     super.dispose();
   }
@@ -137,7 +139,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final online = data.where((c) {
         try {
-          if (c == null || c is! Map) return false; // ✅ Null safety check
+          if (c == null || c is! Map) return false; 
           final mapC = Map<String, dynamic>.from(c);
           final other = _getOtherParticipant(mapC, state.myId);
           return other['isOnline'] == true;
@@ -218,6 +220,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final socket = _socket.socket;
     if (socket == null) return;
 
+    // ✅ FIX: Force fetching new data when socket re-establishes connection
+    socket.on('connect', (_) {
+      if (mounted) loadConversations();
+    });
+    
+    socket.on('reconnect', (_) {
+      if (mounted) loadConversations();
+    });
+
     socket.on('new_message', (data) {
       if (!mounted) return;
       _handleIncomingMessage(data);
@@ -274,7 +285,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  // ✅ UPDATED: Bulletproof null-safety for identifying participants
   Map<String, dynamic> _getOtherParticipant(Map<String, dynamic> conversation, String myId) {
     if (conversation['isGroup'] == true) {
       final group = conversation['groupId'];
