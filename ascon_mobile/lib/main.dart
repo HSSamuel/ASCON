@@ -198,7 +198,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this); 
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
-    _setupInteractedMessage(); 
     
     // ✅ ADDED: Trigger sync immediately when app starts
     _triggerColdStartSync();

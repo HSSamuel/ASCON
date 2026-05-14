@@ -154,18 +154,25 @@ class PostCard extends ConsumerWidget {
                     children: [
                       Row(
                         children: [
-                          Flexible(
-                            child: GestureDetector(
-                              onTap: () => _viewProfile(context, author),
-                              child: Text(author['fullName'] ?? 'Alumni Member', style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 13, color: textColor), overflow: TextOverflow.ellipsis),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text("• $timeAgo", style: GoogleFonts.lato(fontSize: 10, color: Colors.grey)),
+                          // Bumping name to 15, time to 12
+Flexible(
+  child: GestureDetector(
+    onTap: () => _viewProfile(context, author),
+    child: Text(author['fullName'] ?? 'Alumni Member', 
+        style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 15, color: textColor), 
+        overflow: TextOverflow.ellipsis),
+  ),
+),
+const SizedBox(width: 6), // Slightly wider gap
+Text("• $timeAgo", style: GoogleFonts.lato(fontSize: 12, color: Colors.grey[500])),
                         ],
                       ),
-                      if (author['jobTitle'] != null)
-                        Text(author['jobTitle'], style: GoogleFonts.lato(color: subTextColor, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      // Bumping job to 12, adding a tiny top padding so it doesn't crowd the name
+if (author['jobTitle'] != null)
+  Padding(
+    padding: const EdgeInsets.only(top: 2.0),
+    child: Text(author['jobTitle'], style: GoogleFonts.lato(color: subTextColor, fontSize: 12, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
+  ),
                     ],
                   ),
                 ),
@@ -203,14 +210,15 @@ class PostCard extends ConsumerWidget {
                     if (cleanText.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                        child: MarkdownBody(
-                          selectable: true, // ✅ THIS ENABLES COPYING FOR POSTS
-                          data: cleanText,
-                          styleSheet: MarkdownStyleSheet(
-                            p: GoogleFonts.lato(fontSize: 13, color: textColor, height: 1.3),
-                            listBullet: TextStyle(color: textColor, fontSize: 13),
-                            a: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
-                          ),
+                        child: // Bumping text to 14.5 (or 15) and line height to 1.45 for excellent readability
+MarkdownBody(
+  selectable: true, 
+  data: cleanText,
+  styleSheet: MarkdownStyleSheet(
+    p: GoogleFonts.lato(fontSize: 14.5, color: textColor, height: 1.45, letterSpacing: 0.2),
+    listBullet: GoogleFonts.lato(color: textColor, fontSize: 14.5, height: 1.45),
+    a: GoogleFonts.lato(color: Colors.blue, decoration: TextDecoration.underline, fontWeight: FontWeight.w500),
+  ),
                           onTapLink: (text, href, title) async {
                             if (href != null && await canLaunchUrl(Uri.parse(href))) {
                               await launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
@@ -270,7 +278,7 @@ class PostCard extends ConsumerWidget {
                 Expanded(
                   child: TextButton.icon(
                     icon: Icon(post['isLikedByMe'] == true ? Icons.thumb_up : Icons.thumb_up_outlined, size: 16, color: post['isLikedByMe'] == true ? Colors.blue : subTextColor),
-                    label: Text("Like", style: TextStyle(color: post['isLikedByMe'] == true ? Colors.blue : subTextColor, fontSize: 11)),
+                    label: Text("Like", style: GoogleFonts.lato(color: post['isLikedByMe'] == true ? Colors.blue : subTextColor, fontSize: 13, fontWeight: FontWeight.w600)),
                     onPressed: () {
                       if (!kIsWeb) Vibration.hasVibrator().then((v) { if (v ?? false) Vibration.vibrate(duration: 10); });
                       notifier.toggleLike(post['_id']);
@@ -280,14 +288,14 @@ class PostCard extends ConsumerWidget {
                 Expanded(
                   child: TextButton.icon(
                     icon: Icon(Icons.mode_comment_outlined, size: 16, color: subTextColor),
-                    label: Text("Comment", style: TextStyle(color: subTextColor, fontSize: 11)),
+                    label: Text("Comment", style: GoogleFonts.lato(color: subTextColor, fontSize: 13, fontWeight: FontWeight.w600)),
                     onPressed: () => CommentsSheet.show(context, post['_id']),
                   ),
                 ),
                 Expanded(
                   child: TextButton.icon(
                     icon: Icon(Icons.share_outlined, size: 16, color: subTextColor),
-                    label: Text("Share", style: TextStyle(color: subTextColor, fontSize: 11)),
+                    label: Text("Share", style: GoogleFonts.lato(color: subTextColor, fontSize: 13, fontWeight: FontWeight.w600)),
                     onPressed: () => Share.share("${author['fullName']}: ${post['text'] ?? ''}"),
                   ),
                 ),

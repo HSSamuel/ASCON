@@ -436,6 +436,14 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     if (!mounted) return "View disposed";
     if (token == null) return "Auth error";
 
+    // ✅ FIX 1: Auto-resolve the replied message from the local state
+    ChatMessage? actualReplyingToMessage = replyingToMessage;
+    if (actualReplyingToMessage == null && replyToId != null) {
+      try {
+        actualReplyingToMessage = state.messages.firstWhere((m) => m.id == replyToId);
+      } catch (_) {} // Failsafe if message is somehow not in state
+    }
+
     final tempId = DateTime.now().millisecondsSinceEpoch.toString();
     final tempMessage = ChatMessage(
       id: tempId,
@@ -446,9 +454,15 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
       fileName: fileName ?? (filePath != null ? filePath.split('/').last : "File"),
       localBytes: fileBytes,
       replyToId: replyToId,
-      replyToText: replyingToMessage?.text,
-      replyToSenderName: replyingToMessage != null ? (replyingToMessage.senderId == state.myUserId ? "You" : "User") : null,
-      replyToType: replyingToMessage?.type,
+      // ✅ FIX 2: Safely extract text or assign media labels
+      replyToText: actualReplyingToMessage?.text?.isNotEmpty == true 
+          ? actualReplyingToMessage!.text 
+          : (actualReplyingToMessage?.type == 'image' ? "📷 Photo" : 
+             actualReplyingToMessage?.type == 'file' ? "📄 Document" : "Message"),
+      replyToSenderName: actualReplyingToMessage != null 
+          ? (actualReplyingToMessage.senderId == state.myUserId ? "You" : (actualReplyingToMessage.senderName ?? "User")) 
+          : null,
+      replyToType: actualReplyingToMessage?.type,
       createdAt: DateTime.now(),
       status: MessageStatus.sending, 
     );

@@ -170,9 +170,20 @@ class CallLogDetailScreen extends ConsumerWidget {
                               _getTypeLabel(log['type'], callType),
                               style: const TextStyle(fontWeight: FontWeight.bold),
                             ),
-                            Text(
-                              _formatFullDate(log['createdAt']),
-                              style: const TextStyle(color: Colors.grey, fontSize: 12),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Text(
+                                  _formatFullDate(log['createdAt']),
+                                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                ),
+                                // ✅ Render duration if it's a connected call
+                                if (log['type'] != 'missed' && log['type'] != 'declined' && log['duration'] != null)
+                                  Text(
+                                    " • ${_formatDuration(log['duration'])}",
+                                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                  ),
+                              ],
                             ),
                           ],
                         ),
@@ -315,5 +326,33 @@ class CallLogDetailScreen extends ConsumerWidget {
     if (iso == null) return "";
     final date = DateTime.parse(iso).toLocal();
     return DateFormat('h:mm a').format(date);
+  }
+
+  // ✅ HELPER: Formats seconds into h, m, s
+  String _formatDuration(dynamic durationData) {
+    if (durationData == null) return "0s";
+    
+    int totalSeconds = 0;
+    if (durationData is int) {
+      totalSeconds = durationData;
+    } else if (durationData is double) {
+      totalSeconds = durationData.round();
+    } else {
+      totalSeconds = int.tryParse(durationData.toString()) ?? 0;
+    }
+
+    if (totalSeconds == 0) return "0s";
+    if (totalSeconds < 60) return "${totalSeconds}s";
+    
+    int minutes = totalSeconds ~/ 60;
+    int seconds = totalSeconds % 60;
+    
+    if (minutes < 60) {
+      return "${minutes}m ${seconds > 0 ? '${seconds}s' : ''}".trim();
+    }
+    
+    int hours = minutes ~/ 60;
+    int remainingMinutes = minutes % 60;
+    return "${hours}h ${remainingMinutes}m";
   }
 }

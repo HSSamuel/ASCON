@@ -23,20 +23,36 @@ class ApiClient {
   ApiClient._internal();
 
   final _secureStorage = StorageConfig.storage;
+  
+  // ✅ 1. Add an in-memory token variable
+  String? _memoryToken;
 
-  // Callback to handle token refresh (Locking is now handled strictly in AuthService)
   Future<String?> Function()? onTokenRefresh;
 
+  // ✅ 2. Implement the setter to catch the token from AuthService
+  void setAuthToken(String token) {
+    _memoryToken = token;
+  }
+
+  // ✅ 3. Clear memory on logout
+  void clearAuthToken() {
+    _memoryToken = null;
+  }
+
   Future<Map<String, String>> _getSecureHeaders() async {
-    final token = await _secureStorage.read(key: 'auth_token');
+    // ✅ 4. Use the memory token first. Only hit SecureStorage if memory is empty.
+    final token = _memoryToken ?? await _secureStorage.read(key: 'auth_token');
+    
+    // Cache it immediately so subsequent requests don't hit SecureStorage
+    if (token != null) {
+      _memoryToken = token;
+    }
+
     return {
       'Content-Type': 'application/json',
       if (token != null) 'auth-token': token, 
     };
   }
-
-  void setAuthToken(String token) {}
-  void clearAuthToken() {}
 
   Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> body, {bool requiresAuth = true}) async {
     final response = await _request(() async {

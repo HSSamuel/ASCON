@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart'; // ✅ ADDED
 
 import '../viewmodels/directory_view_model.dart'; 
 import '../services/auth_service.dart';
@@ -26,7 +27,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   
   String? _myUserId;
-  // ✅ CLEANED: Removed "Mentors" and "Near Me" from the filter list
   final List<String> _filters = ["All", "Classmates"];
   
   final Set<String> _expandedSections = {}; 
@@ -98,6 +98,15 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     else {
       List<Map<String, dynamic>> flattenedList = [];
       
+      // ✅ MOVED: Insert the Top Connections as the FIRST scrollable item in the list
+      final bool showHighlights = state.smartMatches.isNotEmpty && _searchController.text.isEmpty && state.activeFilter == "All";
+      if (showHighlights) {
+        flattenedList.add({
+          'type': 'highlights',
+          'data': state.smartMatches
+        });
+      }
+
       for (String year in sortedKeys) {
         flattenedList.add({
           'type': 'header', 
@@ -118,30 +127,48 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
 
       content = RefreshIndicator(
         onRefresh: () async => await notifier.loadDirectory(),
-        child: ListView.builder(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 40),
-          itemCount: flattenedList.length, 
-          itemBuilder: (context, index) {
-            final item = flattenedList[index];
+        child: AnimationLimiter(
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 40),
+            itemCount: flattenedList.length, 
+            itemBuilder: (context, index) {
+              final item = flattenedList[index];
+              Widget listItem;
 
-            if (item['type'] == 'header') {
-              return _buildYearHeader(
-                item['year'], 
-                item['count'], 
-                primaryColor, 
-                isDark, 
-                _expandedSections.contains(item['year'])
+              // ✅ NEW: Handle rendering the Highlights item
+              if (item['type'] == 'highlights') {
+                listItem = _buildHighlightHorizon(item['data'], context, isDark);
+              }
+              else if (item['type'] == 'header') {
+                listItem = _buildYearHeader(
+                  item['year'], 
+                  item['count'], 
+                  primaryColor, 
+                  isDark, 
+                  _expandedSections.contains(item['year'])
+                );
+              } 
+              else {
+                final userMap = item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{};
+                listItem = Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: _buildAlumniCard(userMap, context, isDark, primaryColor),
+                );
+              }
+
+              return AnimationConfiguration.staggeredList(
+                position: index,
+                duration: const Duration(milliseconds: 375),
+                child: SlideAnimation(
+                  verticalOffset: 50.0,
+                  child: FadeInAnimation(
+                    child: listItem,
+                  ),
+                ),
               );
-            } 
-            else {
-              final userMap = item['data'] is Map ? Map<String, dynamic>.from(item['data']) : <String, dynamic>{};
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: _buildAlumniCard(userMap, context, isDark, primaryColor),
-              );
-            }
-          },
+            },
+          ),
         ),
       );
     }
@@ -150,6 +177,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
       backgroundColor: scaffoldBg,
       body: SafeArea(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               padding: const EdgeInsets.all(16),
@@ -214,10 +242,94 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                 ],
               ),
             ),
+            
+            // ✅ REMOVED the static Highlight Horizon call from here!
+            // It now lives inside the Expanded list view below.
+            
             Expanded(child: content),
           ],
         ),
       ),
+    );
+  }
+
+  // ✅ HIGHLIGHT HORIZON WIDGET
+  Widget _buildHighlightHorizon(List<dynamic> smartMatches, BuildContext context, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+          child: Text(
+            "Top Connections for You",
+            style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.bold, color: Theme.of(context).primaryColor),
+          ),
+        ),
+        SizedBox(
+          height: 145,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            itemCount: smartMatches.length,
+            itemBuilder: (context, index) {
+              final match = smartMatches[index];
+              return BouncingCard(
+                onTap: () {
+                  Navigator.of(context, rootNavigator: true).push(
+                    MaterialPageRoute(builder: (_) => AlumniDetailScreen(alumniData: match))
+                  );
+                },
+                child: Container(
+                  width: 115,
+                  margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.withOpacity(0.15)),
+                    boxShadow: [
+                      if (!isDark) BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 3))
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Stack(
+                        children: [
+                          RobustAvatar(imageUrl: match['profilePicture'] ?? '', radius: 28),
+                          if (match['isOnline'] == true)
+                            const Positioned(
+                              bottom: 0, right: 0,
+                              child: PulsingOnlineDot(), // ✅ Pulse dot deployed here
+                            )
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          match['fullName'] ?? 'Alumni',
+                          style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 12),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          match['industry'] ?? match['jobTitle'] ?? 'Member',
+                          style: GoogleFonts.lato(color: Colors.grey[500], fontSize: 10),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        Divider(height: 1, thickness: 1, color: Colors.grey.withOpacity(0.1)),
+      ],
     );
   }
 
@@ -262,10 +374,12 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     final String org = user['organization'] ?? "";
     final String img = user['profilePicture'] ?? "";
     final String userId = user['userId'] ?? user['_id'] ?? '';
+    final bool isOnline = user['isOnline'] == true;
     
     if (userId == _myUserId || userId.isEmpty) return const SizedBox.shrink();
 
-    return GestureDetector(
+    // ✅ FLUID MICRO-INTERACTIONS: Bouncing Tap Wrapper
+    return BouncingCard(
       onTap: () {
         Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(builder: (_) => AlumniDetailScreen(alumniData: user))
@@ -283,7 +397,16 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            RobustAvatar(imageUrl: img, radius: 30), // ✅ CLEANED: Removed the Mentor Star Badge
+            Stack(
+              children: [
+                RobustAvatar(imageUrl: img, radius: 30),
+                if (isOnline)
+                  const Positioned(
+                    bottom: 0, right: 0,
+                    child: PulsingOnlineDot(), // ✅ Pulse dot deployed here
+                  )
+              ],
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -311,7 +434,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                     receiverId: userId,
                     receiverName: name,
                     receiverProfilePic: img,
-                    isOnline: false, 
+                    isOnline: isOnline, 
                   ))
                 );
               },
@@ -332,6 +455,104 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           Text(message, style: GoogleFonts.lato(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[500])),
         ],
       ),
+    );
+  }
+}
+
+// =======================================================================
+// ✅ NEW WIDGETS FOR FLUID INTERACTIONS AND PULSING DOT
+// =======================================================================
+
+class BouncingCard extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+
+  const BouncingCard({Key? key, required this.child, required this.onTap}) : super(key: key);
+
+  @override
+  State<BouncingCard> createState() => _BouncingCardState();
+}
+
+class _BouncingCardState extends State<BouncingCard> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scale;
+
+  @override 
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 100));
+    _scale = Tween<double>(begin: 1.0, end: 0.95).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override 
+  void dispose() { 
+    _controller.dispose(); 
+    super.dispose(); 
+  }
+
+  @override 
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _controller.forward(),
+      onTapUp: (_) { _controller.reverse(); widget.onTap(); },
+      onTapCancel: () => _controller.reverse(),
+      child: ScaleTransition(scale: _scale, child: widget.child),
+    );
+  }
+}
+
+class PulsingOnlineDot extends StatefulWidget {
+  const PulsingOnlineDot({super.key});
+
+  @override
+  State<PulsingOnlineDot> createState() => _PulsingOnlineDotState();
+}
+
+class _PulsingOnlineDotState extends State<PulsingOnlineDot> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override 
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: false);
+  }
+
+  @override 
+  void dispose() { 
+    _controller.dispose(); 
+    super.dispose(); 
+  }
+
+  @override 
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Opacity(
+              opacity: 1.0 - _controller.value,
+              child: Transform.scale(
+                scale: 1.0 + (_controller.value * 2.0),
+                child: Container(
+                  width: 12, height: 12, 
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.greenAccent.withOpacity(0.6))
+                ),
+              ),
+            ),
+            Container(
+              width: 12, height: 12, 
+              decoration: BoxDecoration(
+                shape: BoxShape.circle, 
+                color: const Color(0xFF00C853), 
+                border: Border.all(color: Theme.of(context).cardColor, width: 2)
+              )
+            ),
+          ],
+        );
+      },
     );
   }
 }

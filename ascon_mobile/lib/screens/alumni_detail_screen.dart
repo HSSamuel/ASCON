@@ -57,6 +57,11 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
 
   Future<void> _fetchFullDetails() async {
     final String lookupId = _currentAlumniData['userId'] ?? _currentAlumniData['_id'];
+
+    if (lookupId.isEmpty) {
+      setState(() => _isLoadingFullProfile = false);
+      return; 
+    }
     
     final fullData = await _dataService.fetchAlumniById(lookupId);
     

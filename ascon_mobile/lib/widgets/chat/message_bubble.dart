@@ -23,7 +23,7 @@ class MessageBubble extends ConsumerWidget {
   final String? downloadingFileId;
   final bool isAdmin;
   final bool showSenderName;
-  final double? uploadProgress; // ✅ Upload Progress Tracked
+  final double? uploadProgress; 
   
   final Function(String) onSwipeReply;
   final Function(String) onToggleSelection;
@@ -34,7 +34,7 @@ class MessageBubble extends ConsumerWidget {
   final Function(String, String) onPauseAudio;
   final Function(Duration) onSeekAudio;
   final Function(String, String) onDownloadFile;
-  final Function(String, String) onReact; // ✅ Emits Reaction
+  final Function(String, String) onReact; 
 
   const MessageBubble({
     super.key, required this.msg, required this.myUserId, required this.isMe, required this.isDark, required this.primaryColor,
@@ -46,7 +46,7 @@ class MessageBubble extends ConsumerWidget {
 
   void _showOptions(BuildContext context) {
     final bool isDeletedContent = msg.isDeleted || msg.text.contains("This message was deleted");
-    final emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏']; // ✅ Pre-defined Emojis
+    final emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏']; 
 
     showModalBottomSheet(
       context: context,
@@ -54,7 +54,6 @@ class MessageBubble extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ✅ EMOJI REACTION ROW
             if (!isDeletedContent)
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -209,8 +208,34 @@ class MessageBubble extends ConsumerWidget {
                               Container(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(color: Colors.black.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border(left: BorderSide(color: isMe ? Colors.white : primaryColor, width: 4))),
-                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(msg.replyToSenderName ?? "Reply", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)), Text(msg.replyToText ?? "Message", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))]),
+                                decoration: BoxDecoration(
+                                  color: isMe ? Colors.white.withOpacity(0.15) : (isDark ? Colors.grey[700] : Colors.black.withOpacity(0.05)), 
+                                  borderRadius: BorderRadius.circular(8), 
+                                  border: Border(left: BorderSide(color: isMe ? Colors.white : primaryColor, width: 4))
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start, 
+                                  children: [
+                                    Text(
+                                      msg.replyToSenderName ?? "Reply", 
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold, 
+                                        fontSize: 12, 
+                                        color: isMe ? Colors.white : (isDark ? Colors.white : primaryColor)
+                                      )
+                                    ), 
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      msg.replyToText ?? "Message", 
+                                      maxLines: 1, 
+                                      overflow: TextOverflow.ellipsis, 
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isMe ? Colors.white.withOpacity(0.9) : (isDark ? Colors.white70 : Colors.black87)
+                                      )
+                                    )
+                                  ]
+                                ),
                               ),
                             
                             if ((msg.fileUrl != null || msg.localBytes != null) && !isDeletedMessage)
@@ -247,7 +272,6 @@ class MessageBubble extends ConsumerWidget {
                   ),
                 ),
 
-                // ✅ RENDER EMOJI REACTIONS
                 if (msg.reactions.isNotEmpty)
                   Positioned(
                     bottom: -5,
@@ -265,10 +289,10 @@ class MessageBubble extends ConsumerWidget {
                         children: [
                           ...msg.reactions.take(3).map((r) => Text(r['emoji'] ?? '👍', style: const TextStyle(fontSize: 12))),
                           if (msg.reactions.length > 1) 
-                             Padding(
-                               padding: const EdgeInsets.only(left: 4),
-                               child: Text('${msg.reactions.length}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-                             )
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4),
+                                child: Text('${msg.reactions.length}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                              )
                         ],
                       ),
                     ),
@@ -284,7 +308,6 @@ class MessageBubble extends ConsumerWidget {
   Widget _buildMediaContent(BuildContext context, WidgetRef ref) { 
     if (msg.type == 'image') {
       
-      // 🛡️ BLOCK DUMMY URLS FROM CRASHING THE IMAGE RENDERER
       final bool isInvalidUrl = msg.fileUrl != null && 
         (msg.fileUrl!.toLowerCase().contains('profile/picture') || 
          msg.fileUrl!.toLowerCase().contains('default-user'));
@@ -324,7 +347,6 @@ class MessageBubble extends ConsumerWidget {
                           )
                         ),
             ),
-            // ✅ SHOW UPLOAD PROGRESS FOR IMAGES
             if (uploadProgress != null && uploadProgress! < 1.0)
                Padding(
                  padding: const EdgeInsets.only(top: 8.0),
@@ -446,7 +468,6 @@ class MessageBubble extends ConsumerWidget {
                     ),
                 ],
               ),
-              // ✅ SHOW UPLOAD PROGRESS FOR DOCUMENTS
               if (uploadProgress != null && uploadProgress! < 1.0)
                  Padding(
                    padding: const EdgeInsets.only(top: 8.0),
