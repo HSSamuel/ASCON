@@ -26,6 +26,10 @@ import '../viewmodels/updates_view_model.dart';
 import '../viewmodels/badge_view_model.dart';
 
 class AuthService {
+  // ✅ 1. Implement Singleton Pattern
+  static final AuthService _instance = AuthService._internal();
+  factory AuthService() => _instance;
+
   final ApiClient _api = ApiClient();
   static String? _tokenCache;
   final _secureStorage = StorageConfig.storage;
@@ -39,7 +43,8 @@ class AuthService {
   bool _isRefreshing = false;
   Completer<String?>? _refreshCompleter;
 
-  AuthService() {
+  // ✅ 2. Private constructor
+  AuthService._internal() {
     _api.onTokenRefresh = _performSilentRefresh;
   }
 
@@ -264,8 +269,9 @@ class AuthService {
     _refreshCompleter = Completer<String?>();
 
     try {
-      String? refreshToken = await _secureStorage.read(key: 'refresh_token');
-      if (refreshToken == null) {
+      String? originalRefreshToken = await _secureStorage.read(key: 'refresh_token');
+      // Prevent running if there's no refresh token
+      if (originalRefreshToken == null || originalRefreshToken.isEmpty) {
         _refreshCompleter?.complete(null);
         return null;
       }
@@ -273,21 +279,49 @@ class AuthService {
       final result = await http.post(
         Uri.parse('${AppConfig.baseUrl}/api/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'refreshToken': refreshToken}),
+        body: jsonEncode({'refreshToken': originalRefreshToken}),
       );
 
       if (result.statusCode == 200) {
         final body = jsonDecode(result.body);
         final newToken = body['token'];
 
-        if (newToken != null) {
+        if (newToken != null && newToken.isNotEmpty) {
           _tokenCache = newToken;
           await _secureStorage.write(key: 'auth_token', value: newToken);
           _api.setAuthToken(newToken);
           _refreshCompleter?.complete(newToken);
           return newToken;
         }
-      } else {
+      } 
+      else if (result.statusCode == 401 || result.statusCode == 403 || result.statusCode == 400) {
+        
+        // ✅ FIX 1: Verify this is OUR backend rejecting the token, not a Proxy/Cloudflare 403 HTML page
+        bool isGenuineRejection = false;
+        try {
+          final body = jsonDecode(result.body);
+          if (body is Map && body.containsKey('message')) {
+            isGenuineRejection = true;
+          }
+        } catch (_) {
+          isGenuineRejection = false;
+        }
+
+        if (!isGenuineRejection) {
+          debugPrint("⚠️ Proxy/WAF error (${result.statusCode}) during refresh. Keeping local session alive.");
+          _refreshCompleter?.complete(_tokenCache); // Fallback to cache to prevent cascade
+          return _tokenCache;
+        }
+
+        // ✅ FIX 2: Stale Logout Prevention Check (Protects manual logins)
+        String? currentRefreshToken = await _secureStorage.read(key: 'refresh_token');
+        if (currentRefreshToken != originalRefreshToken && currentRefreshToken != null) {
+          debugPrint("✅ Refresh aborted: User manually logged in during background refresh.");
+          _refreshCompleter?.complete(_tokenCache);
+          return _tokenCache;
+        }
+
+        // 3. Google Silent Auth Fallback
         if (!kIsWeb) {
           try {
             if (await googleSignIn.isSignedIn()) {
@@ -306,19 +340,27 @@ class AuthService {
           }
         }
 
-        debugPrint("Token refresh failed. Forcing logout.");
+        // 4. Token is genuinely dead. Wipe the session.
+        debugPrint("🚫 Token explicitly rejected by server (${result.statusCode}). Forcing logout.");
         await logout();
         _refreshCompleter?.complete(null);
         return null;
+      } 
+      else {
+        // Server asleep (502) or offline. DO NOT wipe the user's session!
+        debugPrint("⚠️ Server error or timeout during refresh (${result.statusCode}). Keeping local session alive.");
+        _refreshCompleter?.complete(_tokenCache);
+        return _tokenCache;
       }
     } catch (e) {
-      _refreshCompleter?.complete(null);
-      return null;
+      // Handles network dropouts without crashing the API client
+      debugPrint("⚠️ Network error during refresh: $e. Keeping local session alive.");
+      _refreshCompleter?.complete(_tokenCache);
+      return _tokenCache;
     } finally {
       _isRefreshing = false;
       _refreshCompleter = null;
     }
-    return null;
   }
 
   Future<void> _saveUserSession(String token, Map<String, dynamic> user, {String? refreshToken}) async {

@@ -96,8 +96,14 @@ class BadgeViewModel extends StateNotifier<BadgeState> {
     socket.on('connect', (_) => refreshBadges());
   }
 
+  // Removes unread message counts (called when a chat is opened)
   void clearMessageBadge() {
     state = state.copyWith(hasUnreadMessages: false, unreadMessageCount: 0); 
+  }
+
+  // ✅ ADDED: Removes missed call counts (call this when the user opens the Call Logs tab)
+  void clearMissedCallsBadge() {
+    state = state.copyWith(missedCallsCount: 0);
   }
 }
 

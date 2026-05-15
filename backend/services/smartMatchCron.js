@@ -102,7 +102,8 @@ const runWeeklySmartMatch = () => {
             data: {
               type: "new_match",
               route: "alumni_detail", // Triggers frontend routing
-              id: match.userId.toString(),
+              profileId: match._id.toString(),
+              userId: match.userId.toString(),
               fullName: match.fullName,
             },
             tokens: authUser.fcmTokens,

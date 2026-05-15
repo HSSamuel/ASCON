@@ -220,7 +220,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   // =======================================================================
   // 🚀 GLOBAL LIFECYCLE SYNCING
   // =======================================================================
-  @override
+ @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
@@ -232,8 +232,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       debugPrint("App Resumed: Reconnecting Socket and Syncing Data");
       SocketService().initSocket(); 
       
-      // ✅ ADDED: Delegated all data fetching logic to AuthService for cleanliness
-      AuthService().performGlobalSilentSync();
+      // ✅ FIX: Only trigger the massive background sync if the user is actually logged in!
+      AuthService().isSessionValid().then((isValid) {
+        if (isValid) {
+          AuthService().performGlobalSilentSync();
+        } else {
+          debugPrint("User is logged out. Skipping background sync.");
+        }
+      });
     }
   }
 

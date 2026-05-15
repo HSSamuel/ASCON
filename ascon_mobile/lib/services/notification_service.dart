@@ -181,12 +181,13 @@ class NotificationService {
       return;
     }
 
-    // ✅ ALUMNI ROUTING
-    if (route == 'alumni_detail' || type == 'new_alumni') {
+// ✅ ALUMNI ROUTING
+    if (route == 'alumni_detail' || type == 'new_alumni' || type == 'new_match') {
       appRouter.push('/alumni_detail', extra: {
         'alumniData': {
-          '_id': id?.toString() ?? '',
-          'userId': id?.toString() ?? '', 
+          // ✅ FIX: Map the specific keys sent by the cron job
+          '_id': data['profileId'] ?? id?.toString() ?? '', 
+          'userId': data['userId'] ?? id?.toString() ?? '', 
           'fullName': data['fullName'] ?? 'New Alumni',
           'profilePicture': '', 
           'isOnline': false,

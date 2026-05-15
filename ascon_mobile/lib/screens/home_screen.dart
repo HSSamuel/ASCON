@@ -445,9 +445,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
     return InkWell(
       onTap: () {
-        // ✅ FIX: Force a fresh fetch of the chat list to clear stale UI data immediately
         if (index == 1) { 
-          ref.read(badgeProvider.notifier).clearMessageBadge(); 
+          // Just reload the list so it's fresh, but DON'T fake-clear the badge
           ref.read(chatProvider.notifier).loadConversations(); 
         }
         _goBranch(index);
