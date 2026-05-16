@@ -6,17 +6,15 @@ const validateEnv = () => {
     "DB_CONNECT",
     "JWT_SECRET",
     "REFRESH_SECRET",
-    "EMAIL_USER",
     "GOOGLE_CLIENT_ID",
     "NODE_ENV",
     "FIREBASE_SERVICE_ACCOUNT",
     "CLIENT_URL",
     "FIREBASE_VAPID_KEY",
-    "MAILER_CLIENT_ID",
-    "MAILER_CLIENT_SECRET",
-    "MAILER_REFRESH_TOKEN",
     "AGORA_APP_ID",
     "AGORA_APP_CERTIFICATE",
+    "MAILERSEND_API_KEY",
+    "EMAIL_FROM"
   ];
 
   const missing = requiredEnv.filter((env) => !process.env[env]);

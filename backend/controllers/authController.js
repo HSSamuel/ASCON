@@ -10,7 +10,7 @@ const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
 const Joi = require("joi");
 const axios = require("axios");
-const nodemailer = require("nodemailer");
+const { MailerSend, EmailParams, Sender, Recipient } = require("mailersend");
 const asyncHandler = require("../utils/asyncHandler");
 const AppError = require("../utils/AppError");
 
@@ -25,58 +25,32 @@ const {
 // 1. AUTH & MAILER CLIENTS
 // --------------------------------------------------------------------------
 const authClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-const mailClient = new OAuth2Client(
-  process.env.MAILER_CLIENT_ID,
-  process.env.MAILER_CLIENT_SECRET,
-);
-mailClient.setCredentials({ refresh_token: process.env.MAILER_REFRESH_TOKEN });
 
-const sendEmailViaGmailAPI = async (toEmail, toName, subject, htmlContent) => {
-  if (!process.env.MAILER_REFRESH_TOKEN) {
-    console.warn(
-      `⚠️ Email Service Not Configured: MAILER_REFRESH_TOKEN is missing.`,
-    );
+const mailerSend = new MailerSend({
+  apiKey: process.env.MAILERSEND_API_KEY,
+});
+
+const sendEmailViaMailerSend = async (toEmail, toName, subject, htmlContent) => {
+  if (!process.env.MAILERSEND_API_KEY) {
+    console.warn(`⚠️ Email Service Not Configured: MAILERSEND_API_KEY is missing.`);
     throw new Error("Email Service Not Configured");
   }
 
   try {
-    const { token: accessToken } = await mailClient.getAccessToken();
-    const mailGenerator = nodemailer.createTransport({
-      streamTransport: true,
-      newline: "windows",
-    });
-    const senderEmail = process.env.EMAIL_USER || "noreply@ascon.org";
+    const sentFrom = new Sender(process.env.EMAIL_FROM || "alerts@asconalumni.org", "ASCON Alumni");
+    const recipients = [new Recipient(toEmail, toName)];
 
-    const mailOptions = {
-      from: `"ASCON Alumni" <${senderEmail}>`,
-      to: toEmail,
-      subject: subject,
-      html: htmlContent,
-    };
-    const info = await mailGenerator.sendMail(mailOptions);
+    const emailParams = new EmailParams()
+      .setFrom(sentFrom)
+      .setTo(recipients)
+      .setSubject(subject)
+      .setHtml(htmlContent)
+      .setText(htmlContent.replace(/<[^>]*>?/gm, '')); // Basic fallback text
 
-    const rawEmail = await new Promise((resolve, reject) => {
-      let buffer = Buffer.alloc(0);
-      info.message.on(
-        "data",
-        (chunk) => (buffer = Buffer.concat([buffer, chunk])),
-      );
-      info.message.on("end", () => resolve(buffer.toString("base64")));
-      info.message.on("error", reject);
-    });
-
-    const response = await axios.post(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`,
-      { raw: rawEmail },
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-    return response.data;
+    const response = await mailerSend.email.send(emailParams);
+    return response;
   } catch (error) {
+    console.error("MailerSend Error:", error);
     throw error;
   }
 };
@@ -202,7 +176,7 @@ exports.register = asyncHandler(async (req, res) => {
     ).catch((e) => console.error("Group Sync Error:", e));
 
     try {
-      await sendEmailViaGmailAPI(
+      await sendEmailViaMailerSend(
         email,
         fullName,
         "Welcome to ASCON Alumni Connect! 🚀",
@@ -379,7 +353,7 @@ exports.googleLogin = asyncHandler(async (req, res) => {
     if (req.io) req.io.emit("admin_stats_update", { type: "NEW_USER" });
 
     try {
-      await sendEmailViaGmailAPI(
+      await sendEmailViaMailerSend(
         email,
         name,
         "Welcome to ASCON Alumni Connect! 🚀",
@@ -491,7 +465,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   const resetUrl = `${clientUrl}/reset-password?token=${token}`;
 
   try {
-    await sendEmailViaGmailAPI(
+    await sendEmailViaMailerSend(
       userAuth.email,
       userName,
       "ASCON Alumni - Password Reset",
