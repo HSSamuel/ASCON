@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // ✅ ADDED: Needed for kIsWeb
+import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
 import '../widgets/loading_dialog.dart';
@@ -34,6 +37,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _yearController = TextEditingController();
   final _otherProgrammeController = TextEditingController();
   final _bioController = TextEditingController();
+
+  // Profile Image State (✅ Web Safe)
+  XFile? _pickedImage; 
+  final ImagePicker _picker = ImagePicker();
 
   bool _obscurePassword = true;
   String? _selectedProgramme;
@@ -72,6 +79,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _otherProgrammeController.dispose();
     _bioController.dispose();
     super.dispose();
+  }
+
+  // Pick Image Method
+  Future<void> _pickImage() async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80, 
+      );
+      
+      if (pickedFile != null) {
+        setState(() {
+          _pickedImage = pickedFile;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error picking image: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to select image."), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   void _showSuccessDialog() {
@@ -147,6 +177,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     showDialog(context: context, barrierDismissible: false, builder: (context) => const LoadingDialog(message: "Creating Account..."));
 
     try {
+      // ✅ Web-Safe: Read file as bytes directly before upload
+      Uint8List? imageBytes;
+      String? imageName;
+      if (_pickedImage != null) {
+        imageBytes = await _pickedImage!.readAsBytes();
+        imageName = _pickedImage!.name;
+      }
+
       final AuthService authService = AuthService();
       final result = await authService.register(
         fullName: _nameController.text.trim(),
@@ -159,6 +197,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         organization: _orgController.text.trim(),
         bio: _bioController.text.trim(),
         googleToken: widget.googleToken,
+        profileImageBytes: imageBytes, 
+        profileImageName: imageName,
       );
 
       if (!mounted) return;
@@ -213,14 +253,76 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // ----------------------------------------
+                      // Profile Picture Upload Widget
+                      // ----------------------------------------
                       Center(
-                        child: Container(
-                          height: 90, width: 90,
-                          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white, boxShadow: [BoxShadow(color: primaryColor.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 8))]),
-                          child: ClipOval(child: Image.asset('assets/logo.png', fit: BoxFit.cover, errorBuilder: (c,o,s) => Icon(Icons.school, size: 70, color: primaryColor))),
+                        child: GestureDetector(
+                          onTap: _pickImage,
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              Container(
+                                height: 110, 
+                                width: 110,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle, 
+                                  color: isDark ? Colors.grey[800] : Colors.white, 
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: primaryColor.withOpacity(0.15), 
+                                      blurRadius: 15, 
+                                      offset: const Offset(0, 8),
+                                    )
+                                  ],
+                                  border: Border.all(color: primaryColor.withOpacity(0.4), width: 2.5),
+                                ),
+                                child: ClipOval(
+                                  child: _pickedImage != null
+                                      ? (kIsWeb 
+                                          ? Image.network(  // ✅ Web safe viewer
+                                              _pickedImage!.path, 
+                                              fit: BoxFit.cover,
+                                              width: 110,
+                                              height: 110,
+                                            )
+                                          : Image.file(     // ✅ Mobile safe viewer
+                                              File(_pickedImage!.path), 
+                                              fit: BoxFit.cover,
+                                              width: 110,
+                                              height: 110,
+                                            ))
+                                      : Icon(
+                                          Icons.person, 
+                                          size: 70, 
+                                          color: primaryColor.withOpacity(0.5)
+                                        ),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: primaryColor,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: isDark ? Colors.grey[900]! : Colors.white, 
+                                      width: 3
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Text("Tap to Upload Photo", textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: subTextColor, fontWeight: FontWeight.w500)),
                       const SizedBox(height: 20),
+                      
                       Text("Create Account", textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: primaryColor, letterSpacing: -0.5)),
                       const SizedBox(height: 4),
                       Text("Join the ASCON Alumni Network", textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: subTextColor)),

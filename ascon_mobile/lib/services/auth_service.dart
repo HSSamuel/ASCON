@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,7 +27,6 @@ import '../viewmodels/updates_view_model.dart';
 import '../viewmodels/badge_view_model.dart';
 
 class AuthService {
-  // ✅ 1. Implement Singleton Pattern
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
 
@@ -43,33 +43,21 @@ class AuthService {
   bool _isRefreshing = false;
   Completer<String?>? _refreshCompleter;
 
-  // ✅ 2. Private constructor
   AuthService._internal() {
     _api.onTokenRefresh = _performSilentRefresh;
   }
 
-  // =======================================================================
-  // 🚀 GLOBAL SILENT SYNC (Stale-While-Revalidate)
-  // =======================================================================
   void performGlobalSilentSync() {
     try {
-      // Chat & Badges
       providerContainer.read(chatProvider.notifier).loadConversations();
       providerContainer.read(badgeProvider.notifier).refreshBadges();
-
-      // Feeds & Directory
       providerContainer.read(directoryProvider.notifier).loadDirectory();
       providerContainer.read(eventsProvider.notifier).loadEvents(silent: true);
       providerContainer.read(updatesProvider.notifier).loadData(silent: true);
-      
-      // Profile and Dashboard
       providerContainer.read(profileProvider.notifier).loadProfile(isRefresh: true);
       providerContainer.read(dashboardProvider.notifier).loadData(isRefresh: true);
       
-      // ✅ ADDED: Force Socket Presence Update to fix inaccurate "Offline" statuses
       SocketService().announcePresence();
-
-      debugPrint("🟢 Global Silent Sync Triggered Successfully (Data + Presence)");
     } catch (e) {
       debugPrint("⚠️ Silent Sync Error: $e");
     }
@@ -151,6 +139,9 @@ class AuthService {
     }
   }
 
+  // =======================================================================
+  // 🚀 WEB-SAFE REGISTER METHOD (Uses Bytes instead of File paths)
+  // =======================================================================
   Future<Map<String, dynamic>> register({
     required String fullName,
     required String email,
@@ -162,30 +153,60 @@ class AuthService {
     String? organization,
     String? bio,
     String? googleToken,
+    Uint8List? profileImageBytes, // ✅ Accept raw bytes instead of a File object
+    String? profileImageName,     // ✅ Require the file name
   }) async {
     try {
       final String? fcmToken = await _getFcmToken();
-      final result = await _api.post('/api/auth/register', {
-        'fullName': fullName,
-        'email': email,
-        'password': password,
-        'programmeTitle': programmeTitle,
-        'customProgramme': customProgramme ?? "",
-        'yearOfAttendance': yearOfAttendance,
-        'jobTitle': jobTitle ?? "",
-        'organization': organization ?? "",
-        'bio': bio ?? "",
-        'googleToken': googleToken,
-        'fcmToken': fcmToken ?? "",
-      }, requiresAuth: false);
+      
+      var uri = Uri.parse('${AppConfig.baseUrl}/api/auth/register');
+      var request = http.MultipartRequest('POST', uri);
 
-      if (result['success'] && result['data']['token'] != null) {
-        final data = result['data'];
+      request.fields['fullName'] = fullName;
+      request.fields['email'] = email;
+      request.fields['password'] = password;
+      request.fields['programmeTitle'] = programmeTitle;
+      request.fields['yearOfAttendance'] = yearOfAttendance;
+      request.fields['customProgramme'] = customProgramme ?? "";
+      request.fields['jobTitle'] = jobTitle ?? "";
+      request.fields['organization'] = organization ?? "";
+      request.fields['bio'] = bio ?? "";
+      
+      if (googleToken != null) request.fields['googleToken'] = googleToken;
+      if (fcmToken != null) request.fields['fcmToken'] = fcmToken;
+
+      // ✅ Upload purely via bytes (100% Web safe)
+      if (profileImageBytes != null && profileImageName != null) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'profilePicture', 
+            profileImageBytes,
+            filename: profileImageName,
+          )
+        );
+      }
+
+      var streamedResponse = await request.send().timeout(AppConfig.apiTimeout);
+      var response = await http.Response.fromStream(streamedResponse);
+      
+      var resultBody = jsonDecode(response.body);
+      bool isSuccess = response.statusCode >= 200 && response.statusCode < 300;
+
+      Map<String, dynamic> formattedResult = {
+        'success': isSuccess,
+        if (isSuccess) 'data': resultBody,
+        if (!isSuccess) 'message': resultBody['message'] ?? 'Registration failed',
+      };
+
+      if (formattedResult['success'] && formattedResult['data']['token'] != null) {
+        final data = formattedResult['data'];
         await _saveUserSession(data['token'], data['user'] ?? {}, refreshToken: data['refreshToken']);
         await NotificationService().init();
         await NotificationService().syncToken(retry: true);
       }
-      return result;
+      
+      return formattedResult;
+
     } catch (e) {
       return {'success': false, 'message': _cleanError(e)};
     }
@@ -273,7 +294,6 @@ class AuthService {
 
     try {
       String? originalRefreshToken = await _secureStorage.read(key: 'refresh_token');
-      // Prevent running if there's no refresh token
       if (originalRefreshToken == null || originalRefreshToken.isEmpty) {
         _refreshCompleter?.complete(null);
         return null;
@@ -377,7 +397,6 @@ class AuthService {
         await _secureStorage.write(key: 'userId', value: userId);
         SocketService().connectUser(userId);
         
-        // ✅ ADDED: Trigger sync immediately on explicit login
         performGlobalSilentSync();
       }
 
