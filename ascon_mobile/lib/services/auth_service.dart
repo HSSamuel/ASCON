@@ -48,7 +48,7 @@ class AuthService {
     _api.onTokenRefresh = _performSilentRefresh;
   }
 
-// =======================================================================
+  // =======================================================================
   // 🚀 GLOBAL SILENT SYNC (Stale-While-Revalidate)
   // =======================================================================
   void performGlobalSilentSync() {
@@ -66,7 +66,10 @@ class AuthService {
       providerContainer.read(profileProvider.notifier).loadProfile(isRefresh: true);
       providerContainer.read(dashboardProvider.notifier).loadData(isRefresh: true);
       
-      debugPrint("🟢 Global Silent Sync Triggered Successfully");
+      // ✅ ADDED: Force Socket Presence Update to fix inaccurate "Offline" statuses
+      SocketService().announcePresence();
+
+      debugPrint("🟢 Global Silent Sync Triggered Successfully (Data + Presence)");
     } catch (e) {
       debugPrint("⚠️ Silent Sync Error: $e");
     }
@@ -296,7 +299,6 @@ class AuthService {
       } 
       else if (result.statusCode == 401 || result.statusCode == 403 || result.statusCode == 400) {
         
-        // ✅ FIX 1: Verify this is OUR backend rejecting the token, not a Proxy/Cloudflare 403 HTML page
         bool isGenuineRejection = false;
         try {
           final body = jsonDecode(result.body);
@@ -309,11 +311,10 @@ class AuthService {
 
         if (!isGenuineRejection) {
           debugPrint("⚠️ Proxy/WAF error (${result.statusCode}) during refresh. Keeping local session alive.");
-          _refreshCompleter?.complete(_tokenCache); // Fallback to cache to prevent cascade
+          _refreshCompleter?.complete(_tokenCache); 
           return _tokenCache;
         }
 
-        // ✅ FIX 2: Stale Logout Prevention Check (Protects manual logins)
         String? currentRefreshToken = await _secureStorage.read(key: 'refresh_token');
         if (currentRefreshToken != originalRefreshToken && currentRefreshToken != null) {
           debugPrint("✅ Refresh aborted: User manually logged in during background refresh.");
@@ -321,7 +322,6 @@ class AuthService {
           return _tokenCache;
         }
 
-        // 3. Google Silent Auth Fallback
         if (!kIsWeb) {
           try {
             if (await googleSignIn.isSignedIn()) {
@@ -340,20 +340,17 @@ class AuthService {
           }
         }
 
-        // 4. Token is genuinely dead. Wipe the session.
         debugPrint("🚫 Token explicitly rejected by server (${result.statusCode}). Forcing logout.");
         await logout();
         _refreshCompleter?.complete(null);
         return null;
       } 
       else {
-        // Server asleep (502) or offline. DO NOT wipe the user's session!
         debugPrint("⚠️ Server error or timeout during refresh (${result.statusCode}). Keeping local session alive.");
         _refreshCompleter?.complete(_tokenCache);
         return _tokenCache;
       }
     } catch (e) {
-      // Handles network dropouts without crashing the API client
       debugPrint("⚠️ Network error during refresh: $e. Keeping local session alive.");
       _refreshCompleter?.complete(_tokenCache);
       return _tokenCache;

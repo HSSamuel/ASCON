@@ -158,12 +158,20 @@ void main() async {
       }
     }
 
-    FlutterError.onError = (errorDetails) {
-      FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+FlutterError.onError = (errorDetails) {
+      if (!kIsWeb) {
+        FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+      } else {
+        debugPrint("Flutter Error (Web): ${errorDetails.exception}");
+      }
     };
     
     PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      if (!kIsWeb) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      } else {
+        debugPrint("Platform Error (Web): $error\n$stack");
+      }
       return true;
     };
 

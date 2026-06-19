@@ -25,7 +25,7 @@ function ProgrammesManager({ canEdit }) {
     image: "",
   });
 
-  const BASE_URL = import.meta.env.VITE_API_URL || "https://ascon.onrender.com";
+  const BASE_URL = import.meta.env.VITE_API_URL || "https://ascon-st50.onrender.com";
 
   const programmes = usePaginatedFetch(
     `${BASE_URL}/api/admin/programmes`,

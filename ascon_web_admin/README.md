@@ -51,7 +51,7 @@ Create a `.env` file in the root of the **ascon_web_admin** folder to connect th
 VITE_API_URL=http://localhost:5000
 
 # Option B: Live Production (Render)
-# VITE_API_URL=https://ascon.onrender.com
+# VITE_API_URL=https://ascon-st50.onrender.com
 ```
 
 > **Note:** React requires all environment variables to start with `REACT_APP_`.

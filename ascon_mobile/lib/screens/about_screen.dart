@@ -312,7 +312,7 @@ class AboutScreen extends StatelessWidget {
                     const SizedBox(height: 20),
                     
                     Text(
-                      "ASCON Alumni App v2.0.0",
+                      "ASCON Alumni App v2.0.1",
                       style: GoogleFonts.lato(color: Colors.grey[400], fontSize: 12),
                     ),
                     const SizedBox(height: 40),
@@ -408,17 +408,18 @@ class AboutScreen extends StatelessWidget {
   }
 
   // --- HELPER: Social Icon ---
-  Widget _buildSocialIcon(IconData icon, Color color, String url) {
-    return InkWell(
+  Widget _buildSocialIcon(dynamic icon, Color color, String url) {
+    return GestureDetector(
       onTap: () => _launchURL(url),
-      borderRadius: BorderRadius.circular(50),
       child: Container(
-        padding: const EdgeInsets.all(10),
+        margin: const EdgeInsets.symmetric(horizontal: 10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: color.withOpacity(0.1),
           shape: BoxShape.circle,
         ),
-        child: FaIcon(icon, color: color, size: 22),
+        // FaIcon will now accept the dynamic icon without throwing a type error
+        child: FaIcon(icon, color: color, size: 22), 
       ),
     );
   }

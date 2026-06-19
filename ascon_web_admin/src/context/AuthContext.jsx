@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
           if (!refreshToken) return;
 
           const response = await axios.post(
-            `${import.meta.env.VITE_API_URL || "https://ascon.onrender.com"}/api/auth/refresh`,
+            `${import.meta.env.VITE_API_URL || "https://ascon-st50.onrender.com"}/api/auth/refresh`,
             { refreshToken },
           );
 

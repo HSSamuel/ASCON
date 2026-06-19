@@ -6,7 +6,8 @@ import Toast from "../Toast";
 import { usePaginatedFetch } from "../hooks/usePaginatedFetch";
 import { io } from "socket.io-client"; // ✅ NEW: Real-time library
 
-const BASE_URL = import.meta.env.VITE_API_URL || "https://ascon.onrender.com";
+const BASE_URL =
+  import.meta.env.VITE_API_URL || "https://ascon-st50.onrender.com";
 
 function UsersManager({ token, canEdit }) {
   const [toast, setToast] = useState(null);

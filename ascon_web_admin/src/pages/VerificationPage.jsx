@@ -15,7 +15,8 @@ export default function VerificationPage() {
   const [data, setData] = useState(null);
 
   // 3. Environment Config (Falls back to Render if .env is missing)
-  const BASE_URL = import.meta.env.VITE_API_URL || "https://ascon.onrender.com";
+  const BASE_URL =
+    import.meta.env.VITE_API_URL || "https://ascon-st50.onrender.com";
 
   // 4. Fetch Logic
   useEffect(() => {

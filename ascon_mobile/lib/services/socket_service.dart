@@ -41,17 +41,27 @@ class SocketService with WidgetsBindingObserver {
           } else if (!socket!.connected) {
             socket!.connect();
           } else {
-            // Force TCP refresh to catch any background packets
-            socket!.disconnect();
-            socket!.connect();
+            // If the OS kept the socket alive, explicitly announce we are back
+            // to overwrite any stale server-side timeouts.
+            announcePresence();
           }
         }
       });
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // ✅ FIX: App went to background -> Disconnect immediately to trigger "Offline" on server
+      // ✅ FIX: App went to background -> Disconnect immediately to trigger instant "Offline" on server
       if (socket != null && socket!.connected) {
          socket!.disconnect();
       }
+    }
+  }
+
+  // ✅ ADDED: Forcefully tells the server this user is online
+  void announcePresence() {
+    if (socket != null && socket!.connected && _currentUserId != null) {
+      socket!.emit("user_connected", _currentUserId);
+      debugPrint("📢 Presence explicitly announced to server for user: $_currentUserId");
+    } else if (socket != null && !socket!.connected) {
+      socket!.connect();
     }
   }
 

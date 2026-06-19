@@ -357,3 +357,33 @@
 {"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-05-16 02:35:48"}
 {"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-05-16 02:35:48"}
 {"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-05-16 02:36:04"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-05-17 06:51:35"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-05-17 06:51:35"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-05-17 06:51:36"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-05-17 06:51:36"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-05-17 06:51:38"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-05-17 06:51:38"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-05-17 07:02:29"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-05-17 07:02:29"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-05-17 07:02:29"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-05-17 07:02:29"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-05-17 07:02:31"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-05-17 07:02:31"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-05-17 07:06:14"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-05-17 07:06:14"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-05-17 07:06:15"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-05-17 07:06:15"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-05-17 07:06:17"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-05-17 07:06:17"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-05-17 07:06:27"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-05-17 07:06:27"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-05-17 07:06:27"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-05-17 07:06:28"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-05-17 07:06:32"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-05-17 07:06:32"}
+{"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-05-17 07:07:11"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-19 04:54:27"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-06-19 04:54:27"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-06-19 04:54:29"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-06-19 04:54:29"}
+{"code":8000,"codeName":"AtlasError","connectionGeneration":0,"errorLabelSet":{},"errorResponse":{"code":8000,"codeName":"AtlasError","errmsg":"bad auth : authentication failed","ok":0},"level":"error","message":"❌ Database Connection Failed: bad auth : authentication failed","ok":0,"stack":"MongoServerError: bad auth : authentication failed\n    at Connection.sendCommand (C:\\Users\\SAMUEL\\Desktop\\ASCON Alumni\\backend\\node_modules\\mongodb\\lib\\cmap\\connection.js:320:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Connection.command (C:\\Users\\SAMUEL\\Desktop\\ASCON Alumni\\backend\\node_modules\\mongodb\\lib\\cmap\\connection.js:344:26)\n    at async continueScramConversation (C:\\Users\\SAMUEL\\Desktop\\ASCON Alumni\\backend\\node_modules\\mongodb\\lib\\cmap\\auth\\scram.js:131:15)\n    at async executeScram (C:\\Users\\SAMUEL\\Desktop\\ASCON Alumni\\backend\\node_modules\\mongodb\\lib\\cmap\\auth\\scram.js:80:5)\n    at async ScramSHA1.auth (C:\\Users\\SAMUEL\\Desktop\\ASCON Alumni\\backend\\node_modules\\mongodb\\lib\\cmap\\auth\\scram.js:39:16)\n    at async performInitialHandshake (C:\\Users\\SAMUEL\\Desktop\\ASCON Alumni\\backend\\node_modules\\mongodb\\lib\\cmap\\connect.js:110:13)\n    at async connect (C:\\Users\\SAMUEL\\Desktop\\ASCON Alumni\\backend\\node_modules\\mongodb\\lib\\cmap\\connect.js:28:9)","timestamp":"2026-06-19 04:54:32"}

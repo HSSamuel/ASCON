@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart'; 
 import 'package:google_fonts/google_fonts.dart'; 
+import 'package:permission_handler/permission_handler.dart';
 
 import '../viewmodels/profile_view_model.dart';
 import '../utils/presence_formatter.dart'; 
@@ -19,15 +21,46 @@ class ProfileScreen extends ConsumerStatefulWidget {
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> with WidgetsBindingObserver {
   late ScrollController _scrollController;
   bool _isScrolled = false;
+  bool _notificationsEnabled = true; // Assume true until checked
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addObserver(this);
+    _checkNotificationStatus();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkNotificationStatus();
+    }
+  }
+
+  Future<void> _checkNotificationStatus() async {
+    if (kIsWeb) return;
+    var status = await Permission.notification.status;
+    if (mounted) {
+      setState(() {
+        _notificationsEnabled = status.isGranted;
+      });
+    }
+  }
+
+  Future<void> _handleNotificationPermission() async {
+    if (kIsWeb) return;
+    var status = await Permission.notification.status;
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+    } else {
+      await Permission.notification.request();
+    }
+    _checkNotificationStatus();
   }
 
   void _onScroll() {
@@ -44,6 +77,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -99,7 +133,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     if (profileState.isLoading) return Scaffold(backgroundColor: scaffoldBg, body: const ProfileSkeleton());
 
-    // ✅ CLEANED: Removed 'industry' and other old fields. Strict adherence to slim profile.
+    // ✅ CLEANED: Strict adherence to slim profile with mentorship leftovers completely eradicated.
     final String fullName = userProfile?['fullName'] ?? widget.userName ?? "Alumni";
     final String jobTitle = userProfile?['jobTitle'] ?? '';
     final String org = userProfile?['organization'] ?? '';
@@ -218,7 +252,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16), 
                 child: Column(
                   children: [
-                    Text(fullName, textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor)),
+                    // Wrap the name in a FittedBox to guarantee it never breaks into multiple lines across responsive mobile sizes
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        fullName, 
+                        textAlign: TextAlign.center, 
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor)
+                      ),
+                    ),
                     const SizedBox(height: 4), 
                     if (jobTitle.isNotEmpty || org.isNotEmpty)
                       Text("$jobTitle ${org.isNotEmpty ? 'at $org' : ''}", textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: subTextColor, fontWeight: FontWeight.w500)),
@@ -277,7 +319,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 const SizedBox(height: 20),
               ],
 
-              // ✅ CLEANED: Removed 'industry' checks here too
               if (jobTitle.isNotEmpty || org.isNotEmpty) 
                 Container(
                   width: double.infinity,
@@ -362,6 +403,53 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     Text("Contact Information", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: primaryColor)),
                     const SizedBox(height: 12),
                     _buildContactRow(Icons.email_outlined, "Email", email, context),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // App Settings Module
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16), 
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), 
+                decoration: BoxDecoration(
+                  color: cardColor, 
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [if (!isDark) BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3))],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("App Settings", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: primaryColor)),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: _handleNotificationPermission,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8), 
+                              decoration: BoxDecoration(color: isDark ? Colors.grey[800] : Colors.grey[50], borderRadius: BorderRadius.circular(8)),
+                              child: Icon(Icons.notifications_active_outlined, color: Colors.grey[600], size: 18), 
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("Push Notifications", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textColor)),
+                                  const SizedBox(height: 2),
+                                  Text(_notificationsEnabled ? "Enabled" : "Disabled", style: TextStyle(fontSize: 12, color: _notificationsEnabled ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey[400])
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),

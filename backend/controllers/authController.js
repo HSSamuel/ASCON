@@ -30,14 +30,24 @@ const mailerSend = new MailerSend({
   apiKey: process.env.MAILERSEND_API_KEY,
 });
 
-const sendEmailViaMailerSend = async (toEmail, toName, subject, htmlContent) => {
+const sendEmailViaMailerSend = async (
+  toEmail,
+  toName,
+  subject,
+  htmlContent,
+) => {
   if (!process.env.MAILERSEND_API_KEY) {
-    console.warn(`⚠️ Email Service Not Configured: MAILERSEND_API_KEY is missing.`);
+    console.warn(
+      `⚠️ Email Service Not Configured: MAILERSEND_API_KEY is missing.`,
+    );
     throw new Error("Email Service Not Configured");
   }
 
   try {
-    const sentFrom = new Sender(process.env.EMAIL_FROM || "alerts@asconalumni.org", "ASCON Alumni");
+    const sentFrom = new Sender(
+      process.env.EMAIL_FROM || "alerts@asconalumni.org",
+      "ASCON Alumni",
+    );
     const recipients = [new Recipient(toEmail, toName)];
 
     const emailParams = new EmailParams()
@@ -45,7 +55,7 @@ const sendEmailViaMailerSend = async (toEmail, toName, subject, htmlContent) => 
       .setTo(recipients)
       .setSubject(subject)
       .setHtml(htmlContent)
-      .setText(htmlContent.replace(/<[^>]*>?/gm, '')); // Basic fallback text
+      .setText(htmlContent.replace(/<[^>]*>?/gm, ""));
 
     const response = await mailerSend.email.send(emailParams);
     return response;
@@ -58,7 +68,6 @@ const sendEmailViaMailerSend = async (toEmail, toName, subject, htmlContent) => 
 // --------------------------------------------------------------------------
 // 2. VALIDATION SCHEMAS
 // --------------------------------------------------------------------------
-// ✅ UPDATED: Removed phoneNumber completely
 const registerSchema = Joi.object({
   fullName: Joi.string().min(6).required(),
   email: Joi.string().min(6).required().email(),
@@ -142,7 +151,9 @@ exports.register = asyncHandler(async (req, res) => {
     });
     const savedAuth = await newUserAuth.save({ session });
 
-    // ✅ UPDATED: Removed phoneNumber
+    // ✅ ADDED: Safely grab the Cloudinary URL from Multer (if an image was uploaded)
+    const profilePicUrl = req.file ? req.file.path : "";
+
     const newUserProfile = new UserProfile({
       userId: savedAuth._id,
       fullName,
@@ -152,6 +163,7 @@ exports.register = asyncHandler(async (req, res) => {
       jobTitle,
       organization,
       bio,
+      profilePicture: profilePicUrl, // ✅ Inject URL into profile
       alumniId: generatedAlumniId,
     });
     await newUserProfile.save({ session });
@@ -176,14 +188,50 @@ exports.register = asyncHandler(async (req, res) => {
     ).catch((e) => console.error("Group Sync Error:", e));
 
     try {
+      // Modern HTML Email Template (Updated)
+      const emailHtmlContent = `
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #eaeaea; border-radius: 12px; background-color: #ffffff;">
+          <div style="text-align: center; margin-bottom: 25px;">
+              <h2 style="color: #1B5E3A; margin: 0; font-size: 24px; letter-spacing: -0.5px;">ASCON Alumni Connect</h2>
+          </div>
+          
+          <h3 style="color: #333333; font-size: 20px;">Hello ${fullName},</h3>
+          
+          <p style="color: #555555; line-height: 1.6; font-size: 15px;">
+              Welcome to the official digital platform for the <strong>Administrative Staff College of Nigeria (ASCON)</strong> Alumni! We are thrilled to have you join our growing network of esteemed professionals and public administrators.
+          </p>
+
+          <div style="background-color: #F4F7F6; padding: 20px; border-radius: 8px; text-align: center; margin: 25px 0; border: 1px solid #e0e6ed;">
+              <p style="margin: 0; color: #666666; font-size: 13px; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Your Official Alumni ID</p>
+              <h1 style="color: #1B5E3A; margin: 10px 0 0 0; letter-spacing: 2px; font-size: 28px;">${generatedAlumniId}</h1>
+          </div>
+
+          <p style="color: #555555; line-height: 1.6; font-size: 15px;">
+              As a registered member, your account is now active. You have exclusive access to:
+          </p>
+
+          <ul style="color: #555555; line-height: 1.6; font-size: 15px; padding-left: 20px;">
+              <li style="margin-bottom: 8px;"><strong>Smart Networking:</strong> Connect with peers based on shared skills and industries.</li>
+              <li style="margin-bottom: 8px;"><strong>Real-Time Communication:</strong> Engage in seamless chat and voice calls with other alumni.</li>
+              <li style="margin-bottom: 8px;"><strong>Digital Identity:</strong> Access and share your verifiable digital ID card instantly.</li>
+              <li style="margin-bottom: 8px;"><strong>Exclusive Updates:</strong> Stay informed about upcoming events and programme highlights.</li>
+          </ul>
+
+          <p style="color: #888888; font-size: 12px; border-top: 1px solid #eaeaea; padding-top: 20px; text-align: center; line-height: 1.5; margin-top: 35px;">
+              If you have any questions or need assistance, please contact the administrative team at <a href="mailto:info@ascon.gov.ng" style="color: #1B5E3A; text-decoration: none; font-weight: bold;">info@ascon.gov.ng</a>.<br>
+              &copy; ${new Date().getFullYear()} Administrative Staff College of Nigeria (ASCON).
+          </p>
+      </div>
+      `;
+
       await sendEmailViaMailerSend(
         email,
         fullName,
         "Welcome to ASCON Alumni Connect! 🚀",
-        `<h3>Hello ${fullName},</h3><p>Welcome to the ASCON Alumni Network! Your official Alumni ID is <strong>${generatedAlumniId}</strong>.</p>`,
+        emailHtmlContent,
       );
     } catch (emailError) {
-      console.error("Non-fatal: Welcome email failed to send.");
+      console.error("Non-fatal: Welcome email failed to send.", emailError);
     }
 
     notifyPeersOfNewUser(newUserProfile).catch((e) => console.error(e));
@@ -205,6 +253,7 @@ exports.register = asyncHandler(async (req, res) => {
         hasSeenWelcome: false,
         yearOfAttendance: newUserProfile.yearOfAttendance,
         alumniId: generatedAlumniId,
+        profilePicture: newUserProfile.profilePicture,
       },
     });
   } catch (err) {
@@ -262,7 +311,6 @@ exports.login = asyncHandler(async (req, res) => {
     });
   }
 
-  // ✅ UPDATED: Removed phoneNumber from response
   res.json({
     token,
     refreshToken,
@@ -394,7 +442,6 @@ exports.googleLogin = asyncHandler(async (req, res) => {
     });
   }
 
-  // ✅ UPDATED: Removed phoneNumber
   return res.json({
     token: authToken,
     refreshToken: refreshToken,
@@ -500,7 +547,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   userAuth.password = hashedPassword;
   userAuth.resetPasswordToken = undefined;
   userAuth.resetPasswordExpires = undefined;
-  userAuth.refreshTokens = []; // Log out from all devices
+  userAuth.refreshTokens = [];
 
   await userAuth.save();
   res.json({ message: "Password updated successfully! Please login." });

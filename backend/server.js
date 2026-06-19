@@ -83,7 +83,7 @@ const swaggerOptions = {
       {
         url:
           process.env.NODE_ENV === "production"
-            ? "https://ascon.onrender.com"
+            ? "https://ascon-st50.onrender.com"
             : `http://localhost:${process.env.PORT || 5000}`,
       },
     ],
@@ -107,10 +107,7 @@ const getOrigins = () => {
   }
 
   // ✅ FIX: Hardcoded production fallbacks to prevent admin panel lockout
-  return [
-    "https://ascon.onrender.com",
-    "https://asconalumni.org",
-  ];
+  return ["https://ascon-st50.onrender.com", "https://asconalumni.org"];
 };
 
 const allowedOrigins = getOrigins();

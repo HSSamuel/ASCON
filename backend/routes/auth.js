@@ -1,5 +1,7 @@
 const router = require("express").Router();
-const rateLimit = require("express-rate-limit"); // ✅ Import Rate Limiter
+const rateLimit = require("express-rate-limit");
+const upload = require("../config/cloudinary"); // ✅ ADDED: Import Cloudinary Multer
+
 const {
   register,
   login,
@@ -12,7 +14,7 @@ const {
 
 const verifyToken = require("./verifyToken");
 
-// ✅ FIX: Strict rate limiter for password resets (Max 3 attempts per hour per IP)
+// Strict rate limiter for password resets (Max 3 attempts per hour per IP)
 const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 3,
@@ -25,12 +27,14 @@ const passwordResetLimiter = rateLimit({
 // ==========================================
 // 🔓 PUBLIC ROUTES (No Token Required)
 // ==========================================
-router.post("/register", register);
+// ✅ UPDATED: Added upload.single() to process the multipart image payload
+router.post("/register", upload.single("profilePicture"), register);
+
 router.post("/login", login);
 router.post("/google", googleLogin);
 router.post("/refresh", refreshToken);
 
-// ✅ FIX: Apply the limiter to the public forgot-password route
+// Apply the limiter to the public forgot-password route
 router.post("/forgot-password", passwordResetLimiter, forgotPassword);
 
 router.post("/reset-password", resetPassword);

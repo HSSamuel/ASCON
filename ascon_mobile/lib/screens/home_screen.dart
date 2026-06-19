@@ -28,7 +28,7 @@ import '../widgets/shimmer_utils.dart';
 import '../viewmodels/dashboard_view_model.dart';
 import '../viewmodels/events_view_model.dart'; 
 import '../viewmodels/badge_view_model.dart'; 
-import '../viewmodels/chat_view_model.dart'; // ✅ FIX: Added Chat ViewModel import
+import '../viewmodels/chat_view_model.dart'; 
 import '../services/notification_service.dart';
 import '../services/auth_service.dart'; 
 
@@ -93,7 +93,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     await [
       Permission.microphone,
       Permission.camera,
-      Permission.notification,
     ].request();
 
     if (await Permission.systemAlertWindow.isDenied) {
@@ -111,12 +110,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.dispose();
   }
 
-  // ✅ FIX: Aggressively sync all real-time data when app wakes up from background
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(badgeProvider.notifier).refreshBadges(); 
-      ref.read(chatProvider.notifier).loadConversations(); // Fetch missed chats
+      ref.read(chatProvider.notifier).loadConversations(); 
     }
   }
 
@@ -446,7 +444,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return InkWell(
       onTap: () {
         if (index == 1) { 
-          // Just reload the list so it's fresh, but DON'T fake-clear the badge
           ref.read(chatProvider.notifier).loadConversations(); 
         }
         _goBranch(index);
@@ -486,14 +483,50 @@ class DashboardView extends ConsumerStatefulWidget {
   ConsumerState<DashboardView> createState() => _DashboardViewState();
 }
 
-class _DashboardViewState extends ConsumerState<DashboardView> {
+class _DashboardViewState extends ConsumerState<DashboardView> with WidgetsBindingObserver {
   bool _isAdmin = false; 
   String? _currentUserId;
+  bool _notificationsEnabled = true; // Assume true until checked to prevent layout flash
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadUser();
+    _checkNotificationStatus();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkNotificationStatus();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _checkNotificationStatus() async {
+    if (kIsWeb) return;
+    var status = await Permission.notification.status;
+    if (mounted) {
+      setState(() {
+        _notificationsEnabled = status.isGranted;
+      });
+    }
+  }
+
+  Future<void> _handlePermissionRecovery() async {
+    var status = await Permission.notification.status;
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+    } else {
+      await Permission.notification.request();
+    }
+    _checkNotificationStatus();
   }
 
   Future<void> _loadUser() async {
@@ -592,6 +625,45 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
 
   Widget _buildPlaceholder(IconData icon) => Container(color: Colors.grey[200], child: Center(child: Icon(icon, color: Colors.grey[400], size: 40)));
 
+  Widget _buildNotificationBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.15),
+        border: Border.all(color: Colors.orange.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.notifications_off_rounded, color: Colors.orange, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Notifications Disabled", style: GoogleFonts.lato(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.orange[800])),
+                const SizedBox(height: 2),
+                Text("You may miss incoming calls and messages.", style: GoogleFonts.lato(fontSize: 12, color: Colors.orange[900])),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _handlePermissionRecovery,
+            style: TextButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text("Fix Now", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          )
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
@@ -625,6 +697,10 @@ class _DashboardViewState extends ConsumerState<DashboardView> {
                     width: double.infinity, padding: const EdgeInsets.all(8), color: Colors.redAccent,
                     child: Text(dashboardState.errorMessage!, style: const TextStyle(color: Colors.white, fontSize: 12), textAlign: TextAlign.center),
                   ),
+
+                // Persistent Notification Banner Check
+                if (!_notificationsEnabled && !kIsWeb) 
+                  _buildNotificationBanner(),
 
                 DigitalIDCard(
                   userName: dashboardState.fullName, 
