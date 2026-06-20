@@ -5,10 +5,8 @@ const UserProfile = require("../models/UserProfile");
 const UserSettings = require("../models/UserSettings");
 
 // Related Models for Cascade Delete
-const MentorshipRequest = require("../models/MentorshipRequest");
 const Message = require("../models/Message");
 const Notification = require("../models/Notification");
-const EventRegistration = require("../models/EventRegistration");
 const ProgrammeInterest = require("../models/ProgrammeInterest");
 
 const Event = require("../models/Event");
@@ -119,27 +117,20 @@ const programmeSchema = Joi.object({
 // ==========================================
 router.get("/stats", verifyAdmin, async (req, res) => {
   try {
-    const [
-      userCount,
-      eventCount,
-      progCount,
-      progInterestCount,
-      eventRegCount,
-      updatesCount,
-    ] = await Promise.all([
-      UserAuth.countDocuments(),
-      Event.countDocuments(),
-      Programme.countDocuments(),
-      ProgrammeInterest.countDocuments(),
-      EventRegistration.countDocuments(),
-      UpdatePost.countDocuments(),
-    ]);
+    const [userCount, eventCount, progCount, progInterestCount, updatesCount] =
+      await Promise.all([
+        UserAuth.countDocuments(),
+        Event.countDocuments(),
+        Programme.countDocuments(),
+        ProgrammeInterest.countDocuments(),
+        UpdatePost.countDocuments(),
+      ]);
 
     res.json({
       users: userCount,
       events: eventCount,
       programmes: progCount,
-      totalRegistrations: progInterestCount + eventRegCount,
+      totalRegistrations: progInterestCount, // Only counting Programme Interests now
       updates: updatesCount,
     });
   } catch (err) {
@@ -231,7 +222,7 @@ router.get("/users", verifyAdmin, async (req, res) => {
   }
 });
 
-// ✅ UPDATED: Cascade Delete is KEPT active for standard Admin use
+// ✅ UPDATED: Cascade Delete fixed
 router.delete("/users/:id", verifyEditor, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -242,17 +233,11 @@ router.delete("/users/:id", verifyEditor, async (req, res) => {
       UserProfile.findOneAndDelete({ userId: userId }),
       UserSettings.findOneAndDelete({ userId: userId }),
 
-      // 2. Mentorship Interactions
-      MentorshipRequest.deleteMany({
-        $or: [{ mentor: userId }, { mentee: userId }],
-      }),
-
-      // 3. Communications
+      // 2. Communications
       Notification.deleteMany({ userId: userId }),
       Message.deleteMany({ sender: userId }),
 
-      // 4. Registrations
-      EventRegistration.deleteMany({ userId: userId }),
+      // 3. Registrations
       ProgrammeInterest.deleteMany({ userId: userId }),
     ]);
 
@@ -353,7 +338,7 @@ router.post(
       // Extract Image URLs
       let imageUrls = [];
       if (req.files && req.files.length > 0) {
-        imageUrls = req.files.map(file => file.path);
+        imageUrls = req.files.map((file) => file.path);
       } else if (req.body.image) {
         imageUrls = [req.body.image]; // Fallback
       }
@@ -366,8 +351,8 @@ router.post(
         date: date ? new Date(date) : undefined,
         time,
         type: type || "News",
-        image: mainImage,    // For backward compatibility with mobile app
-        images: imageUrls,   // New array of images
+        image: mainImage, // For backward compatibility with mobile app
+        images: imageUrls, // New array of images
         location,
       });
       await newEvent.save();
@@ -397,7 +382,7 @@ router.put(
 
       // Update images only if new files are uploaded
       if (req.files && req.files.length > 0) {
-        updateData.images = req.files.map(file => file.path);
+        updateData.images = req.files.map((file) => file.path);
         updateData.image = updateData.images[0]; // Update fallback image
       }
 
@@ -462,7 +447,7 @@ router.get("/programmes/:id", async (req, res) => {
 router.post(
   "/programmes",
   verifyEditor,
-  adminUpload.single("image"), // ✅ Updated middleware
+  adminUpload.single("image"),
   async (req, res) => {
     // Validate text fields
     const { error } = programmeSchema.validate(req.body);
@@ -508,7 +493,7 @@ router.post(
 router.put(
   "/programmes/:id",
   verifyEditor,
-  adminUpload.single("image"), // ✅ Updated middleware
+  adminUpload.single("image"),
   async (req, res) => {
     const { error } = programmeSchema.validate(req.body);
     if (error)
@@ -587,7 +572,7 @@ router.put("/users/:id/toggle-poll-admin", verifyEditor, async (req, res) => {
 
     res.json({
       message: `Poll Creator permission ${userAuth.canCreatePolls ? "GRANTED" : "REVOKED"}`,
-      canCreatePolls: userAuth.canCreatePolls
+      canCreatePolls: userAuth.canCreatePolls,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

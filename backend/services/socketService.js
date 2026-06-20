@@ -117,6 +117,21 @@ const initializeSocket = async (server) => {
     socket.on("join_room", (room) => socket.join(room));
     socket.on("leave_room", (room) => socket.leave(room));
 
+    // ✅ FIX: Dynamic Group Subscriptions triggered by the client
+    socket.on("join_group_room", (groupId) => {
+      if (groupId) {
+        socket.join(groupId.toString());
+        logger.info(`User ${userId} dynamically joined group room: ${groupId}`);
+      }
+    });
+
+    socket.on("leave_group_room", (groupId) => {
+      if (groupId) {
+        socket.leave(groupId.toString());
+        logger.info(`User ${userId} dynamically left group room: ${groupId}`);
+      }
+    });
+
     socket.on("user_connected", async (uid) => {
       if (uid === userId) {
         await handleConnection(socket, userId);

@@ -3,13 +3,11 @@ import "./App.css";
 import NavBar from "./components/NavBar";
 import StatCard from "./components/StatCard";
 
-// ✅ Import Smart Managers
+// ✅ Removed RegistrationsManager and DocumentsManager
 import UsersManager from "./pages/UsersManager";
 import EventsManager from "./pages/EventsManager";
 import ProgrammesManager from "./pages/ProgrammesManager";
-import RegistrationsManager from "./pages/RegistrationsManager";
 import UpdatesManager from "./pages/UpdatesManager";
-import DocumentsManager from "./pages/DocumentsManager";
 
 import { useAuth } from "./hooks/useAuth";
 import { DashboardProvider, useDashboard } from "./context/DashboardContext";
@@ -77,14 +75,7 @@ const DashboardContent = ({
           color={theme === "light" ? "#e2e3e5" : "#3a3a3a"}
           onClick={() => setActiveTab("updates")}
         />
-
-        <StatCard
-          title="Registrations"
-          value={stats.totalRegistrations}
-          icon="📋"
-          color="#E6E6FA"
-          onClick={() => setActiveTab("registrations")}
-        />
+        {/* ✅ Registrations StatCard has been removed */}
       </div>
 
       <div
@@ -106,14 +97,7 @@ const DashboardContent = ({
         {activeTab === "updates" && (
           <UpdatesManager token={token} canEdit={canEdit} />
         )}
-
-        {activeTab === "registrations" && (
-          <RegistrationsManager token={token} canEdit={canEdit} />
-        )}
-
-        {activeTab === "documents" && (
-          <DocumentsManager token={token} canEdit={canEdit} />
-        )}
+        {/* ✅ Documents and Registrations views have been removed */}
       </div>
     </div>
   );

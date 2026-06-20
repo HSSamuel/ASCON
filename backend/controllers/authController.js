@@ -557,13 +557,35 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 // 9. LOGOUT
 // --------------------------------------------------------------------------
 exports.logout = asyncHandler(async (req, res) => {
-  const { userId, fcmToken, refreshToken } = req.body;
+  const { userId, fcmToken, refreshToken, logoutAllDevices } = req.body;
 
   if (userId) {
-    await UserAuth.updateOne(
-      { _id: userId },
-      { $pull: { fcmTokens: fcmToken, refreshTokens: refreshToken } },
-    );
+    if (logoutAllDevices) {
+      // ✅ FIX: Complete wipe of all active sessions and devices
+      await UserAuth.updateOne(
+        { _id: userId },
+        { $set: { fcmTokens: [], refreshTokens: [] } }
+      );
+    } else {
+      // Standard targeted logout
+      if (fcmToken) {
+        // If client provides the exact token, pull it gracefully
+        await UserAuth.updateOne(
+          { _id: userId },
+          { $pull: { fcmTokens: fcmToken, refreshTokens: refreshToken } }
+        );
+      } else {
+        // ✅ FIX: Aggressive Fallback. 
+        // If the client lost state and couldn't provide the FCM token, we MUST wipe the fcmTokens array
+        // to prevent phantom pushes to this lost device. (Any other active devices owned by the user 
+        // will automatically re-append their tokens on their next app launch via the login/cold-start sync).
+        await UserAuth.updateOne(
+          { _id: userId },
+          { $set: { fcmTokens: [] }, $pull: { refreshTokens: refreshToken } }
+        );
+      }
+    }
   }
+  
   res.status(200).json({ message: "Logged out successfully" });
 });

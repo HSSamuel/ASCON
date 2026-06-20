@@ -29,6 +29,10 @@ class ApiClient {
 
   Future<String?> Function()? onTokenRefresh;
 
+  // ✅ ADDED: Mutex lock variables for Token Refresh Race Conditions
+  bool _isRefreshing = false;
+  Completer<String?>? _refreshCompleter;
+
   // ✅ 2. Implement the setter to catch the token from AuthService
   void setAuthToken(String token) {
     _memoryToken = token;
@@ -114,11 +118,28 @@ class ApiClient {
     try {
       var response = await req().timeout(AppConfig.apiTimeout);
 
-      // ✅ FIX: Lock mechanism moved entirely to AuthService to perfectly sync 
-      // with preemptive UI checks. ApiClient just awaits the callback.
       if (response.statusCode == 401 && onTokenRefresh != null) {
-        print("🔄 401 Detected. Attempting Refresh...");
-        final newToken = await onTokenRefresh!();
+        String? newToken;
+
+        // ✅ FIX: Lock the refresh process so concurrent 401s don't spam the server
+        if (!_isRefreshing) {
+          _isRefreshing = true;
+          _refreshCompleter = Completer<String?>();
+          print("🔄 401 Detected. Attempting Refresh (Locked)...");
+
+          try {
+            newToken = await onTokenRefresh!();
+            _refreshCompleter!.complete(newToken);
+          } catch (e) {
+            _refreshCompleter!.completeError(e);
+          } finally {
+            _isRefreshing = false; // Release lock
+          }
+        } else {
+          print("⏳ Refresh in progress. Waiting for lock to release...");
+          // Wait for the active refresh to finish
+          newToken = await _refreshCompleter!.future; 
+        }
 
         if (newToken != null) {
           print("✅ Token Refreshed. Retrying Request...");
