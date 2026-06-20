@@ -430,3 +430,23 @@
 {"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-20 01:05:50"}
 {"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-20 01:06:03"}
 {"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-20 01:06:58"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-20 01:23:06"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-06-20 01:23:06"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-06-20 01:23:07"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-06-20 01:23:07"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-06-20 01:23:11"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-06-20 01:23:12"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-20 01:25:01"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-06-20 01:25:01"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-06-20 01:25:02"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-06-20 01:25:02"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-06-20 01:25:04"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-06-20 01:25:04"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-20 01:25:53"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-20 01:26:06"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-06-20 01:26:06"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-06-20 01:26:07"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-06-20 01:26:07"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-06-20 01:26:10"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-06-20 01:26:10"}
+{"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-06-20 01:27:29"}

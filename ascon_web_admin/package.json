@@ -2,6 +2,7 @@
   "name": "ascon_web_admin",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "dependencies": {
     "@react-oauth/google": "^0.13.4",
     "axios": "^1.13.2",
@@ -20,10 +21,14 @@
     "serve": "vite preview"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.5.0",
     "cross-env": "^10.1.0",
     "eslint": "^8.57.0",
     "eslint-plugin-react": "^7.34.1",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.1",
     "vite": "^6.0.0"
   }
 }

@@ -23,13 +23,12 @@ function NavBar({ activeTab, setActiveTab, onLogout, userRole }) {
     setIsDesktopDropdownOpen(false);
   };
 
+  // ✅ 1. Removed "documents" and "registrations" from this array
   const navItems = [
     { id: "users", label: "Users", icon: "👥" },
     { id: "events", label: "Events", icon: "📅" },
     { id: "programmes", label: "Programmes", icon: "🎓" },
     { id: "updates", label: "Social Feed", icon: "💬" },
-    { id: "registrations", label: "Registrations", icon: "📋" },
-    { id: "documents", label: "Documents", icon: "📄" },
   ];
 
   const activeItem =
@@ -121,6 +120,7 @@ function NavBar({ activeTab, setActiveTab, onLogout, userRole }) {
           </span>
           <span className="label">Users</span>
         </div>
+
         <div
           className="bottom-nav-item"
           onClick={() => handleTabClick("events")}
@@ -132,6 +132,7 @@ function NavBar({ activeTab, setActiveTab, onLogout, userRole }) {
           </span>
           <span className="label">Events</span>
         </div>
+
         <div className="fab-container">
           <div className="fab-notch"></div>
           <button
@@ -142,6 +143,7 @@ function NavBar({ activeTab, setActiveTab, onLogout, userRole }) {
           </button>
           <span className="fab-label">Menu</span>
         </div>
+
         <div
           className="bottom-nav-item"
           onClick={() => handleTabClick("programmes")}
@@ -155,18 +157,18 @@ function NavBar({ activeTab, setActiveTab, onLogout, userRole }) {
           </span>
           <span className="label">Progs</span>
         </div>
+
+        {/* ✅ 2. Replaced "Registrations" with "Social Feed" to keep the mobile UI balanced */}
         <div
           className="bottom-nav-item"
-          onClick={() => handleTabClick("registrations")}
+          onClick={() => handleTabClick("updates")}
         >
           <span
-            className={`icon ${
-              activeTab === "registrations" ? "active-icon" : ""
-            }`}
+            className={`icon ${activeTab === "updates" ? "active-icon" : ""}`}
           >
-            📋
+            💬
           </span>
-          <span className="label">Regs</span>
+          <span className="label">Feed</span>
         </div>
       </div>
     </>

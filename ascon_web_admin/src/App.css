@@ -483,125 +483,138 @@ label {
 }
 
 /* =========================================
-   📱 8. MOBILE RESPONSIVENESS (General)
+   📱 8. MOBILE RESPONSIVENESS (Refined Layout)
    ========================================= */
 @media screen and (max-width: 768px) {
+  /* 1. Main Container Adjustments */
   .admin-container {
-    padding: 15px;
-    padding-bottom: 90px !important; /* Space for mobile nav */
+    padding: 15px !important;
+    padding-top: 20px !important;
+    padding-bottom: 110px !important; /* Critical: Clears the mobile bottom nav bar */
+    width: 100%;
+    box-sizing: border-box;
     overflow-x: hidden;
   }
 
+  /* 2. Compact Headers */
   .admin-title {
-    font-size: 22px;
+    font-size: 20px;
+    text-align: center;
+    margin-bottom: 5px;
+  }
+  .admin-subtitle {
+    font-size: 13px;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .header-centered .admin-logo-main {
+    width: 80px; /* Smaller logo on mobile */
+    margin-bottom: 10px;
   }
 
-  /* --- STAT CARDS GRID FIX --- */
+  /* 3. Perfect 2x2 Stat Cards Grid */
   .stats-grid-mobile {
     display: grid !important;
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 12px !important;
     width: 100%;
+    margin-top: 10px !important;
   }
-
   .stat-card {
     margin: 0 !important;
-    padding: 15px !important;
+    padding: 15px 10px !important;
     min-width: 0 !important;
+    text-align: center;
+    border-radius: 12px;
+  }
+  .stat-card h3 {
+    font-size: 12px !important; /* Prevent text wrapping */
+  }
+  .stat-card .value {
+    font-size: 22px !important;
   }
 
-  /* --- SCROLLABLE TABLES --- */
+  /* 4. Strict Horizontal Scrolling for Tables */
   .table-responsive {
     display: block;
     width: 100%;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     margin-bottom: 20px;
-    border: 1px solid #eee;
     background: var(--card-bg);
-    border-radius: 8px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-color);
   }
 
   .admin-table {
-    min-width: 800px; /* Force scroll */
+    min-width: 700px; /* Forces horizontal scroll so columns don't squish */
     width: 100%;
     display: table !important;
-    box-shadow: none;
     margin-top: 0;
-  }
-
-  .admin-table thead {
-    display: table-header-group !important;
-  }
-
-  .admin-table thead th {
-    color: #ffffff !important;
-    background-color: #1b5e3a; /* Ensure green background stays */
-  }
-
-  .admin-table tbody {
-    display: table-row-group !important;
-  }
-
-  .admin-table tr {
-    display: table-row !important;
+    font-size: 13px; /* Slightly smaller text for mobile tables */
   }
 
   .admin-table th,
   .admin-table td {
-    display: table-cell !important;
-    white-space: nowrap;
+    padding: 12px 10px !important;
+    white-space: nowrap; /* Prevents text from breaking into multiple lines */
   }
 
-  /* --- COMPACT BUTTONS MOBILE --- */
-  .approve-btn,
+  /* 5. Mobile Table Action Buttons (Stacked neatly) */
+  .action-buttons-container {
+    display: flex;
+    flex-direction: column; /* Stack buttons vertically on mobile */
+    gap: 8px;
+    align-items: stretch;
+  }
+  .compact-btn,
   .delete-btn {
-    width: auto;
-    min-width: 60px;
-    padding: 6px 12px;
-    font-size: 12px;
+    width: 100%;
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+    text-align: center;
   }
 }
 
 /* =========================================
-   🚀 9. MOBILE COMPACT FORMS (NEW ADDITION)
+   🚀 9. MOBILE COMPACT FORMS 
    ========================================= */
 @media (max-width: 768px) {
-  /* 1. Compact the Main Form Card */
   .form-card {
-    padding: 15px !important;
+    padding: 20px 15px !important;
     margin-bottom: 20px;
+    border-radius: 12px;
   }
 
   .form-card h3 {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     margin-bottom: 15px;
+    text-align: center;
   }
 
-  /* 2. Stack Inputs Vertically & Tighten Gaps */
   .form-grid {
     display: grid;
     grid-template-columns: 1fr !important; /* Force single column */
-    gap: 10px !important;
+    gap: 12px !important;
     margin-bottom: 10px;
   }
 
-  /* 3. Compact Input Fields */
   .form-grid input,
   .form-grid select {
-    padding: 10px;
+    padding: 12px 10px;
     font-size: 14px;
+    border-radius: 8px;
   }
 
-  /* 4. Compact Textarea */
   .form-card textarea {
-    min-height: 80px;
-    padding: 10px;
+    min-height: 100px;
+    padding: 12px 10px;
     font-size: 14px;
     margin-bottom: 15px;
+    border-radius: 8px;
   }
 
-  /* 5. Full Width Buttons for easier tapping */
   .form-actions {
     flex-direction: column;
     gap: 10px;
@@ -609,7 +622,9 @@ label {
 
   .form-actions button {
     width: 100%;
-    padding: 12px;
+    padding: 14px;
+    font-size: 14px;
+    border-radius: 8px;
   }
 }
 

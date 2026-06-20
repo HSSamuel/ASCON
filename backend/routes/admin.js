@@ -7,7 +7,6 @@ const UserSettings = require("../models/UserSettings");
 // Related Models for Cascade Delete
 const Message = require("../models/Message");
 const Notification = require("../models/Notification");
-const ProgrammeInterest = require("../models/ProgrammeInterest");
 
 const Event = require("../models/Event");
 const Programme = require("../models/Programme");
@@ -122,7 +121,6 @@ router.get("/stats", verifyAdmin, async (req, res) => {
         UserAuth.countDocuments(),
         Event.countDocuments(),
         Programme.countDocuments(),
-        ProgrammeInterest.countDocuments(),
         UpdatePost.countDocuments(),
       ]);
 
@@ -236,9 +234,6 @@ router.delete("/users/:id", verifyEditor, async (req, res) => {
       // 2. Communications
       Notification.deleteMany({ userId: userId }),
       Message.deleteMany({ sender: userId }),
-
-      // 3. Registrations
-      ProgrammeInterest.deleteMany({ userId: userId }),
     ]);
 
     res.json({
