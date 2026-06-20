@@ -159,19 +159,19 @@ Flexible(
   child: GestureDetector(
     onTap: () => _viewProfile(context, author),
     child: Text(author['fullName'] ?? 'Alumni Member', 
-        style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 15, color: textColor), 
-        overflow: TextOverflow.ellipsis),
+    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: textColor), 
+    overflow: TextOverflow.ellipsis),
   ),
 ),
 const SizedBox(width: 6), // Slightly wider gap
-Text("• $timeAgo", style: GoogleFonts.lato(fontSize: 12, color: Colors.grey[500])),
+Text("• $timeAgo", style: TextStyle(fontSize: 12, color: Colors.grey[500])),
                         ],
                       ),
                       // Bumping job to 12, adding a tiny top padding so it doesn't crowd the name
 if (author['jobTitle'] != null)
   Padding(
     padding: const EdgeInsets.only(top: 2.0),
-    child: Text(author['jobTitle'], style: GoogleFonts.lato(color: subTextColor, fontSize: 12, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
+    child: Text(author['jobTitle'], style: TextStyle(color: subTextColor, fontSize: 12, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
   ),
                     ],
                   ),
@@ -215,16 +215,18 @@ MarkdownBody(
   selectable: true, 
   data: cleanText,
   styleSheet: MarkdownStyleSheet(
-    p: GoogleFonts.lato(fontSize: 14.5, color: textColor, height: 1.45, letterSpacing: 0.2),
-    listBullet: GoogleFonts.lato(color: textColor, fontSize: 14.5, height: 1.45),
-    a: GoogleFonts.lato(color: Colors.blue, decoration: TextDecoration.underline, fontWeight: FontWeight.w500),
+    // Replaced GoogleFonts.lato with standard TextStyle for the native look
+    // Reduced fontSize from 14.5 to 13.5 and removed the letter spacing
+    p: TextStyle(fontSize: 13.5, color: textColor, height: 1.4, letterSpacing: 0),
+    listBullet: TextStyle(color: textColor, fontSize: 13.5, height: 1.4),
+    a: TextStyle(color: Colors.blue, decoration: TextDecoration.underline, fontWeight: FontWeight.w500, fontSize: 13.5),
   ),
-                          onTapLink: (text, href, title) async {
-                            if (href != null && await canLaunchUrl(Uri.parse(href))) {
-                              await launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
-                            }
-                          },
-                        ),
+  onTapLink: (text, href, title) async {
+    if (href != null && await canLaunchUrl(Uri.parse(href))) {
+      await launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
+    }
+  },
+),
                       ),
                     if (extractedUrl != null)
                       Padding(

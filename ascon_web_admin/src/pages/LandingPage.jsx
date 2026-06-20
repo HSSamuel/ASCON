@@ -3,21 +3,22 @@ import { Link } from "react-router-dom";
 
 const LandingPage = () => {
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex flex-col overflow-x-hidden">
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex flex-col overflow-x-hidden w-full max-w-[100vw]">
       {/* 1. NAVIGATION BAR */}
       <nav className="flex justify-between items-center px-4 md:px-8 py-4 md:py-6 max-w-7xl mx-auto w-full">
-        <div className="flex items-center space-x-2 md:space-x-3 shrink-0">
+        {/* Replaced shrink-0 with min-w-0 to allow title to truncate gracefully */}
+        <div className="flex items-center space-x-2 md:space-x-3 min-w-0">
           <img
             src="/logo.png"
             alt="ASCON Logo"
-            className="w-8 h-8 md:w-10 md:h-10 object-contain"
+            className="w-8 h-8 md:w-10 md:h-10 object-contain shrink-0"
           />
-          <span className="text-base sm:text-lg md:text-xl font-bold tracking-tight text-green-900 whitespace-nowrap">
+          <span className="text-base sm:text-lg md:text-xl font-bold tracking-tight text-green-900 truncate">
             ASCON Alumni
           </span>
         </div>
 
-        <div className="space-x-4 hidden md:flex">
+        <div className="space-x-4 hidden md:flex shrink-0 ml-4">
           <a
             href="#features"
             className="text-gray-600 hover:text-green-800 font-medium"
@@ -34,7 +35,7 @@ const LandingPage = () => {
 
         <Link
           to="/login"
-          className="bg-white text-green-900 border border-gray-200 px-4 py-1.5 md:px-6 md:py-2 text-sm md:text-base rounded-full font-bold hover:bg-gray-50 transition shadow-sm whitespace-nowrap shrink-0 ml-2"
+          className="bg-white text-green-900 border border-gray-200 px-4 py-1.5 md:px-6 md:py-2 text-sm md:text-base rounded-full font-bold hover:bg-gray-50 transition shadow-sm whitespace-nowrap shrink-0 ml-2 md:ml-4"
         >
           Web Login
         </Link>
@@ -42,20 +43,20 @@ const LandingPage = () => {
 
       {/* 2. HERO SECTION */}
       <header className="max-w-7xl mx-auto px-6 md:px-8 py-12 md:py-24 flex flex-col-reverse md:flex-row items-center w-full flex-grow">
-        {/* ✅ Hero Text: Centered on mobile, left-aligned on desktop */}
-        <div className="md:w-1/2 mt-12 md:mt-0 pr-0 md:pr-12 text-center md:text-left flex flex-col items-center md:items-start">
-          <h1 className="text-4xl md:text-6xl font-extrabold text-gray-900 leading-tight mb-6">
+        {/* Hero Text */}
+        <div className="md:w-1/2 mt-12 md:mt-0 pr-0 md:pr-12 text-center md:text-left flex flex-col items-center md:items-start w-full">
+          <h1 className="text-4xl md:text-6xl font-extrabold text-gray-900 leading-tight mb-6 break-words">
             Your ASCON Network, <br className="hidden md:block" />
             <span className="text-green-800">Anywhere.</span>
           </h1>
-          <p className="text-lg text-gray-600 mb-8 leading-relaxed max-w-md md:max-w-full">
+          <p className="text-lg text-gray-600 mb-8 leading-relaxed max-w-md md:max-w-full px-2 md:px-0">
             Connect with fellow graduates, find mentorship opportunities, and
             stay updated with the latest from the Administrative Staff College
             of Nigeria.
           </p>
 
-          {/* ✅ Buttons: Centered on mobile, left-aligned on desktop */}
-          <div className="flex flex-col sm:flex-row justify-center md:justify-start items-center space-y-4 sm:space-y-0 sm:space-x-4 w-full sm:w-auto">
+          {/* Buttons */}
+          <div className="flex flex-col sm:flex-row justify-center md:justify-start items-center space-y-4 sm:space-y-0 sm:space-x-4 w-full sm:w-auto px-2 sm:px-0">
             {/* Google Play Button */}
             <a
               href="https://play.google.com/store/apps/details?id=com.ascon.app"
@@ -106,9 +107,11 @@ const LandingPage = () => {
           </div>
         </div>
 
+        {/* Hero Image */}
         <div className="md:w-1/2 flex justify-center relative mt-8 md:mt-0 w-full">
-          <div className="absolute w-64 h-64 md:w-72 md:h-72 bg-green-200 rounded-full mix-blend-multiply filter blur-2xl opacity-70 animate-pulse"></div>
-          {/* Replace this div with an actual screenshot image of your Flutter App when ready */}
+          {/* Prevent the blur from pushing boundaries */}
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 md:w-72 md:h-72 bg-green-200 rounded-full mix-blend-multiply filter blur-2xl opacity-70 animate-pulse pointer-events-none"></div>
+
           <div className="w-56 h-[450px] md:w-64 md:h-[500px] bg-gray-100 rounded-[2.5rem] md:rounded-[3rem] shadow-2xl border-8 border-gray-900 z-10 overflow-hidden relative">
             <img
               src="/app-screenshot.png"
@@ -120,9 +123,9 @@ const LandingPage = () => {
       </header>
 
       {/* 3. FEATURES SECTION */}
-      <section id="features" className="bg-white py-16 md:py-20">
+      <section id="features" className="bg-white py-16 md:py-20 w-full">
         <div className="max-w-7xl mx-auto px-6 md:px-8">
-          <h2 className="text-2xl md:text-3xl font-bold text-center mb-12 md:mb-16 text-gray-900">
+          <h2 className="text-2xl md:text-3xl font-bold text-center mb-12 md:mb-16 text-gray-900 max-w-md mx-auto md:max-w-full leading-tight">
             Everything you need to stay connected
           </h2>
 
@@ -168,7 +171,7 @@ const LandingPage = () => {
       </section>
 
       {/* 4. FOOTER */}
-      <footer className="bg-gray-900 text-white py-10 md:py-12 mt-auto">
+      <footer className="bg-gray-900 text-white py-10 md:py-12 mt-auto w-full">
         <div className="max-w-7xl mx-auto px-6 md:px-8 text-center md:text-left flex flex-col md:flex-row justify-between items-center">
           <div className="mb-6 md:mb-0 flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-3">
             <img
