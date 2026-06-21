@@ -3,11 +3,12 @@ import { Link } from "react-router-dom";
 
 const LandingPage = () => {
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex flex-col overflow-x-hidden w-full max-w-[100vw]">
-      {/* 1. NAVIGATION BAR */}
-      <nav className="flex justify-between items-center px-4 md:px-8 py-4 md:py-6 max-w-7xl mx-auto w-full">
-        {/* Replaced shrink-0 with min-w-0 to allow title to truncate gracefully */}
-        <div className="flex items-center space-x-2 md:space-x-3 min-w-0">
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex flex-col overflow-x-hidden">
+      {/* 1. NAVIGATION BAR - Adjusted to fix the right-side cutoff */}
+      {/* Switched to 'gap' instead of 'space-x' to prevent horizontal overflow on tiny screens */}
+      <nav className="flex justify-between items-center px-4 md:px-8 py-4 md:py-6 max-w-7xl mx-auto w-full box-border">
+        {/* Logo and Title */}
+        <div className="flex items-center gap-2 md:gap-3 min-w-0 pr-2">
           <img
             src="/logo.png"
             alt="ASCON Logo"
@@ -18,51 +19,56 @@ const LandingPage = () => {
           </span>
         </div>
 
-        <div className="space-x-4 hidden md:flex shrink-0 ml-4">
-          <a
-            href="#features"
-            className="text-gray-600 hover:text-green-800 font-medium"
+        {/* Links and Button */}
+        <div className="flex items-center shrink-0 gap-4 md:gap-6">
+          <div className="hidden md:flex gap-4">
+            <a
+              href="#features"
+              className="text-gray-600 hover:text-green-800 font-medium"
+            >
+              Features
+            </a>
+            <a
+              href="#community"
+              className="text-gray-600 hover:text-green-800 font-medium"
+            >
+              Community
+            </a>
+          </div>
+          <Link
+            to="/login"
+            className="bg-white text-green-900 border border-gray-200 px-4 py-1.5 md:px-6 md:py-2 text-sm md:text-base rounded-full font-bold hover:bg-gray-50 transition shadow-sm whitespace-nowrap"
           >
-            Features
-          </a>
-          <a
-            href="#community"
-            className="text-gray-600 hover:text-green-800 font-medium"
-          >
-            Community
-          </a>
+            Web Login
+          </Link>
         </div>
-
-        <Link
-          to="/login"
-          className="bg-white text-green-900 border border-gray-200 px-4 py-1.5 md:px-6 md:py-2 text-sm md:text-base rounded-full font-bold hover:bg-gray-50 transition shadow-sm whitespace-nowrap shrink-0 ml-2 md:ml-4"
-        >
-          Web Login
-        </Link>
       </nav>
 
       {/* 2. HERO SECTION */}
-      <header className="max-w-7xl mx-auto px-6 md:px-8 py-12 md:py-24 flex flex-col-reverse md:flex-row items-center w-full flex-grow">
+      <header className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-10 md:py-24 flex flex-col-reverse md:flex-row items-center justify-center w-full flex-grow gap-12 md:gap-8 box-border">
         {/* Hero Text */}
-        <div className="md:w-1/2 mt-12 md:mt-0 pr-0 md:pr-12 text-center md:text-left flex flex-col items-center md:items-start w-full">
-          <h1 className="text-4xl md:text-6xl font-extrabold text-gray-900 leading-tight mb-6 break-words">
-            Your ASCON Network, <br className="hidden md:block" />
+        <div className="w-full md:w-1/2 flex flex-col items-center md:items-start text-center md:text-left">
+          {/* Adjusted: Added explicit <br /> tags to force exactly 3 lines */}
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-gray-900 leading-tight mb-6 w-full break-words">
+            Your ASCON <br />
+            Network, <br />
             <span className="text-green-800">Anywhere.</span>
           </h1>
-          <p className="text-lg text-gray-600 mb-8 leading-relaxed max-w-md md:max-w-full px-2 md:px-0">
+
+          <p className="text-base sm:text-lg text-gray-600 mb-8 leading-relaxed max-w-md md:max-w-xl">
             Connect with fellow graduates, find mentorship opportunities, and
             stay updated with the latest from the Administrative Staff College
             of Nigeria.
           </p>
 
-          {/* Buttons */}
-          <div className="flex flex-col sm:flex-row justify-center md:justify-start items-center space-y-4 sm:space-y-0 sm:space-x-4 w-full sm:w-auto px-2 sm:px-0">
+          {/* App Store Buttons */}
+          <div className="flex flex-col sm:flex-row justify-center md:justify-start items-center gap-4 w-full">
             {/* Google Play Button */}
             <a
               href="https://play.google.com/store/apps/details?id=com.ascon.app"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center space-x-3 bg-black text-white px-6 py-3 rounded-xl hover:bg-gray-800 transition border border-gray-800 shadow-lg w-full sm:w-auto cursor-pointer"
+              className="flex items-center justify-center space-x-3 bg-black text-white px-4 py-3 rounded-xl hover:bg-gray-800 transition border border-gray-800 shadow-lg w-56 sm:w-auto cursor-pointer"
             >
               <svg
                 className="w-7 h-7"
@@ -86,7 +92,7 @@ const LandingPage = () => {
               href="https://apps.apple.com/app/idYOUR_APP_ID"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center space-x-3 bg-black text-white px-6 py-3 rounded-xl hover:bg-gray-800 transition border border-gray-800 shadow-lg w-full sm:w-auto cursor-pointer"
+              className="flex items-center justify-center space-x-3 bg-black text-white px-4 py-3 rounded-xl hover:bg-gray-800 transition border border-gray-800 shadow-lg w-56 sm:w-auto cursor-pointer"
             >
               <svg
                 className="w-8 h-8 pb-1"
@@ -108,11 +114,12 @@ const LandingPage = () => {
         </div>
 
         {/* Hero Image */}
-        <div className="md:w-1/2 flex justify-center relative mt-8 md:mt-0 w-full">
-          {/* Prevent the blur from pushing boundaries */}
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 md:w-72 md:h-72 bg-green-200 rounded-full mix-blend-multiply filter blur-2xl opacity-70 animate-pulse pointer-events-none"></div>
+        <div className="w-full md:w-1/2 flex justify-center items-center relative">
+          {/* Glow Effect */}
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 md:w-80 md:h-80 bg-green-200 rounded-full mix-blend-multiply filter blur-3xl opacity-60 animate-pulse pointer-events-none"></div>
 
-          <div className="w-56 h-[450px] md:w-64 md:h-[500px] bg-gray-100 rounded-[2.5rem] md:rounded-[3rem] shadow-2xl border-8 border-gray-900 z-10 overflow-hidden relative">
+          {/* Phone Mockup Frame */}
+          <div className="relative w-[230px] h-[460px] md:w-64 md:h-[500px] bg-gray-100 rounded-[2.5rem] md:rounded-[3rem] shadow-2xl border-8 border-gray-900 z-10 overflow-hidden shrink-0">
             <img
               src="/app-screenshot.png"
               alt="ASCON Alumni App Interface"
