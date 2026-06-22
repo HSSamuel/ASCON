@@ -28,9 +28,11 @@ final ProviderContainer providerContainer = ProviderContainer();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(); 
-
+  // ✅ FIX: The web check must happen before Firebase.initializeApp()
+  // Otherwise, Flutter Web crashes trying to initialize standard background isolates without options
   if (kIsWeb) return;
+  
+  await Firebase.initializeApp(); 
 
   final type = message.data['type'];
   if (type == 'incoming_call' || type == 'call_offer' || type == 'video_call') {
@@ -190,7 +192,6 @@ void main() async {
   }, (error, stack) {
     // ✅ 4. The final safety net for uncaught zone errors
     debugPrint("🔴 Uncaught Zone Error: $error\n$stack");
-    // ✅ FIX: Added kIsWeb check so this doesn't crash Flutter Web!
     if (!kIsWeb) {
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     }
@@ -238,13 +239,25 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
+    // ✅ FIX: Check if the user is currently on the call screen
+    final currentPath = appRouter.routerDelegate.currentConfiguration.uri.path;
+    final isInCall = currentPath.contains('/call');
+
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      SocketService().disconnect(); 
-      debugPrint("App Backgrounded: Socket Disconnected");
+      if (!isInCall) {
+        SocketService().disconnect(); 
+        debugPrint("App Backgrounded: Socket Disconnected");
+      } else {
+        debugPrint("App Backgrounded: Kept socket alive for active call signaling.");
+      }
     } 
     else if (state == AppLifecycleState.resumed) {
       debugPrint("App Resumed: Reconnecting Socket and Syncing Data");
-      SocketService().initSocket(); 
+      
+      // ✅ FIX: Corrected null-safety precedence issue
+      if (SocketService().socket?.connected != true) {
+        SocketService().initSocket(); 
+      }
       
       AuthService().isSessionValid().then((isValid) {
         if (isValid) {

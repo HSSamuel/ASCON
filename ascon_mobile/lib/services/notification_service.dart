@@ -1,5 +1,4 @@
 import 'dart:convert';
-// ✅ FIX: Corrected the firebase_messaging import path
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
@@ -181,11 +180,10 @@ class NotificationService {
       return;
     }
 
-// ✅ ALUMNI ROUTING
+    // ✅ ALUMNI ROUTING
     if (route == 'alumni_detail' || type == 'new_alumni' || type == 'new_match') {
       appRouter.push('/alumni_detail', extra: {
         'alumniData': {
-          // ✅ FIX: Map the specific keys sent by the cron job
           '_id': data['profileId'] ?? id?.toString() ?? '', 
           'userId': data['userId'] ?? id?.toString() ?? '', 
           'fullName': data['fullName'] ?? 'New Alumni',
@@ -265,6 +263,19 @@ class NotificationService {
 
   Future<void> syncToken({String? tokenOverride, bool retry = false}) async {
     try {
+      // ✅ FIX 1: Prevent "PushManager" errors by verifying authorization status first
+      NotificationSettings settings = await _firebaseMessaging.getNotificationSettings();
+      if (settings.authorizationStatus == AuthorizationStatus.denied || 
+          settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+        debugPrint("FCM Sync skipped: Notifications not authorized by user yet.");
+        return;
+      }
+
+      // ✅ FIX 2: Give the web browser a moment to register the Service Worker
+      if (kIsWeb && tokenOverride == null) {
+        await Future.delayed(const Duration(milliseconds: 1500));
+      }
+
       String? fcmToken = tokenOverride ?? (kIsWeb 
           ? await _firebaseMessaging.getToken(vapidKey: dotenv.env['FIREBASE_VAPID_KEY']) 
           : await _firebaseMessaging.getToken());
@@ -285,7 +296,8 @@ class NotificationService {
         ).timeout(const Duration(seconds: 10));
       }
     } catch (e) {
-      debugPrint("Sync Error: $e");
+      // Silently catch the error so it doesn't print red in your console during app boot
+      debugPrint("FCM Token Sync Error (Safe to ignore if on Web): $e");
     }
   }
 }
