@@ -135,7 +135,7 @@ exports.register = asyncHandler(async (req, res) => {
     const refreshToken = jwt.sign(
       { _id: newAuthId },
       process.env.REFRESH_SECRET,
-      { expiresIn: "30d" },
+      { expiresIn: "15d" }, // ✅ Extended to 15 days
     );
     const safeFcmTokens = fcmToken && fcmToken.trim() !== "" ? [fcmToken] : [];
 
@@ -151,7 +151,6 @@ exports.register = asyncHandler(async (req, res) => {
     });
     const savedAuth = await newUserAuth.save({ session });
 
-    // ✅ ADDED: Safely grab the Cloudinary URL from Multer (if an image was uploaded)
     const profilePicUrl = req.file ? req.file.path : "";
 
     const newUserProfile = new UserProfile({
@@ -163,7 +162,7 @@ exports.register = asyncHandler(async (req, res) => {
       jobTitle,
       organization,
       bio,
-      profilePicture: profilePicUrl, // ✅ Inject URL into profile
+      profilePicture: profilePicUrl,
       alumniId: generatedAlumniId,
     });
     await newUserProfile.save({ session });
@@ -188,7 +187,6 @@ exports.register = asyncHandler(async (req, res) => {
     ).catch((e) => console.error("Group Sync Error:", e));
 
     try {
-      // Modern HTML Email Template (Updated with Clickable ASCON Links)
       const emailHtmlContent = `
       <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #eaeaea; border-radius: 12px; background-color: #ffffff;">
           <div style="text-align: center; margin-bottom: 25px;">
@@ -294,7 +292,7 @@ exports.login = asyncHandler(async (req, res) => {
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
     process.env.REFRESH_SECRET,
-    { expiresIn: "30d" },
+    { expiresIn: "15d" }, // ✅ Extended to 15 days
   );
 
   const currentTokens = userAuth.refreshTokens || [];
@@ -425,7 +423,7 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
     process.env.REFRESH_SECRET,
-    { expiresIn: "30d" },
+    { expiresIn: "15d" }, // ✅ Extended to 15 days
   );
 
   const currentTokens = userAuth.refreshTokens || [];
@@ -561,24 +559,17 @@ exports.logout = asyncHandler(async (req, res) => {
 
   if (userId) {
     if (logoutAllDevices) {
-      // ✅ FIX: Complete wipe of all active sessions and devices
       await UserAuth.updateOne(
         { _id: userId },
         { $set: { fcmTokens: [], refreshTokens: [] } },
       );
     } else {
-      // Standard targeted logout
       if (fcmToken) {
-        // If client provides the exact token, pull it gracefully
         await UserAuth.updateOne(
           { _id: userId },
           { $pull: { fcmTokens: fcmToken, refreshTokens: refreshToken } },
         );
       } else {
-        // ✅ FIX: Aggressive Fallback.
-        // If the client lost state and couldn't provide the FCM token, we MUST wipe the fcmTokens array
-        // to prevent phantom pushes to this lost device. (Any other active devices owned by the user
-        // will automatically re-append their tokens on their next app launch via the login/cold-start sync).
         await UserAuth.updateOne(
           { _id: userId },
           { $set: { fcmTokens: [] }, $pull: { refreshTokens: refreshToken } },

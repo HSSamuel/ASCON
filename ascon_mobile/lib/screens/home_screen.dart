@@ -486,7 +486,7 @@ class DashboardView extends ConsumerStatefulWidget {
 class _DashboardViewState extends ConsumerState<DashboardView> with WidgetsBindingObserver {
   bool _isAdmin = false; 
   String? _currentUserId;
-  bool _notificationsEnabled = true; // Assume true until checked to prevent layout flash
+  bool _notificationsEnabled = true;
 
   @override
   void initState() {
@@ -698,7 +698,6 @@ class _DashboardViewState extends ConsumerState<DashboardView> with WidgetsBindi
                     child: Text(dashboardState.errorMessage!, style: const TextStyle(color: Colors.white, fontSize: 12), textAlign: TextAlign.center),
                   ),
 
-                // Persistent Notification Banner Check
                 if (!_notificationsEnabled && !kIsWeb) 
                   _buildNotificationBanner(),
 

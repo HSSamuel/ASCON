@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
-import 'package:flutter/material.dart'; // ✅ Added for SnackBar
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -9,10 +9,12 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:jwt_decoder/jwt_decoder.dart'; 
+
 import '../config.dart';
 import '../config/storage_config.dart';
 import '../main.dart';
-import '../router.dart'; // ✅ Provides rootNavigatorKey
+import '../router.dart'; 
 import 'api_client.dart';
 import 'notification_service.dart';
 import 'socket_service.dart';
@@ -45,6 +47,7 @@ class AuthService {
 
   AuthService._internal() {
     _api.onTokenRefresh = _performSilentRefresh;
+    _api.onGetToken = getToken; 
   }
 
   void performGlobalSilentSync() {
@@ -109,11 +112,11 @@ class AuthService {
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
+      _api.isLoggingOut = false; 
       final String? fcmToken = await _getFcmToken();
       final result = await _api.post('/api/auth/login', {'email': email, 'password': password, 'fcmToken': fcmToken ?? ""}, requiresAuth: false);
 
       if (result['success']) {
-        _api.isLoggingOut = false; // ✅ Reset Flag
         final data = result['data'];
         await _saveUserSession(data['token'], data['user'], refreshToken: data['refreshToken']);
         await NotificationService().init();
@@ -130,6 +133,7 @@ class AuthService {
     String? googleToken, Uint8List? profileImageBytes, String? profileImageName,     
   }) async {
     try {
+      _api.isLoggingOut = false; 
       final String? fcmToken = await _getFcmToken();
       var uri = Uri.parse('${AppConfig.baseUrl}/api/auth/register');
       var request = http.MultipartRequest('POST', uri);
@@ -163,7 +167,6 @@ class AuthService {
       };
 
       if (formattedResult['success'] && formattedResult['data']['token'] != null) {
-        _api.isLoggingOut = false; // ✅ Reset Flag
         final data = formattedResult['data'];
         await _saveUserSession(data['token'], data['user'] ?? {}, refreshToken: data['refreshToken']);
         await NotificationService().init();
@@ -175,6 +178,7 @@ class AuthService {
 
   Future<Map<String, dynamic>> googleLogin(String? idToken) async {
     try {
+      _api.isLoggingOut = false; 
       String? tokenToSend = idToken;
       if (tokenToSend == null && !kIsWeb) {
         try {
@@ -190,7 +194,6 @@ class AuthService {
       final result = await _api.post('/api/auth/google', {'token': tokenToSend, 'fcmToken': fcmToken ?? ""}, requiresAuth: false);
 
       if (result['success']) {
-        _api.isLoggingOut = false; // ✅ Reset Flag
         final data = result['data'];
         await _saveUserSession(data['token'], data['user'], refreshToken: data['refreshToken']);
         await NotificationService().init();
@@ -235,15 +238,21 @@ class AuthService {
 
     try {
       String? originalRefreshToken = await _secureStorage.read(key: 'refresh_token');
+      
+      // ✅ FIX: If there is no refresh token in storage, the user is ALREADY logged out 
+      // (or in the middle of manually logging out). Do NOT trigger a "Session Expired" popup.
       if (originalRefreshToken == null || originalRefreshToken.isEmpty) {
-        await logout(isSessionExpired: true); // ✅ Passing explicit flag
         _refreshCompleter?.complete(null);
         return null;
       }
 
       final result = await http.post(
         Uri.parse('${AppConfig.baseUrl}/api/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (_tokenCache != null) 'auth-token': _tokenCache!,
+          if (_tokenCache != null) 'Authorization': 'Bearer $_tokenCache',
+        },
         body: jsonEncode({'refreshToken': originalRefreshToken}),
       ).timeout(AppConfig.apiTimeout);
 
@@ -291,7 +300,9 @@ class AuthService {
         }
 
         debugPrint("🚫 Token explicitly rejected by server (${result.statusCode}). Forcing logout.");
-        await logout(isSessionExpired: true); // ✅ Explicitly tag as expired
+        
+        // ✅ FIX: Only trigger the red popup if the user is NOT actively logging out
+        await logout(isSessionExpired: !_api.isLoggingOut); 
         _refreshCompleter?.complete(null);
         return null;
       } 
@@ -334,9 +345,15 @@ class AuthService {
 
   Future<String?> getToken() async {
     try {
-      if (_tokenCache != null && _tokenCache!.isNotEmpty) return _tokenCache;
+      // ✅ FIX: Instantly kill token requests if the app is transitioning to the login screen.
+      // This stops any delayed chat or badge syncs from initiating network calls after logout.
+      if (_api.isLoggingOut) return null;
 
-      String? token = await _secureStorage.read(key: 'auth_token');
+      String? token = _tokenCache;
+
+      if (token == null || token.isEmpty) {
+        token = await _secureStorage.read(key: 'auth_token');
+      }
 
       if (token == null) {
         final prefs = await SharedPreferences.getInstance();
@@ -351,6 +368,20 @@ class AuthService {
 
       _tokenCache = token;
       _api.setAuthToken(token);
+
+      try {
+        bool isExpired = JwtDecoder.isExpired(token);
+        Duration remainingTime = JwtDecoder.getRemainingTime(token);
+
+        if (isExpired || remainingTime.inMinutes < 2) {
+          debugPrint("🔄 Token expiring soon. Proactively refreshing...");
+          String? newToken = await _performSilentRefresh();
+          if (newToken != null) return newToken;
+        }
+      } catch (e) {
+        debugPrint("⚠️ Proactive refresh failed, falling back to cached token.");
+      }
+
       return token;
     } catch (e) { return null; }
   }
@@ -365,10 +396,14 @@ class AuthService {
     return userData != null ? jsonDecode(userData) : null;
   }
 
-  // ✅ FIX: Added isSessionExpired parameter to control the global SnackBar
   Future<void> logout({bool clearBiometrics = false, bool isSessionExpired = false}) async {
     
-    _api.isLoggingOut = true; // 🔕 Instantly mute all pending background requests
+    // ✅ FIX: The Ultimate Shield.
+    // If we are already logging out, absolutely ignore any duplicate attempts to log out
+    // or requests to show the Session Expired popup.
+    if (_api.isLoggingOut && isSessionExpired) return; 
+
+    _api.isLoggingOut = true; 
 
     try {
       await Future(() async {
@@ -419,7 +454,6 @@ class AuthService {
     
     appRouter.go('/login');
 
-    // ✅ FIX: Show exactly ONE SnackBar globally upon being booted, erasing any existing ones.
     if (isSessionExpired && rootNavigatorKey.currentContext != null) {
       ScaffoldMessenger.of(rootNavigatorKey.currentContext!).clearSnackBars();
       ScaffoldMessenger.of(rootNavigatorKey.currentContext!).showSnackBar(

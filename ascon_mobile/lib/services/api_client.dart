@@ -25,11 +25,13 @@ class ApiClient {
   
   String? _memoryToken;
   Future<String?> Function()? onTokenRefresh;
+  
+  // ✅ ADDED: Allows ApiClient to request the token dynamically so AuthService can proactively check expiry
+  Future<String?> Function()? onGetToken; 
 
   bool _isRefreshing = false;
   Completer<String?>? _refreshCompleter;
   
-  // ✅ ADDED: Global mute flag to silence concurrent API errors during logout
   bool isLoggingOut = false; 
 
   void setAuthToken(String token) {
@@ -41,7 +43,14 @@ class ApiClient {
   }
 
   Future<Map<String, String>> _getSecureHeaders() async {
-    final token = _memoryToken ?? await _secureStorage.read(key: 'auth_token');
+    String? token;
+    
+    // ✅ Always ask AuthService for the token first (this triggers the proactive expiry check)
+    if (onGetToken != null) {
+      token = await onGetToken!();
+    } else {
+      token = _memoryToken ?? await _secureStorage.read(key: 'auth_token');
+    }
     
     if (token != null) {
       _memoryToken = token;
@@ -50,6 +59,7 @@ class ApiClient {
     return {
       'Content-Type': 'application/json',
       if (token != null) 'auth-token': token, 
+      if (token != null) 'Authorization': 'Bearer $token', // Redundant safety for backend middlewares
     };
   }
 
@@ -84,8 +94,6 @@ class ApiClient {
   }
 
   Future<dynamic> _request(Future<http.Response> Function() req) async {
-    // ✅ FIX: If the app is actively transitioning to logout, hang the future silently.
-    // This stops ViewModels from catching exceptions and spawning infinite snackbars.
     if (isLoggingOut) return await Completer<dynamic>().future;
 
     try {
@@ -119,7 +127,6 @@ class ApiClient {
         }
       }
 
-      // ✅ FIX: Check again after refresh attempt. 
       if (isLoggingOut) return await Completer<dynamic>().future;
 
       return _processResponse(response);

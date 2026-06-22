@@ -23,7 +23,7 @@ class UpdatesScreen extends ConsumerWidget {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          const UpdatesSliverAppBar(), // ✅ Extracted
+          const UpdatesSliverAppBar(), 
         ],
         body: RefreshIndicator(
           onRefresh: () async {
@@ -33,10 +33,8 @@ class UpdatesScreen extends ConsumerWidget {
           color: const Color(0xFFD4AF37),
           child: CustomScrollView(
             slivers: [
-              // ✅ Extracted Highlights
               HighlightsSection(highlights: updateState.highlights, isSearching: false),
 
-              // ✅ Media Filter Badge
               if (updateState.showMediaOnly)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -52,7 +50,6 @@ class UpdatesScreen extends ConsumerWidget {
                   ),
                 ),
 
-              // ✅ Dynamic Feed State
               if (updateState.isLoading)
                 const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
               else if (updateState.filteredPosts.isEmpty)
@@ -69,17 +66,24 @@ class UpdatesScreen extends ConsumerWidget {
                   ),
                 ),
                 
-              const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+              // ✅ FIX: Increased padding to 120 so the final post clears both the bottom nav AND the raised FAB
+              const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
             ],
           ),
         ),
       ),
       
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'updates_fab_tag',
-        onPressed: () => CreatePostSheet.show(context), // ✅ Extracted
-        backgroundColor: const Color(0xFFD4AF37),
-        child: const Icon(Icons.edit, color: Colors.white),
+      // ✅ FIX: Force the location and add padding to clear the Bottom Navigation Bar
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 40.0), 
+        child: FloatingActionButton(
+          heroTag: 'updates_fab_tag',
+          onPressed: () => CreatePostSheet.show(context),
+          backgroundColor: const Color(0xFFD4AF37),
+          elevation: 4, // Added subtle elevation for better depth
+          child: const Icon(Icons.edit, color: Colors.white),
+        ),
       ),
     );
   }
