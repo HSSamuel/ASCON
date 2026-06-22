@@ -14,7 +14,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'services/notification_service.dart';
 import 'services/socket_service.dart'; 
-import 'services/auth_service.dart'; // ✅ ADDED: AuthService import for global sync
+import 'services/auth_service.dart'; 
 import 'config/theme.dart';
 import 'config.dart';
 import 'router.dart'; 
@@ -128,6 +128,7 @@ void main() async {
     defaultDebugPrint(message, wrapWidth: wrapWidth);
   };
 
+  // ✅ 1. Wrap the entire app in a Zoned Guard to catch asynchronous Dart errors
   await runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     
@@ -158,7 +159,8 @@ void main() async {
       }
     }
 
-FlutterError.onError = (errorDetails) {
+    // ✅ 2. Catch UI Rendering & Framework Errors
+    FlutterError.onError = (errorDetails) {
       if (!kIsWeb) {
         FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
       } else {
@@ -166,6 +168,7 @@ FlutterError.onError = (errorDetails) {
       }
     };
     
+    // ✅ 3. Catch platform/engine errors (Flutter 3.3+)
     PlatformDispatcher.instance.onError = (error, stack) {
       if (!kIsWeb) {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
@@ -185,8 +188,12 @@ FlutterError.onError = (errorDetails) {
     ));
     
   }, (error, stack) {
+    // ✅ 4. The final safety net for uncaught zone errors
     debugPrint("🔴 Uncaught Zone Error: $error\n$stack");
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    // ✅ FIX: Added kIsWeb check so this doesn't crash Flutter Web!
+    if (!kIsWeb) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    }
   });
 }
 
@@ -204,10 +211,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this); 
+    _setupInteractedMessage(); // ✅ Ensure notifications clicked from terminated state are handled
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
     
-    // ✅ ADDED: Trigger sync immediately when app starts
     _triggerColdStartSync();
   }
 
@@ -218,7 +225,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ✅ ADDED: Verify session and fetch fresh data from backend
   Future<void> _triggerColdStartSync() async {
     if (await AuthService().isSessionValid()) {
       AuthService().performGlobalSilentSync();
@@ -228,7 +234,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   // =======================================================================
   // 🚀 GLOBAL LIFECYCLE SYNCING
   // =======================================================================
- @override
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
@@ -240,7 +246,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       debugPrint("App Resumed: Reconnecting Socket and Syncing Data");
       SocketService().initSocket(); 
       
-      // ✅ FIX: Only trigger the massive background sync if the user is actually logged in!
       AuthService().isSessionValid().then((isValid) {
         if (isValid) {
           AuthService().performGlobalSilentSync();
