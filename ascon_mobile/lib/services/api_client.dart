@@ -6,7 +6,6 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config.dart';
 import '../config/storage_config.dart';
 
-/// ✅ Custom Exception for typed error handling in ViewModels
 class ApiException implements Exception {
   final String message;
   final int? statusCode;
@@ -24,30 +23,26 @@ class ApiClient {
 
   final _secureStorage = StorageConfig.storage;
   
-  // ✅ 1. Add an in-memory token variable
   String? _memoryToken;
-
   Future<String?> Function()? onTokenRefresh;
 
-  // ✅ ADDED: Mutex lock variables for Token Refresh Race Conditions
   bool _isRefreshing = false;
   Completer<String?>? _refreshCompleter;
+  
+  // ✅ ADDED: Global mute flag to silence concurrent API errors during logout
+  bool isLoggingOut = false; 
 
-  // ✅ 2. Implement the setter to catch the token from AuthService
   void setAuthToken(String token) {
     _memoryToken = token;
   }
 
-  // ✅ 3. Clear memory on logout
   void clearAuthToken() {
     _memoryToken = null;
   }
 
   Future<Map<String, String>> _getSecureHeaders() async {
-    // ✅ 4. Use the memory token first. Only hit SecureStorage if memory is empty.
     final token = _memoryToken ?? await _secureStorage.read(key: 'auth_token');
     
-    // Cache it immediately so subsequent requests don't hit SecureStorage
     if (token != null) {
       _memoryToken = token;
     }
@@ -60,124 +55,97 @@ class ApiClient {
 
   Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> body, {bool requiresAuth = true}) async {
     final response = await _request(() async {
-      final headers = requiresAuth 
-          ? await _getSecureHeaders() 
-          : {'Content-Type': 'application/json'}; 
-          
-      return http.post(
-        Uri.parse('${AppConfig.baseUrl}$endpoint'),
-        headers: headers,
-        body: jsonEncode(body),
-      );
+      final headers = requiresAuth ? await _getSecureHeaders() : {'Content-Type': 'application/json'}; 
+      return http.post(Uri.parse('${AppConfig.baseUrl}$endpoint'), headers: headers, body: jsonEncode(body));
     });
     return response as Map<String, dynamic>; 
   }
 
   Future<Map<String, dynamic>> put(String endpoint, Map<String, dynamic> body, {bool requiresAuth = true}) async {
     final response = await _request(() async {
-      final headers = requiresAuth 
-          ? await _getSecureHeaders() 
-          : {'Content-Type': 'application/json'};
-          
-      return http.put(
-        Uri.parse('${AppConfig.baseUrl}$endpoint'),
-        headers: headers,
-        body: jsonEncode(body),
-      );
+      final headers = requiresAuth ? await _getSecureHeaders() : {'Content-Type': 'application/json'};
+      return http.put(Uri.parse('${AppConfig.baseUrl}$endpoint'), headers: headers, body: jsonEncode(body));
     });
     return response as Map<String, dynamic>;
   }
 
   Future<dynamic> get(String endpoint, {bool requiresAuth = true}) async {
     return _request(() async {
-      final headers = requiresAuth 
-          ? await _getSecureHeaders() 
-          : {'Content-Type': 'application/json'};
-          
-      return http.get(
-        Uri.parse('${AppConfig.baseUrl}$endpoint'),
-        headers: headers,
-      );
+      final headers = requiresAuth ? await _getSecureHeaders() : {'Content-Type': 'application/json'};
+      return http.get(Uri.parse('${AppConfig.baseUrl}$endpoint'), headers: headers);
     });
   }
 
   Future<dynamic> delete(String endpoint, {bool requiresAuth = true}) async {
     return _request(() async {
-      final headers = requiresAuth 
-          ? await _getSecureHeaders() 
-          : {'Content-Type': 'application/json'};
-          
-      return http.delete(
-        Uri.parse('${AppConfig.baseUrl}$endpoint'),
-        headers: headers,
-      );
+      final headers = requiresAuth ? await _getSecureHeaders() : {'Content-Type': 'application/json'};
+      return http.delete(Uri.parse('${AppConfig.baseUrl}$endpoint'), headers: headers);
     });
   }
 
   Future<dynamic> _request(Future<http.Response> Function() req) async {
+    // ✅ FIX: If the app is actively transitioning to logout, hang the future silently.
+    // This stops ViewModels from catching exceptions and spawning infinite snackbars.
+    if (isLoggingOut) return await Completer<dynamic>().future;
+
     try {
       var response = await req().timeout(AppConfig.apiTimeout);
 
       if (response.statusCode == 401 && onTokenRefresh != null) {
         String? newToken;
 
-        // ✅ FIX: Lock the refresh process so concurrent 401s don't spam the server
         if (!_isRefreshing) {
           _isRefreshing = true;
           _refreshCompleter = Completer<String?>();
-          print("🔄 401 Detected. Attempting Refresh (Locked)...");
-
           try {
             newToken = await onTokenRefresh!();
             _refreshCompleter!.complete(newToken);
           } catch (e) {
             _refreshCompleter!.completeError(e);
+            throw ApiException('Network unstable while verifying session. Please check your connection.', statusCode: 0);
           } finally {
-            _isRefreshing = false; // Release lock
+            _isRefreshing = false; 
           }
         } else {
-          print("⏳ Refresh in progress. Waiting for lock to release...");
-          // Wait for the active refresh to finish
-          newToken = await _refreshCompleter!.future; 
+          try {
+            newToken = await _refreshCompleter!.future; 
+          } catch (e) {
+            throw ApiException('Network unstable while verifying session. Please check your connection.', statusCode: 0);
+          }
         }
 
         if (newToken != null) {
-          print("✅ Token Refreshed. Retrying Request...");
           response = await req().timeout(AppConfig.apiTimeout); 
         }
       }
 
+      // ✅ FIX: Check again after refresh attempt. 
+      if (isLoggingOut) return await Completer<dynamic>().future;
+
       return _processResponse(response);
     } on TimeoutException {
+      if (isLoggingOut) return await Completer<dynamic>().future;
       throw ApiException('Server is taking too long to respond. Please check your connection.', statusCode: 408);
     } on SocketException {
+      if (isLoggingOut) return await Completer<dynamic>().future;
       throw ApiException('No internet connection. Please try again later.', statusCode: 0);
     } on ApiException {
+      if (isLoggingOut) return await Completer<dynamic>().future;
       rethrow; 
     } catch (e) {
+      if (isLoggingOut) return await Completer<dynamic>().future;
       throw ApiException('Connection error: $e');
     }
   }
 
   dynamic _processResponse(http.Response response) {
     dynamic body;
-    try {
-      body = jsonDecode(response.body);
-    } catch (e) {
-      body = {}; 
-    }
+    try { body = jsonDecode(response.body); } catch (e) { body = {}; }
     
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      return {
-        'success': true,
-        'statusCode': response.statusCode,
-        'data': body
-      };
+      return {'success': true, 'statusCode': response.statusCode, 'data': body};
     } else {
-      final errorMessage = (body is Map && body['message'] != null) 
-          ? body['message'] 
-          : 'Request failed with status ${response.statusCode}';
-      
+      final errorMessage = (body is Map && body['message'] != null) ? body['message'] : 'Request failed with status ${response.statusCode}';
       throw ApiException(errorMessage, statusCode: response.statusCode);
     }
   }

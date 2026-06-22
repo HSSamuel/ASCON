@@ -188,7 +188,7 @@ exports.register = asyncHandler(async (req, res) => {
     ).catch((e) => console.error("Group Sync Error:", e));
 
     try {
-      // Modern HTML Email Template (Updated)
+      // Modern HTML Email Template (Updated with Clickable ASCON Links)
       const emailHtmlContent = `
       <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #eaeaea; border-radius: 12px; background-color: #ffffff;">
           <div style="text-align: center; margin-bottom: 25px;">
@@ -198,7 +198,7 @@ exports.register = asyncHandler(async (req, res) => {
           <h3 style="color: #333333; font-size: 20px;">Hello ${fullName},</h3>
           
           <p style="color: #555555; line-height: 1.6; font-size: 15px;">
-              Welcome to the official digital platform for the <strong>Administrative Staff College of Nigeria (ASCON)</strong> Alumni! We are thrilled to have you join our growing network of esteemed professionals and public administrators.
+              Welcome to the official digital platform for the <a href="https://ascon.gov.ng" target="_blank" style="color: #1B5E3A; text-decoration: none;"><strong>Administrative Staff College of Nigeria (ASCON)</strong></a> Alumni! We are thrilled to have you join our growing network of esteemed professionals and public administrators.
           </p>
 
           <div style="background-color: #F4F7F6; padding: 20px; border-radius: 8px; text-align: center; margin: 25px 0; border: 1px solid #e0e6ed;">
@@ -219,7 +219,7 @@ exports.register = asyncHandler(async (req, res) => {
 
           <p style="color: #888888; font-size: 12px; border-top: 1px solid #eaeaea; padding-top: 20px; text-align: center; line-height: 1.5; margin-top: 35px;">
               If you have any questions or need assistance, please contact the administrative team at <a href="mailto:info@ascon.gov.ng" style="color: #1B5E3A; text-decoration: none; font-weight: bold;">info@ascon.gov.ng</a>.<br>
-              &copy; ${new Date().getFullYear()} Administrative Staff College of Nigeria (ASCON).
+              &copy; ${new Date().getFullYear()} <a href="https://ascon.gov.ng" target="_blank" style="color: #888888; text-decoration: none;">Administrative Staff College of Nigeria (ASCON)</a>.
           </p>
       </div>
       `;
@@ -564,7 +564,7 @@ exports.logout = asyncHandler(async (req, res) => {
       // ✅ FIX: Complete wipe of all active sessions and devices
       await UserAuth.updateOne(
         { _id: userId },
-        { $set: { fcmTokens: [], refreshTokens: [] } }
+        { $set: { fcmTokens: [], refreshTokens: [] } },
       );
     } else {
       // Standard targeted logout
@@ -572,20 +572,20 @@ exports.logout = asyncHandler(async (req, res) => {
         // If client provides the exact token, pull it gracefully
         await UserAuth.updateOne(
           { _id: userId },
-          { $pull: { fcmTokens: fcmToken, refreshTokens: refreshToken } }
+          { $pull: { fcmTokens: fcmToken, refreshTokens: refreshToken } },
         );
       } else {
-        // ✅ FIX: Aggressive Fallback. 
+        // ✅ FIX: Aggressive Fallback.
         // If the client lost state and couldn't provide the FCM token, we MUST wipe the fcmTokens array
-        // to prevent phantom pushes to this lost device. (Any other active devices owned by the user 
+        // to prevent phantom pushes to this lost device. (Any other active devices owned by the user
         // will automatically re-append their tokens on their next app launch via the login/cold-start sync).
         await UserAuth.updateOne(
           { _id: userId },
-          { $set: { fcmTokens: [] }, $pull: { refreshTokens: refreshToken } }
+          { $set: { fcmTokens: [] }, $pull: { refreshTokens: refreshToken } },
         );
       }
     }
   }
-  
+
   res.status(200).json({ message: "Logged out successfully" });
 });

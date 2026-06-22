@@ -22,7 +22,7 @@ const userAuthSchema = new mongoose.Schema(
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date, default: Date.now },
 
-    // ✅ ADDED: Cap at 5 tokens to manage devices securely
+    // ✅ Arrays explicitly capped at 5 tokens to manage devices securely
     fcmTokens: { type: [String], default: [] }, // Push notification tokens
     refreshTokens: { type: [String], default: [] }, // Security: Active Refresh Tokens
   },
@@ -30,5 +30,26 @@ const userAuthSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+// =========================================================================
+// ✅ FIX: Removed the 'next' parameter.
+// This prevents Mongoose from incorrectly binding the transaction { session }
+// options to 'next', totally eliminating the "next is not a function" error.
+// =========================================================================
+userAuthSchema.pre("save", function () {
+  const MAX_TOKENS = 5;
+
+  // Cap fcmTokens: The authController unshifts to position 0,
+  // so the first 5 elements are the newest ones.
+  if (this.fcmTokens && this.fcmTokens.length > MAX_TOKENS) {
+    this.fcmTokens = this.fcmTokens.slice(0, MAX_TOKENS);
+  }
+
+  // Cap refreshTokens: The authController appends to the end,
+  // so the last 5 elements are the newest ones.
+  if (this.refreshTokens && this.refreshTokens.length > MAX_TOKENS) {
+    this.refreshTokens = this.refreshTokens.slice(-MAX_TOKENS);
+  }
+});
 
 module.exports = mongoose.model("UserAuth", userAuthSchema);
