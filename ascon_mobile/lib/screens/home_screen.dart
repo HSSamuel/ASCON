@@ -24,6 +24,7 @@ import 'welcome_dialog.dart';
 import '../widgets/chapter_card.dart';     
 import '../widgets/digital_id_card.dart';
 import '../widgets/shimmer_utils.dart';
+import '../widgets/updates/sheets/create_post_sheet.dart'; // ✅ Imported the Create Post Sheet
 
 import '../viewmodels/dashboard_view_model.dart';
 import '../viewmodels/events_view_model.dart'; 
@@ -291,7 +292,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         showBadge: badgeState.hasUnreadMessages || badgeState.missedCallsCount > 0,
                         badgeCount: (badgeState.unreadMessageCount ?? 0) + badgeState.missedCallsCount,
                       ),
-                      _buildNavItem(label: "Updates", icon: Icons.dynamic_feed, activeIcon: Icons.dynamic_feed, index: 2, color: primaryColor, currentIndex: uiIndex),
+                      // ✅ Changed icon to Icons.add for the Updates Plus tab
+                      _buildNavItem(label: "Updates", icon: Icons.add, activeIcon: Icons.add, index: 2, color: primaryColor, currentIndex: uiIndex),
                       _buildNavItem(label: "Directory", icon: Icons.list_alt, activeIcon: Icons.list, index: 3, color: primaryColor, currentIndex: uiIndex),
                       _buildNavItem(
                         label: "Profile", 
@@ -383,7 +385,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           Icon(
             isSelected ? activeIcon : icon, 
             color: isUpdates ? Colors.white : (isSelected ? color : Colors.grey[400]), 
-            size: isUpdates ? 22 : 20
+            size: isUpdates ? 24 : 20 // Made the plus slightly larger
           ),
           
         if (showBadge)
@@ -446,6 +448,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         if (index == 1) { 
           ref.read(chatProvider.notifier).loadConversations(); 
         }
+        
+        // ✅ NEW LOGIC: If the user is already on the Updates tab and clicks it again, show the post creation sheet!
+        if (index == 2 && currentIndex == 2) {
+          CreatePostSheet.show(context);
+          return;
+        }
+
         _goBranch(index);
       },
       borderRadius: BorderRadius.circular(30),
