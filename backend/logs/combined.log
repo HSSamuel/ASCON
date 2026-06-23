@@ -495,3 +495,22 @@
 {"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-06-23 04:36:08"}
 {"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-06-23 04:36:09"}
 {"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-06-23 04:45:26"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-06-23 05:49:08"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-23 05:49:08"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-06-23 05:49:08"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-06-23 05:49:12"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-06-23 05:49:16"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-06-23 05:49:17"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-06-23 07:04:49"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-23 07:04:49"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-06-23 07:04:49"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-06-23 07:04:51"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-06-23 07:04:54"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-06-23 07:04:54"}
+{"level":"info","message":"🔥 Firebase Admin Initialized Successfully","timestamp":"2026-06-23 07:05:08"}
+{"level":"info","message":"🌍 Mode: production","timestamp":"2026-06-23 07:05:08"}
+{"level":"info","message":"✅ Environment Variables Validated","timestamp":"2026-06-23 07:05:08"}
+{"level":"info","message":"⏳ Attempting to connect to MongoDB...","timestamp":"2026-06-23 07:05:09"}
+{"level":"info","message":"✅ Connected to MongoDB Successfully!","timestamp":"2026-06-23 07:05:12"}
+{"level":"info","message":"🚀 Server is running on port 5000","timestamp":"2026-06-23 07:05:12"}
+{"level":"info","message":"\n⚠️ SIGINT received. Initiating graceful shutdown...","timestamp":"2026-06-23 07:05:22"}

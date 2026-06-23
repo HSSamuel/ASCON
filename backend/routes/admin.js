@@ -14,10 +14,8 @@ const UpdatePost = require("../models/UpdatePost");
 const jwt = require("jsonwebtoken");
 const Joi = require("joi");
 
-// ✅ NEW: Enhanced Cloudinary Config for Admin Uploads
 const multer = require("multer");
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
-// We access the 'cloudinary' object attached to your config export
 const cloudinary = require("../config/cloudinary").cloudinary;
 
 // Configure Storage for Admin Content (Events/Programmes)
@@ -25,7 +23,7 @@ const adminStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: "ascon_content", // Clean separate folder
-    allowed_formats: ["jpg", "png", "jpeg", "webp"], // Added WebP support
+    allowed_formats: ["jpg", "png", "jpeg", "webp"],
   },
 });
 const adminUpload = multer({ storage: adminStorage });
@@ -128,7 +126,7 @@ router.get("/stats", verifyAdmin, async (req, res) => {
       users: userCount,
       events: eventCount,
       programmes: progCount,
-      totalRegistrations: progInterestCount, // Only counting Programme Interests now
+      totalRegistrations: progInterestCount,
       updates: updatesCount,
     });
   } catch (err) {
@@ -220,18 +218,14 @@ router.get("/users", verifyAdmin, async (req, res) => {
   }
 });
 
-// ✅ UPDATED: Cascade Delete fixed
 router.delete("/users/:id", verifyEditor, async (req, res) => {
   try {
     const userId = req.params.id;
 
     await Promise.all([
-      // 1. Core Auth & Profile
       UserAuth.findByIdAndDelete(userId),
       UserProfile.findOneAndDelete({ userId: userId }),
       UserSettings.findOneAndDelete({ userId: userId }),
-
-      // 2. Communications
       Notification.deleteMany({ userId: userId }),
       Message.deleteMany({ sender: userId }),
     ]);
@@ -321,21 +315,19 @@ router.put("/users/:id/verify", verifyEditor, async (req, res) => {
 // 2. EVENT MANAGEMENT
 // ==========================================
 
-// ✅ UPDATED: Create Event (Multiple Images)
 router.post(
   "/events",
   verifyEditor,
-  adminUpload.array("images", 5), // Allow up to 5 images
+  adminUpload.array("images", 5),
   async (req, res) => {
     try {
       const { title, description, date, time, type, location } = req.body;
 
-      // Extract Image URLs
       let imageUrls = [];
       if (req.files && req.files.length > 0) {
         imageUrls = req.files.map((file) => file.path);
       } else if (req.body.image) {
-        imageUrls = [req.body.image]; // Fallback
+        imageUrls = [req.body.image];
       }
 
       const mainImage = imageUrls.length > 0 ? imageUrls[0] : "";
@@ -346,8 +338,8 @@ router.post(
         date: date ? new Date(date) : undefined,
         time,
         type: type || "News",
-        image: mainImage, // For backward compatibility with mobile app
-        images: imageUrls, // New array of images
+        image: mainImage,
+        images: imageUrls,
         location,
       });
       await newEvent.save();
@@ -366,7 +358,6 @@ router.post(
   },
 );
 
-// ✅ UPDATED: Update Event (Multiple Images)
 router.put(
   "/events/:id",
   verifyEditor,
@@ -375,10 +366,9 @@ router.put(
     try {
       const updateData = { ...req.body };
 
-      // Update images only if new files are uploaded
       if (req.files && req.files.length > 0) {
         updateData.images = req.files.map((file) => file.path);
-        updateData.image = updateData.images[0]; // Update fallback image
+        updateData.image = updateData.images[0];
       }
 
       const updatedEvent = await Event.findByIdAndUpdate(
@@ -442,9 +432,8 @@ router.get("/programmes/:id", async (req, res) => {
 router.post(
   "/programmes",
   verifyEditor,
-  adminUpload.single("image"),
+  adminUpload.array("images", 5), // ✅ FIXED: Expects an array named "images"
   async (req, res) => {
-    // Validate text fields
     const { error } = programmeSchema.validate(req.body);
     if (error)
       return res.status(400).json({ message: error.details[0].message });
@@ -457,10 +446,15 @@ router.post(
       if (exists)
         return res.status(400).json({ message: "Programme already exists." });
 
-      let imageUrl = "";
-      if (req.file) {
-        imageUrl = req.file.path; // Cloudinary URL
+      // ✅ Extract Image URLs
+      let imageUrls = [];
+      if (req.files && req.files.length > 0) {
+        imageUrls = req.files.map((file) => file.path);
+      } else if (req.body.image) {
+        imageUrls = [req.body.image];
       }
+
+      const mainImage = imageUrls.length > 0 ? imageUrls[0] : "";
 
       const newProg = new Programme({
         title,
@@ -468,7 +462,8 @@ router.post(
         location,
         duration,
         fee,
-        image: imageUrl, // Save image URL
+        image: mainImage,
+        images: imageUrls,
       });
       await newProg.save();
 
@@ -488,7 +483,7 @@ router.post(
 router.put(
   "/programmes/:id",
   verifyEditor,
-  adminUpload.single("image"),
+  adminUpload.array("images", 5), // ✅ FIXED: Expects an array named "images"
   async (req, res) => {
     const { error } = programmeSchema.validate(req.body);
     if (error)
@@ -498,8 +493,11 @@ router.put(
       const updateData = { ...req.body };
 
       // ✅ Update image only if new file
-      if (req.file) {
-        updateData.image = req.file.path;
+      if (req.files && req.files.length > 0) {
+        updateData.images = req.files.map((file) => file.path);
+        updateData.image = updateData.images[0];
+      } else if (req.body.image) {
+        updateData.image = req.body.image;
       }
 
       const updatedProg = await Programme.findByIdAndUpdate(
@@ -556,7 +554,6 @@ router.put("/users/:id/fix-id", verifyEditor, async (req, res) => {
   }
 });
 
-// ✅ NEW: Toggle Poll Creator Permission
 router.put("/users/:id/toggle-poll-admin", verifyEditor, async (req, res) => {
   try {
     const userAuth = await UserAuth.findById(req.params.id);

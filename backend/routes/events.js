@@ -8,12 +8,9 @@ const verifyAdmin = require("./verifyAdmin");
 // ✅ NEW: Image Upload Dependencies
 const multer = require("multer");
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
-
-// ❌ OLD (CAUSED ERROR): const cloudinary = require("../config/cloudinary");
-// ✅ FIXED: Extract the actual cloudinary object attached to the export
 const cloudinary = require("../config/cloudinary").cloudinary;
 
-// ✅ NEW: Configure Cloudinary Storage
+// ✅ Configure Cloudinary Storage
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
@@ -27,7 +24,6 @@ const parser = multer({ storage: storage });
 // ==========================================
 // 🛡️ VALIDATION SCHEMA
 // ==========================================
-// Note: We validate the text fields here. The image is handled by Multer.
 const eventSchema = Joi.object({
   title: Joi.string().min(5).required(),
   description: Joi.string().min(10).required(),
@@ -48,7 +44,6 @@ const eventSchema = Joi.object({
       "Induction",
     )
     .default("News"),
-  // Image validation is optional in Joi since we handle it via req.file or req.body string
   image: Joi.string().optional().allow(""),
 });
 
@@ -79,19 +74,28 @@ router.get("/", async (req, res) => {
 });
 
 // @route   POST /api/events
-// @desc    Create a new Event (Supports File Upload)
+// @desc    Create a new Event (Supports Multiple File Upload)
 router.post(
   "/",
   verifyToken,
   verifyAdmin,
-  parser.single("image"),
+  parser.array("images", 5), // ✅ FIXED: Expects an array named "images"
   async (req, res) => {
-    // Validate text fields
     const { error } = eventSchema.validate(req.body);
     if (error)
       return res.status(400).json({ message: error.details[0].message });
 
     try {
+      // ✅ Extract Image URLs
+      let imageUrls = [];
+      if (req.files && req.files.length > 0) {
+        imageUrls = req.files.map((file) => file.path);
+      } else if (req.body.image) {
+        imageUrls = [req.body.image]; // Fallback
+      }
+
+      const mainImage = imageUrls.length > 0 ? imageUrls[0] : "";
+
       const event = new Event({
         title: req.body.title,
         description: req.body.description,
@@ -99,8 +103,8 @@ router.post(
         time: req.body.time,
         location: req.body.location,
         type: req.body.type,
-        // ✅ USE UPLOADED FILE IF PRESENT, ELSE FALLBACK TO STRING URL
-        image: req.file ? req.file.path : req.body.image,
+        image: mainImage,
+        images: imageUrls,
       });
 
       const savedEvent = await event.save();
@@ -123,19 +127,18 @@ router.post(
 );
 
 // @route   PUT /api/events/:id
-// @desc    Update an existing Event (Supports File Upload)
+// @desc    Update an existing Event (Supports Multiple File Upload)
 router.put(
   "/:id",
   verifyToken,
   verifyAdmin,
-  parser.single("image"),
+  parser.array("images", 5), // ✅ FIXED: Expects an array named "images"
   async (req, res) => {
     const { error } = eventSchema.validate(req.body);
     if (error)
       return res.status(400).json({ message: error.details[0].message });
 
     try {
-      // Construct the update object
       const updateData = {
         title: req.body.title,
         description: req.body.description,
@@ -145,11 +148,11 @@ router.put(
         type: req.body.type,
       };
 
-      // ✅ Only update image if a new file is uploaded
-      if (req.file) {
-        updateData.image = req.file.path;
+      // ✅ Update images if new files are uploaded
+      if (req.files && req.files.length > 0) {
+        updateData.images = req.files.map((file) => file.path);
+        updateData.image = updateData.images[0];
       } else if (req.body.image) {
-        // Allow updating image string manually if needed, or keeping existing
         updateData.image = req.body.image;
       }
 

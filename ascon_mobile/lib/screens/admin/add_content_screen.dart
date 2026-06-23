@@ -32,16 +32,13 @@ class _AddContentScreenState extends ConsumerState<AddContentScreen> {
   final TextEditingController _durationController = TextEditingController();
   final TextEditingController _feeController = TextEditingController();
 
-  // ✅ UPDATED: List to hold multiple images
   List<XFile> _selectedImages = [];
   final ImagePicker _picker = ImagePicker();
   bool _isSubmitting = false;
 
-  // ✅ UPDATED: Use pickMultiImage for multiple selections
   Future<void> _pickImages() async {
     final List<XFile> images = await _picker.pickMultiImage();
     if (images.isNotEmpty) {
-      // Optional: limit to 5 images
       setState(() {
         _selectedImages = images.length > 5 ? images.sublist(0, 5) : images;
       });
@@ -51,7 +48,6 @@ class _AddContentScreenState extends ConsumerState<AddContentScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     
-    // ✅ Check against the new list
     if (_selectedImages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one image")));
       return;
@@ -62,7 +58,7 @@ class _AddContentScreenState extends ConsumerState<AddContentScreen> {
     String? error;
     
     if (widget.type == 'Event') {
-      // ✅ Create Event (Pass images list)
+      // Create Event
       error = await ref.read(eventsProvider.notifier).createEvent(
         title: _titleController.text,
         description: _descController.text,
@@ -70,28 +66,26 @@ class _AddContentScreenState extends ConsumerState<AddContentScreen> {
         time: _timeController.text,
         type: _eventType,
         date: _selectedDate ?? DateTime.now(),
-        images: _selectedImages, // Updated parameter
+        images: _selectedImages, 
       );
     } else {
-      // ✅ Create Programme (Pass images list)
+      // Create Programme
       error = await ref.read(eventsProvider.notifier).createProgramme(
         title: _titleController.text,
         description: _descController.text,
         location: _locationController.text,
         duration: _durationController.text,
         fee: _feeController.text,
-        images: _selectedImages, // Updated parameter
+        images: _selectedImages, 
       );
-      
-      // Refresh Dashboard to show new programme
-      if (error == null) {
-        ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
-      }
     }
 
     setState(() => _isSubmitting = false);
 
     if (error == null) {
+      // ✅ FIX: Force the Dashboard (Home Screen) to refresh immediately for BOTH Events and Programmes
+      ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${widget.type} Created Successfully!")));
         Navigator.pop(context);
@@ -146,7 +140,6 @@ class _AddContentScreenState extends ConsumerState<AddContentScreen> {
                                     kIsWeb 
                                       ? Image.network(_selectedImages[index].path, height: 160, width: 140, fit: BoxFit.cover)
                                       : Image.file(File(_selectedImages[index].path), height: 160, width: 140, fit: BoxFit.cover),
-                                    // Remove individual image button
                                     Positioned(
                                       top: 4,
                                       right: 4,

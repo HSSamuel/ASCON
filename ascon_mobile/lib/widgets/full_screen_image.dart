@@ -22,17 +22,72 @@ class FullScreenImage extends StatefulWidget {
   State<FullScreenImage> createState() => _FullScreenImageState();
 }
 
-class _FullScreenImageState extends State<FullScreenImage> {
+// ✅ FIX: Added SingleTickerProviderStateMixin for the Double-tap Zoom Animation
+class _FullScreenImageState extends State<FullScreenImage> with SingleTickerProviderStateMixin {
   bool _showUI = true;
+
+  late TransformationController _transformationController;
+  late AnimationController _animationController;
+  Animation<Matrix4>? _animation;
+  TapDownDetails? _doubleTapDetails;
+
+  @override
+  void initState() {
+    super.initState();
+    _transformationController = TransformationController();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    )..addListener(() {
+        _transformationController.value = _animation!.value;
+      });
+  }
 
   @override
   void dispose() {
     // Ensure the system status bar comes back when the user leaves this screen
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _transformationController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
-  // ✅ PRO FEATURE: Intelligent Share Logic
+  // ✅ Register double-tap location to zoom into the specific tapped point
+  void _handleDoubleTapDown(TapDownDetails details) {
+    _doubleTapDetails = details;
+  }
+
+  void _handleDoubleTap() {
+    if (_animationController.isAnimating) return;
+
+    final position = _doubleTapDetails?.localPosition;
+    if (position == null) return;
+
+    if (_transformationController.value != Matrix4.identity()) {
+      // Zoom out to normal
+      _animation = Matrix4Tween(
+        begin: _transformationController.value,
+        end: Matrix4.identity(),
+      ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+      _animationController.forward(from: 0);
+    } else {
+      // Zoom in to tap location
+      const double scale = 3.0; // Level of zoom 
+      final x = -position.dx * (scale - 1);
+      final y = -position.dy * (scale - 1);
+      
+      final zoomedMatrix = Matrix4.identity()
+        ..translate(x, y)
+        ..scale(scale);
+
+      _animation = Matrix4Tween(
+        begin: _transformationController.value,
+        end: zoomedMatrix,
+      ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+      _animationController.forward(from: 0);
+    }
+  }
+
   Future<void> _shareImage(BuildContext context) async {
     if (widget.imageUrl == null || widget.imageUrl!.isEmpty) return;
 
@@ -40,13 +95,10 @@ class _FullScreenImageState extends State<FullScreenImage> {
       Uint8List? bytes;
       String fileName = "shared_image.png";
 
-      // Case A: It's a Network URL -> Download it
       if (widget.imageUrl!.startsWith('http')) {
         final response = await http.get(Uri.parse(widget.imageUrl!));
         bytes = response.bodyBytes;
-      } 
-      // Case B: It's Base64 -> Decode it
-      else {
+      } else {
         String cleanBase64 = widget.imageUrl!;
         if (cleanBase64.contains(',')) {
           cleanBase64 = cleanBase64.split(',').last;
@@ -59,7 +111,6 @@ class _FullScreenImageState extends State<FullScreenImage> {
         final file = File('${tempDir.path}/$fileName');
         await file.writeAsBytes(bytes);
 
-        // Share the file using native share sheet
         await Share.shareXFiles([XFile(file.path)], text: 'Check out this image!');
       }
     } catch (e) {
@@ -81,7 +132,6 @@ class _FullScreenImageState extends State<FullScreenImage> {
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true, 
       
-      // ✅ Smoothly fade the AppBar in and out
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: AnimatedOpacity(
@@ -108,11 +158,10 @@ class _FullScreenImageState extends State<FullScreenImage> {
       ),
       
       body: GestureDetector(
-        // ✅ Tap anywhere to hide the UI and expand the image to the ultimate borders
         onTap: () {
           setState(() {
             _showUI = !_showUI;
-            // Also hide the phone's battery/time status bar for true full screen
+            // Hide the phone's battery/time status bar for true full screen
             if (_showUI) {
               SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
             } else {
@@ -120,19 +169,20 @@ class _FullScreenImageState extends State<FullScreenImage> {
             }
           });
         },
-        // Note: Removed the custom onDoubleTap -> pop. 
-        // This allows the InteractiveViewer to natively handle Double-Tap to Zoom!
+        // ✅ Add Double-Tap Handlers
+        onDoubleTapDown: _handleDoubleTapDown,
+        onDoubleTap: _handleDoubleTap,
         child: SizedBox.expand(
           child: InteractiveViewer(
+            transformationController: _transformationController,
             panEnabled: true,
-            // ✅ FIX: Zero boundary margin keeps the image from flying off into the black abyss when panned
-            boundaryMargin: EdgeInsets.zero, 
+            // ✅ FIX: "expand the image zoom borders" - Infinite boundary allows unlimited panning while zoomed
+            boundaryMargin: const EdgeInsets.all(double.infinity), 
             clipBehavior: Clip.none, 
-            minScale: 1.0, // ✅ FIX: Prevents shrinking the image smaller than the screen
-            maxScale: 6.0, 
+            minScale: 1.0, 
+            maxScale: 8.0, 
             child: Hero(
               tag: widget.heroTag,
-              // ✅ FIX: SizedBox.expand forces the image gesture detector to stretch to all 4 corners of the screen
               child: SizedBox.expand(
                 child: _buildSafeImage(),
               ),
@@ -144,7 +194,6 @@ class _FullScreenImageState extends State<FullScreenImage> {
   }
 
   Widget _buildSafeImage() {
-    // 1. If Image is a URL (Network) -> Use CachedNetworkImage (Pro Performance)
     if (widget.imageUrl != null && widget.imageUrl!.startsWith('http')) {
       return CachedNetworkImage(
         imageUrl: widget.imageUrl!,
@@ -156,10 +205,8 @@ class _FullScreenImageState extends State<FullScreenImage> {
       );
     }
 
-    // 2. If Image is Base64 (Database string)
     if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty) {
       try {
-        // Remove header if present (e.g., "data:image/png;base64,")
         String cleanBase64 = widget.imageUrl!;
         if (cleanBase64.contains(',')) {
           cleanBase64 = cleanBase64.split(',').last;
@@ -174,7 +221,6 @@ class _FullScreenImageState extends State<FullScreenImage> {
       }
     }
 
-    // 3. Fallback if empty
     return _buildFallbackIcon();
   }
 
