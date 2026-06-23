@@ -239,16 +239,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
-    // ✅ FIX: Check if the user is currently on the call screen
     final currentPath = appRouter.routerDelegate.currentConfiguration.uri.path;
     final isInCall = currentPath.contains('/call');
 
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      // ✅ FIX: OS kills TCP sockets in background anyway. Disconnect gracefully.
+      SocketService().disconnect(); 
       if (!isInCall) {
-        SocketService().disconnect(); 
         debugPrint("App Backgrounded: Socket Disconnected");
       } else {
-        debugPrint("App Backgrounded: Kept socket alive for active call signaling.");
+        debugPrint("App Backgrounded: Socket Disconnected. Relying on FCM and Agora for background signaling.");
       }
     } 
     else if (state == AppLifecycleState.resumed) {

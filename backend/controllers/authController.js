@@ -502,11 +502,15 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   const userName = userProfile ? userProfile.fullName : "Alumni";
 
   const token = crypto.randomBytes(20).toString("hex");
-  userAuth.resetPasswordToken = token;
+  // ✅ FIX: Hash the token before storing it in the database
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+  userAuth.resetPasswordToken = hashedToken;
   userAuth.resetPasswordExpires = Date.now() + 3600000;
   await userAuth.save();
 
   const clientUrl = process.env.CLIENT_URL || "https://asconalumni.org";
+  // ✅ FIX: Email the unhashed original token to the user
   const resetUrl = `${clientUrl}/reset-password?token=${token}`;
 
   try {
@@ -533,8 +537,11 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   if (!newPassword || newPassword.length < 6)
     throw new AppError("Password too short.", 400);
 
+  // ✅ FIX: Hash the incoming token to match what is stored in the database
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
   const userAuth = await UserAuth.findOne({
-    resetPasswordToken: token,
+    resetPasswordToken: hashedToken,
     resetPasswordExpires: { $gt: Date.now() },
   });
   if (!userAuth) throw new AppError("Invalid or expired token.", 400);

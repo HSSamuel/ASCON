@@ -71,16 +71,16 @@ const sendBroadcastNotification = async (title, body, data = {}) => {
       try {
         const response = await admin.messaging().sendEachForMulticast(message);
         const failedTokens = [];
-        
+
         response.responses.forEach((res, idx) => {
           if (!res.success) {
             const errorCode = res.error?.code;
             // ✅ ENHANCED: Catch all variations of dead/invalid tokens
             const invalidTokenErrors = [
               "messaging/registration-token-not-registered",
-              "messaging/invalid-registration-token",       
-              "messaging/invalid-argument",                  
-              "messaging/mismatched-credential"              
+              "messaging/invalid-registration-token",
+              "messaging/invalid-argument",
+              "messaging/mismatched-credential",
             ];
 
             if (invalidTokenErrors.includes(errorCode)) {
@@ -88,7 +88,7 @@ const sendBroadcastNotification = async (title, body, data = {}) => {
             }
           }
         });
-        
+
         if (failedTokens.length > 0) {
           await cleanupTokens(user._id, failedTokens);
         }
@@ -110,6 +110,10 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
       data.type === "video_call" ||
       data.type === "incoming_call";
 
+    // ✅ FIX: Extract senderId and profilePicture from the data object
+    const extractedSenderId = data.senderId || data.id || null;
+    const extractedProfilePic = data.profilePicture || "";
+
     // Only save non-call notifications to DB history
     if (title && body && !isCall) {
       const newNotification = new Notification({
@@ -117,6 +121,8 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
         title,
         message: body,
         isBroadcast: false,
+        senderId: extractedSenderId, // ✅ Saves ID so mobile routing works
+        profilePicture: extractedProfilePic, // ✅ Saves Avatar so mobile UI shows the image
         data: data,
       });
       await newNotification.save();
@@ -143,25 +149,25 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
       // FCM will silently fail to deliver background messages if it contains booleans or numbers.
       const safeStringifiedData = {};
       for (const [key, value] of Object.entries(data)) {
-        safeStringifiedData[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+        safeStringifiedData[key] =
+          typeof value === "object" ? JSON.stringify(value) : String(value);
       }
 
       message.data = {
         ...safeStringifiedData,
-        type: data.type || "incoming_call", 
+        type: data.type || "incoming_call",
       };
-      
+
       message.android = {
-        priority: "high", 
+        priority: "high",
       };
 
       // ✅ ADDED FOR iOS: Standard FCM data messages won't wake a terminated iOS app.
       // You must include APNs headers to force the iOS device to wake up.
       message.apns = {
         headers: { "apns-priority": "10" },
-        payload: { aps: { "content-available": 1 } }
+        payload: { aps: { "content-available": 1 } },
       };
-
     } else {
       // STANDARD NOTIFICATION PAYLOAD (Chat, Events, etc)
       message.notification = {
@@ -212,7 +218,9 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
 
 const notifyPeersOfNewUser = async (newUserProfile) => {
   try {
-    const { userId, fullName, yearOfAttendance, city } = newUserProfile;
+    // ✅ FIX: Extracted profilePicture to pass into the notification payload
+    const { userId, fullName, yearOfAttendance, city, profilePicture } =
+      newUserProfile;
 
     const queries = [];
 
@@ -266,6 +274,8 @@ const notifyPeersOfNewUser = async (newUserProfile) => {
         type: "new_alumni",
         route: "alumni_detail",
         id: newUserIdStr,
+        senderId: newUserIdStr, // ✅ Explicitly passed for routing
+        profilePicture: profilePicture || "", // ✅ Explicitly passed for the UI avatar
         fullName: fullName,
       });
     });
