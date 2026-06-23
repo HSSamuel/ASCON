@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart'; 
 import '../services/data_service.dart';
+import '../widgets/full_screen_image.dart';
 
 class ProgrammeDetailScreen extends StatefulWidget {
   final Map<String, dynamic> programme;
@@ -75,11 +76,11 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
     }
   }
 
-  void _openFullScreenImage(String imageUrl) {
+  void _openFullScreenImage(String imageUrl, String heroTag) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => FullScreenImageViewer(imageUrl: imageUrl),
+        builder: (_) => FullScreenImage(imageUrl: imageUrl, heroTag: heroTag),
       ),
     );
   }
@@ -241,7 +242,7 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
               children: [
                 Text("• ", style: baseStyle.copyWith(fontWeight: FontWeight.bold)),
                 Expanded(
-                  child: SelectableText.rich( // ✅ ADDED SELECTABLE
+                  child: SelectableText.rich( 
                     _parseRichText(cleanText.substring(2).trimLeft(), baseStyle, isDark),
                     textAlign: TextAlign.justify,
                   ),
@@ -252,7 +253,7 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
         } else {
           textContent = Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
-            child: SelectableText.rich( // ✅ ADDED SELECTABLE
+            child: SelectableText.rich( 
               _parseRichText(cleanText, baseStyle, isDark),
               textAlign: TextAlign.justify,
             ),
@@ -307,8 +308,9 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
 
   Widget _buildHeader(String? image, String title, Color primaryColor) {
     if (image != null && image.isNotEmpty) {
+      final tag = 'prog_image_${_programme['id'] ?? _programme['_id']}';
       return GestureDetector(
-        onTap: () => _openFullScreenImage(image),
+        onTap: () => _openFullScreenImage(image, tag),
         child: Container(
           height: 220, 
           width: double.infinity,
@@ -322,9 +324,12 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: _buildSafeImage(image),
+              Hero(
+                tag: tag,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: _buildSafeImage(image),
+                ),
               ),
               Container(
                 decoration: BoxDecoration(
@@ -432,52 +437,5 @@ class _ProgrammeDetailScreenState extends State<ProgrammeDetailScreen> {
         ],
       ),
     );
-  }
-}
-
-class FullScreenImageViewer extends StatelessWidget {
-  final String imageUrl;
-
-  const FullScreenImageViewer({super.key, required this.imageUrl});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          panEnabled: true,
-          minScale: 0.5,
-          maxScale: 4.0,
-          child: _buildSafeImage(imageUrl),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSafeImage(String? imageUrl) {
-    if (imageUrl == null || imageUrl.isEmpty) {
-      return const Icon(Icons.image_not_supported, color: Colors.white, size: 50);
-    }
-
-    if (imageUrl.startsWith('http')) {
-      return Image.network(imageUrl, fit: BoxFit.contain);
-    }
-
-    try {
-      String cleanBase64 = imageUrl;
-      if (cleanBase64.contains(',')) cleanBase64 = cleanBase64.split(',').last;
-      return Image.memory(base64Decode(cleanBase64), fit: BoxFit.contain);
-    } catch (e) {
-      return const Icon(Icons.broken_image, color: Colors.white, size: 50);
-    }
   }
 }

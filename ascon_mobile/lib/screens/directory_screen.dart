@@ -502,21 +502,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                         ),
                       ),
                     ),
-                    /* 
-                    // ✅ Commented out to safely remove the "X" icon without deleting lines of code
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: GestureDetector(
-                        onTap: () {},
-                        child: CircleAvatar(
-                          radius: 12,
-                          backgroundColor: Colors.black.withOpacity(0.5),
-                          child: const Icon(Icons.close, size: 14, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                    */
                     Positioned(
                       top: 20,
                       child: Container(
@@ -550,7 +535,12 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                     Flexible(
                       child: Text(
                         name,
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13.5),
+                        // ✅ ENHANCED: Bolder weight and dynamic pure black/white for high contrast
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w800, 
+                          fontSize: 13.5,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
@@ -570,7 +560,13 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 child: Text(
                   job.isNotEmpty ? "$job${org.isNotEmpty ? ' | $org' : ''}" : "ASCON Alumni Member",
-                  style: GoogleFonts.inter(fontSize: 10.5, color: Colors.grey[600], height: 1.3),
+                  // ✅ ENHANCED: Heavier weight and darker grey to prevent washing out
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 10.5, 
+                    color: isDark ? Colors.grey[300] : Colors.blueGrey[800], 
+                    height: 1.3
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
@@ -600,7 +596,12 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                           Expanded(
                             child: Text(
                               mutualText,
-                              style: GoogleFonts.inter(fontSize: 9.5, color: Colors.grey[500]),
+                              // ✅ ENHANCED: Darker text for improved accessibility
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 9.5, 
+                                color: isDark ? Colors.grey[400] : Colors.grey[800]
+                              ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),

@@ -10,6 +10,8 @@ const Group = require("../models/Group");
 const Message = require("../models/Message");
 const CallLog = require("../models/CallLog");
 const logger = require("../utils/logger");
+// ✅ FIX: Import notificationHandler to send FCMs for background signaling
+const { sendPersonalNotification } = require("../utils/notificationHandler");
 
 let io;
 let redisClient;
@@ -117,7 +119,6 @@ const initializeSocket = async (server) => {
     socket.on("join_room", (room) => socket.join(room));
     socket.on("leave_room", (room) => socket.leave(room));
 
-    // ✅ FIX: Dynamic Group Subscriptions triggered by the client
     socket.on("join_group_room", (groupId) => {
       if (groupId) {
         socket.join(groupId.toString());
@@ -322,7 +323,6 @@ const initializeSocket = async (server) => {
             });
           }
 
-          // ✅ FIX: Querying UserAuth instead of the old User model!
           const targetUser = await UserAuth.findById(targetUserId);
           if (
             targetUser &&
@@ -380,6 +380,13 @@ const initializeSocket = async (server) => {
             { status: "missed", endTime: new Date() },
           );
           activeCallTimers.delete(callKey);
+
+          // ✅ FIX: WAKE UP BACKGROUND APP TO DISMISS CALLKIT ON TIMEOUT
+          sendPersonalNotification(targetUserId, "", "", {
+            type: "call_ended",
+            channelName: channelName,
+            reason: "No Answer",
+          });
         }, MAX_RING_TIME);
 
         activeCallTimers.set(callKey, {
@@ -500,6 +507,13 @@ const initializeSocket = async (server) => {
       }
 
       socket.to(targetUserId).emit("call_ended", { channelName });
+
+      // ✅ FIX: WAKE UP BACKGROUND APP TO DISMISS CALLKIT IF CALL IS CANCELLED
+      sendPersonalNotification(targetUserId, "", "", {
+        type: "call_ended",
+        channelName: channelName,
+        reason: "Caller Ended",
+      });
     });
 
     socket.on("reject_call", async ({ targetUserId, reason }) => {
@@ -519,6 +533,13 @@ const initializeSocket = async (server) => {
                 { channelName: data.channelName, status: "initiated" },
                 { status: "declined", endTime: new Date() },
               );
+
+              // ✅ FIX: WAKE UP CALLER'S APP IF THEY ARE IN THE BACKGROUND
+              sendPersonalNotification(targetUserId, "", "", {
+                type: "call_rejected",
+                channelName: data.channelName,
+                reason: reason || "user_busy",
+              });
             } catch (error) {
               logger.error("Error updating CallLog on busy reject:", error);
             }

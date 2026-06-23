@@ -157,21 +157,86 @@ class _FullScreenGalleryState extends State<FullScreenGallery> {
         itemCount: widget.images.length,
         onPageChanged: (index) => setState(() => _currentIndex = index),
         itemBuilder: (context, index) {
-          return GestureDetector(
-            onDoubleTap: () => Navigator.pop(context),
-            child: InteractiveViewer(
-              panEnabled: true,
-              minScale: 0.5,
-              maxScale: 6.0,
-              child: CachedNetworkImage(
-                imageUrl: widget.images[index],
-                fit: BoxFit.contain,
-                placeholder: (context, url) => const Center(child: CircularProgressIndicator(color: Colors.white)),
-                errorWidget: (context, url, error) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 60)),
-              ),
-            ),
-          );
+          return _ZoomableGalleryImage(imageUrl: widget.images[index]);
         },
+      ),
+    );
+  }
+}
+
+class _ZoomableGalleryImage extends StatefulWidget {
+  final String imageUrl;
+  const _ZoomableGalleryImage({required this.imageUrl});
+
+  @override
+  State<_ZoomableGalleryImage> createState() => _ZoomableGalleryImageState();
+}
+
+class _ZoomableGalleryImageState extends State<_ZoomableGalleryImage> with SingleTickerProviderStateMixin {
+  late TransformationController _transformationController;
+  late AnimationController _animationController;
+  Animation<Matrix4>? _animation;
+  TapDownDetails? _doubleTapDetails;
+
+  @override
+  void initState() {
+    super.initState();
+    _transformationController = TransformationController();
+    _animationController = AnimationController(vsync: this, duration: const Duration(milliseconds: 250))
+      ..addListener(() => _transformationController.value = _animation!.value);
+  }
+
+  @override
+  void dispose() {
+    _transformationController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _handleDoubleTapDown(TapDownDetails details) => _doubleTapDetails = details;
+
+  void _handleDoubleTap() {
+    if (_animationController.isAnimating) return;
+    final position = _doubleTapDetails?.localPosition;
+    if (position == null) return;
+
+    if (_transformationController.value != Matrix4.identity()) {
+      _animation = Matrix4Tween(
+        begin: _transformationController.value,
+        end: Matrix4.identity(),
+      ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+      _animationController.forward(from: 0);
+    } else {
+      const double scale = 2.5;
+      final x = -position.dx * (scale - 1);
+      final y = -position.dy * (scale - 1);
+      final zoomedMatrix = Matrix4.identity()
+        ..translate(x, y)
+        ..scale(scale);
+      _animation = Matrix4Tween(
+        begin: _transformationController.value,
+        end: zoomedMatrix,
+      ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+      _animationController.forward(from: 0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: _handleDoubleTapDown,
+      onDoubleTap: _handleDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _transformationController,
+        panEnabled: true,
+        minScale: 1.0,
+        maxScale: 6.0,
+        child: CachedNetworkImage(
+          imageUrl: widget.imageUrl,
+          fit: BoxFit.contain,
+          placeholder: (context, url) => const Center(child: CircularProgressIndicator(color: Colors.white)),
+          errorWidget: (context, url, error) => const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 60)),
+        ),
       ),
     );
   }

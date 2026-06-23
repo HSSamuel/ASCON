@@ -28,15 +28,24 @@ final ProviderContainer providerContainer = ProviderContainer();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // ✅ FIX: The web check must happen before Firebase.initializeApp()
-  // Otherwise, Flutter Web crashes trying to initialize standard background isolates without options
   if (kIsWeb) return;
   
   await Firebase.initializeApp(); 
 
   final type = message.data['type'];
+
+  // ✅ FIX: Instantly dismiss CallKit if the remote user hangs up or rejects the call
+  if (type == 'call_ended' || type == 'call_rejected') {
+    final String? channelName = message.data['channelName'] ?? message.data['id']; 
+    if (channelName != null && channelName.isNotEmpty) {
+      await FlutterCallkitIncoming.endCall(channelName);
+    } else {
+      await FlutterCallkitIncoming.endAllCalls();
+    }
+    return; // Important: Exit early so we don't process it further
+  }
+
   if (type == 'incoming_call' || type == 'call_offer' || type == 'video_call') {
-    
     CallKitParams callKitParams = CallKitParams(
       id: message.data['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}", 
       nameCaller: message.data['callerName'] ?? 'Alumni User',
@@ -130,7 +139,6 @@ void main() async {
     defaultDebugPrint(message, wrapWidth: wrapWidth);
   };
 
-  // ✅ 1. Wrap the entire app in a Zoned Guard to catch asynchronous Dart errors
   await runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     
@@ -161,7 +169,6 @@ void main() async {
       }
     }
 
-    // ✅ 2. Catch UI Rendering & Framework Errors
     FlutterError.onError = (errorDetails) {
       if (!kIsWeb) {
         FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
@@ -170,7 +177,6 @@ void main() async {
       }
     };
     
-    // ✅ 3. Catch platform/engine errors (Flutter 3.3+)
     PlatformDispatcher.instance.onError = (error, stack) {
       if (!kIsWeb) {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
@@ -190,7 +196,6 @@ void main() async {
     ));
     
   }, (error, stack) {
-    // ✅ 4. The final safety net for uncaught zone errors
     debugPrint("🔴 Uncaught Zone Error: $error\n$stack");
     if (!kIsWeb) {
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
@@ -207,12 +212,14 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   StreamSubscription? _callSubscription;
+  StreamSubscription? _fcmSubscription;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this); 
-    _setupInteractedMessage(); // ✅ Ensure notifications clicked from terminated state are handled
+    _setupInteractedMessage(); 
+    _listenForFCMForeground(); // ✅ Added this to handle foreground silent FCMs
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
     
@@ -223,6 +230,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this); 
     _callSubscription?.cancel();
+    _fcmSubscription?.cancel();
     super.dispose();
   }
 
@@ -232,9 +240,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
-  // =======================================================================
-  // 🚀 GLOBAL LIFECYCLE SYNCING
-  // =======================================================================
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -243,7 +248,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final isInCall = currentPath.contains('/call');
 
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // ✅ FIX: OS kills TCP sockets in background anyway. Disconnect gracefully.
       SocketService().disconnect(); 
       if (!isInCall) {
         debugPrint("App Backgrounded: Socket Disconnected");
@@ -254,7 +258,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     else if (state == AppLifecycleState.resumed) {
       debugPrint("App Resumed: Reconnecting Socket and Syncing Data");
       
-      // ✅ FIX: Corrected null-safety precedence issue
       if (SocketService().socket?.connected != true) {
         SocketService().initSocket(); 
       }
@@ -298,6 +301,33 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     else if (data['route'] != null) {
       appRouter.push('/${data['route']}', extra: data);
     }
+  }
+
+  // ✅ FIX: Listens for background termination signals arriving while the app is in the foreground
+  void _listenForFCMForeground() {
+    if (kIsWeb) return;
+    _fcmSubscription = FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      final data = message.data;
+      final type = data['type'];
+      
+      if (type == 'call_ended' || type == 'call_rejected') {
+        final String? channelName = data['channelName'];
+        if (channelName != null && channelName.isNotEmpty) {
+          await FlutterCallkitIncoming.endCall(channelName);
+        } else {
+          await FlutterCallkitIncoming.endAllCalls();
+        }
+        
+        final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+        if (currentRoute.contains('/call')) {
+          if (appRouter.canPop()) {
+            appRouter.pop();
+          } else {
+            appRouter.go('/');
+          }
+        }
+      }
+    });
   }
 
   void _listenForCallKitEvents() {
