@@ -479,7 +479,7 @@ void _scrollToBottom() {
   }
 
   Future<void> _pickFile() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(withData: true);
+  FilePickerResult? result = await FilePicker.pickFiles(withData: true);
     if (result != null) {
       if (kIsWeb) {
         PlatformFile file = result.files.first;

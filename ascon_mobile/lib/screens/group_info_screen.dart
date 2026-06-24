@@ -351,10 +351,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _uploadFile() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        withData: true, 
-      );
+  try {
+    FilePickerResult? result = await FilePicker.pickFiles(
+      withData: true, 
+    );
       
       if (result != null && result.files.isNotEmpty) {
         final platformFile = result.files.single;
