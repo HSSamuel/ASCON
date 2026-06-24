@@ -30,6 +30,9 @@ final ProviderContainer providerContainer = ProviderContainer();
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (kIsWeb) return;
   
+  // ✅ FIX 1: Ensure Flutter bindings are initialized in the background isolate
+  WidgetsFlutterBinding.ensureInitialized();
+  
   await Firebase.initializeApp(); 
 
   final type = message.data['type'];
@@ -295,21 +298,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final data = message.data;
     
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
-      final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-      if (currentRoute.contains('/call')) return;
+      // ✅ FIX 2: Delay routing slightly to allow UI & Providers to boot on cold start
+      Future.delayed(const Duration(milliseconds: 400), () {
+        final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+        if (currentRoute.contains('/call')) return;
 
-      appRouter.push('/call', extra: {
-        'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
-        'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
-        'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
-        'remoteId': data['callerId'] ?? "",
-        'channelName': data['channelName'] ?? "",
-        'remoteAvatar': data['callerAvatar'] ?? data['callerPic'], 
-        'isIncoming': true,
+        appRouter.push('/call', extra: {
+          'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
+          'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
+          'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
+          'remoteId': data['callerId'] ?? "",
+          'channelName': data['channelName'] ?? "",
+          'remoteAvatar': data['callerAvatar'] ?? data['callerPic'], 
+          'isIncoming': true,
+        });
       });
     } 
     else if (data['route'] != null) {
-      appRouter.push('/${data['route']}', extra: data);
+      Future.delayed(const Duration(milliseconds: 400), () {
+        appRouter.push('/${data['route']}', extra: data);
+      });
     }
   }
 
@@ -342,11 +350,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _listenForCallKitEvents() {
     if (kIsWeb) return;
     
-    // ✅ FIX 1: Cast the event to 'dynamic' to bypass Web compiler strict-type checks
     FlutterCallkitIncoming.onEvent.listen((dynamic event) {
       if (event == null) return;
 
-      // ✅ FIX 2: Convert the event enum to a string to avoid dart:html Event collisions
       final String eventName = event.event.toString(); 
 
       if (eventName.contains('actionCallAccept')) {
@@ -355,17 +361,23 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         String callerId = data['extra']?['callerId'] ?? "";
         String callerAvatar = data['extra']?['callerAvatar'] ?? data['avatar'] ?? ""; 
 
-        final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-        if (currentRoute.contains('/call')) return;
+        // ✅ FIX 3: Wait for engine to build, then verify session before routing
+        Future.delayed(const Duration(milliseconds: 400), () async {
+          bool isLoggedIn = await AuthService().isSessionValid();
+          if (!isLoggedIn) return;
 
-        appRouter.push('/call', extra: {
-          'isGroupCall': false, 
-          'isVideoCall': data['type'] == 1,
-          'remoteName': data['nameCaller'] ?? "Alumni User",
-          'remoteId': callerId,
-          'channelName': channelName,
-          'remoteAvatar': callerAvatar, 
-          'isIncoming': true,
+          final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+          if (currentRoute.contains('/call')) return;
+
+          appRouter.push('/call', extra: {
+            'isGroupCall': false, 
+            'isVideoCall': data['type'] == 1,
+            'remoteName': data['nameCaller'] ?? "Alumni User",
+            'remoteId': callerId,
+            'channelName': channelName,
+            'remoteAvatar': callerAvatar, 
+            'isIncoming': true,
+          });
         });
       } 
       else if (eventName.contains('actionCallDecline')) {
