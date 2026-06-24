@@ -1,4 +1,3 @@
-//
 buildscript {
     repositories {
         google()
@@ -16,11 +15,20 @@ allprojects {
         mavenCentral()
     }
 
-    // ✅ THIS BLOCK SILENCE WARNINGS
+    // ✅ THIS BLOCK SILENCES JAVA WARNINGS
     tasks.withType<JavaCompile>().configureEach {
-        options.compilerArgs.add("-Xlint:-options")     // Silences "source value 8 is obsolete"
-        options.compilerArgs.add("-Xlint:-deprecation") // Silences "VIBRATOR_SERVICE... has been deprecated"
+        options.compilerArgs.add("-Xlint:-options")
+        options.compilerArgs.add("-Xlint:-deprecation")
     }
+
+    // ✅ ADD THIS BLOCK to silence Kotlin warnings from third-party plugins
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions {
+            // This is the new, mandatory way to suppress warnings in Kotlin 2.0+
+            allWarningsAsErrors.set(false)
+            freeCompilerArgs.add("-Xsuppress-warnings")
+        }
+    } // <--- Added the missing closing brace here
 }
 
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
