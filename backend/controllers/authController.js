@@ -135,7 +135,7 @@ exports.register = asyncHandler(async (req, res) => {
     const refreshToken = jwt.sign(
       { _id: newAuthId },
       process.env.REFRESH_SECRET,
-      { expiresIn: "15d" }, // ✅ Extended to 15 days
+      { expiresIn: "30d" }, // ✅ Extended to 30 days
     );
     const safeFcmTokens = fcmToken && fcmToken.trim() !== "" ? [fcmToken] : [];
 
@@ -292,7 +292,7 @@ exports.login = asyncHandler(async (req, res) => {
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
     process.env.REFRESH_SECRET,
-    { expiresIn: "15d" }, // ✅ Extended to 15 days
+    { expiresIn: "30d" }, // ✅ Extended to 30 days
   );
 
   const currentTokens = userAuth.refreshTokens || [];
@@ -423,7 +423,7 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
     process.env.REFRESH_SECRET,
-    { expiresIn: "15d" }, // ✅ Extended to 15 days
+    { expiresIn: "30d" }, // ✅ Extended to 30 days
   );
 
   const currentTokens = userAuth.refreshTokens || [];
@@ -458,20 +458,26 @@ exports.googleLogin = asyncHandler(async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// 6. REFRESH TOKEN
+// 6. REFRESH TOKEN (WITH ROTATION)
 // --------------------------------------------------------------------------
 exports.refreshToken = asyncHandler(async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) throw new AppError("Refresh Token Required", 401);
 
   try {
+    // 1. Verify the incoming token
     const verified = jwt.verify(refreshToken, process.env.REFRESH_SECRET);
     const userAuth = await UserAuth.findById(verified._id);
 
+    // 2. Check if the token exists in the user's active array
     if (!userAuth || !userAuth.refreshTokens.includes(refreshToken)) {
       throw new AppError("Invalid, Stolen, or Expired Refresh Token", 403);
     }
 
+    // 3. ROTATION: Remove the used refresh token
+    userAuth.refreshTokens = userAuth.refreshTokens.filter(rt => rt !== refreshToken);
+
+    // 4. Generate a NEW Access Token
     const newAccessToken = jwt.sign(
       {
         _id: userAuth._id,
@@ -482,7 +488,19 @@ exports.refreshToken = asyncHandler(async (req, res) => {
       { expiresIn: "2h" },
     );
 
-    res.json({ token: newAccessToken });
+    // 5. Generate a NEW Refresh Token (30 Days)
+    const newRefreshToken = jwt.sign(
+      { _id: userAuth._id },
+      process.env.REFRESH_SECRET,
+      { expiresIn: "30d" }, // ✅ Extended to 30 days
+    );
+
+    // 6. Add the new refresh token to the array and save
+    userAuth.refreshTokens.push(newRefreshToken);
+    await userAuth.save();
+
+    // 7. Send BOTH tokens back to the client
+    res.json({ token: newAccessToken, refreshToken: newRefreshToken });
   } catch (err) {
     throw new AppError("Invalid Refresh Token", 403);
   }

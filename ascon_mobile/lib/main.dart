@@ -34,7 +34,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   final type = message.data['type'];
 
-  // ✅ FIX: Instantly dismiss CallKit if the remote user hangs up or rejects the call
+  // Instantly dismiss CallKit if the remote user hangs up or rejects the call
   if (type == 'call_ended' || type == 'call_rejected') {
     final String? channelName = message.data['channelName'] ?? message.data['id']; 
     if (channelName != null && channelName.isNotEmpty) {
@@ -53,8 +53,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       avatar: message.data['callerAvatar'] ?? '',
       handle: 'Incoming Call',
       type: (message.data['isVideoCall'] == "true" || type == 'video_call') ? 1 : 0,
-      textAccept: 'Accept',
-      textDecline: 'Decline',
       missedCallNotification: const NotificationParams(
         showNotification: true,
         isShowCallback: false,
@@ -73,6 +71,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         ringtonePath: 'system_ringtone_default',
         backgroundColor: '#0F3621',
         actionColor: '#4CAF50',
+        textAccept: 'Accept', 
+        textDecline: 'Decline', 
       ),
       ios: const IOSParams(
         iconName: 'CallKitIcon',
@@ -213,13 +213,15 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   StreamSubscription? _callSubscription;
   StreamSubscription? _fcmSubscription;
+  
+  DateTime? _lastSyncTime; // Variable to throttle aggressive lifecycle syncing
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this); 
     _setupInteractedMessage(); 
-    _listenForFCMForeground(); // ✅ Added this to handle foreground silent FCMs
+    _listenForFCMForeground(); 
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
     
@@ -236,6 +238,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _triggerColdStartSync() async {
     if (await AuthService().isSessionValid()) {
+      _lastSyncTime = DateTime.now(); 
       AuthService().performGlobalSilentSync();
     }
   }
@@ -264,7 +267,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       
       AuthService().isSessionValid().then((isValid) {
         if (isValid) {
-          AuthService().performGlobalSilentSync();
+          final now = DateTime.now();
+          if (_lastSyncTime == null || now.difference(_lastSyncTime!).inMinutes >= 5) {
+            debugPrint("Triggering throttled background sync...");
+            _lastSyncTime = now;
+            AuthService().performGlobalSilentSync();
+          } else {
+            debugPrint("Skipping background sync (last sync was less than 5 minutes ago).");
+          }
         } else {
           debugPrint("User is logged out. Skipping background sync.");
         }
@@ -303,7 +313,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
-  // ✅ FIX: Listens for background termination signals arriving while the app is in the foreground
   void _listenForFCMForeground() {
     if (kIsWeb) return;
     _fcmSubscription = FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
@@ -332,34 +341,35 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   void _listenForCallKitEvents() {
     if (kIsWeb) return;
-    FlutterCallkitIncoming.onEvent.listen((event) {
-      switch (event!.event) {
-        case Event.actionCallAccept:
-          final data = event.body;
-          String channelName = data['extra']?['channelName'] ?? data['id'] ?? "";
-          String callerId = data['extra']?['callerId'] ?? "";
-          String callerAvatar = data['extra']?['callerAvatar'] ?? data['avatar'] ?? ""; 
+    
+    // ✅ FIX 1: Cast the event to 'dynamic' to bypass Web compiler strict-type checks
+    FlutterCallkitIncoming.onEvent.listen((dynamic event) {
+      if (event == null) return;
 
-          final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-          if (currentRoute.contains('/call')) return;
+      // ✅ FIX 2: Convert the event enum to a string to avoid dart:html Event collisions
+      final String eventName = event.event.toString(); 
 
-          appRouter.push('/call', extra: {
-            'isGroupCall': false, 
-            'isVideoCall': data['type'] == 1,
-            'remoteName': data['nameCaller'] ?? "Alumni User",
-            'remoteId': callerId,
-            'channelName': channelName,
-            'remoteAvatar': callerAvatar, 
-            'isIncoming': true,
-          });
-          break;
-          
-        case Event.actionCallDecline:
-          SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
-          break;
-          
-        default:
-          break;
+      if (eventName.contains('actionCallAccept')) {
+        final data = event.body;
+        String channelName = data['extra']?['channelName'] ?? data['id'] ?? "";
+        String callerId = data['extra']?['callerId'] ?? "";
+        String callerAvatar = data['extra']?['callerAvatar'] ?? data['avatar'] ?? ""; 
+
+        final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+        if (currentRoute.contains('/call')) return;
+
+        appRouter.push('/call', extra: {
+          'isGroupCall': false, 
+          'isVideoCall': data['type'] == 1,
+          'remoteName': data['nameCaller'] ?? "Alumni User",
+          'remoteId': callerId,
+          'channelName': channelName,
+          'remoteAvatar': callerAvatar, 
+          'isIncoming': true,
+        });
+      } 
+      else if (eventName.contains('actionCallDecline')) {
+        SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
       }
     });
   }
