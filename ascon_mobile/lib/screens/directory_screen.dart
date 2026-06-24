@@ -264,7 +264,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2, 
-                      childAspectRatio: 0.68,
+                      mainAxisExtent: 280,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
                     ),
@@ -386,7 +386,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           ),
         ),
         SizedBox(
-          height: 235, 
+          height: 280, 
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 10),
