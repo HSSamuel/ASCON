@@ -617,10 +617,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
               
               // 5. Connect Button
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10), // ✅ Slightly reduced side padding
                 child: SizedBox(
                   width: double.infinity,
-                  height: 32,
+                  height: 28, // ✅ Reduced height from 32 to 28 to prevent vertical clipping
                   child: OutlinedButton.icon(
                     onPressed: () {
                       Navigator.of(context, rootNavigator: true).push(
@@ -632,17 +632,17 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                         ))
                       );
                     },
-                    icon: Icon(Icons.person_add_alt_1, size: 16, color: primaryColor),
-                    label: Text("Connect", style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12, color: primaryColor)),
+                    icon: Icon(Icons.person_add_alt_1, size: 14, color: primaryColor), // ✅ Smaller icon
+                    label: Text("Connect", style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 11, color: primaryColor)), // ✅ Smaller text
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: primaryColor),
-                      padding: EdgeInsets.zero,
+                      side: BorderSide(color: primaryColor, width: 1.2),
+                      padding: const EdgeInsets.symmetric(horizontal: 2), // ✅ Add slight internal padding to let it breathe
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8), // ✅ Reduced bottom margin from 12 to 8 to pull it away from the edge
             ],
           ),
         ),
