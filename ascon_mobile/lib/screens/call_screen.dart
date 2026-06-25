@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart'; 
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart' hide CallEvent; 
 import 'package:flutter_callkit_incoming/entities/entities.dart' hide CallEvent; 
+import 'package:permission_handler/permission_handler.dart'; 
 import '../services/call_service.dart';
 import '../services/socket_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -19,6 +20,7 @@ class CallScreen extends StatefulWidget {
   final String channelName; 
   final String? remoteAvatar; 
   final bool isIncoming; 
+  final bool autoAccept;           
   final String? currentUserName;   
   final String? currentUserAvatar; 
 
@@ -32,6 +34,7 @@ class CallScreen extends StatefulWidget {
     required this.channelName,
     this.remoteAvatar,
     this.isIncoming = false, 
+    this.autoAccept = false,       
     this.currentUserName,     
     this.currentUserAvatar,   
   });
@@ -45,7 +48,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   final SocketService _socketService = SocketService();
   final AudioPlayer _audioPlayer = AudioPlayer(); 
   
-  late String _currentChannel; // ✅ ADDED: Mutable channel state for collision swaps
+  late String _currentChannel; 
 
   String _status = "Connecting...";
   bool _isMuted = false;
@@ -69,7 +72,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     super.initState();
     WakelockPlus.enable();
     
-    _currentChannel = widget.channelName; // ✅ INITIALIZE mutable channel
+    _currentChannel = widget.channelName; 
     
     if (widget.isVideoCall) {
       _selectedAudioRoute = 'Speaker'; 
@@ -85,9 +88,21 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _listenToEvents();
 
     if (widget.isIncoming) {
-      _status = widget.isVideoCall ? "Incoming Video Call..." : "Incoming Call...";
-      _pulseController.repeat(reverse: true);
-      _playRingtone(); 
+      if (widget.autoAccept) {
+        _hasAccepted = true;
+        _status = "Connecting...";
+        
+        // ✅ CRITICAL STABILITY DELAY:
+        // Wait 1.2s for the Android Activity to fully load into the foreground.
+        // Hitting hardware permissions instantly on wake causes 'keeps stopping' Native crashes.
+        Future.delayed(const Duration(milliseconds: 1200), () {
+           if (mounted) _acceptIncomingCall();
+        });
+      } else {
+        _status = widget.isVideoCall ? "Incoming Video Call..." : "Incoming Call...";
+        _pulseController.repeat(reverse: true);
+        _playRingtone(); 
+      }
     } else {
       _status = "Calling...";
       _startOutgoingCall();
@@ -96,6 +111,28 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       if (!widget.isGroupCall && widget.remoteId != null) {
         _socketService.checkUserStatus(widget.remoteId!);
       }
+    }
+  }
+
+  Future<bool> _requestPermissions() async {
+    if (kIsWeb) return true; 
+    try {
+      var micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
+         micStatus = await Permission.microphone.request();
+      }
+      
+      if (widget.isVideoCall) {
+        var camStatus = await Permission.camera.status;
+        if (!camStatus.isGranted) {
+           camStatus = await Permission.camera.request();
+        }
+        return micStatus.isGranted && camStatus.isGranted;
+      }
+      return micStatus.isGranted;
+    } catch (e) {
+      debugPrint("Permission Check Failed: $e");
+      return false;
     }
   }
 
@@ -119,6 +156,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _startOutgoingCall() async {
+    bool hasPermissions = await _requestPermissions();
+    if (!hasPermissions) {
+      _endCallUI("Permissions Denied");
+      return;
+    }
+
     bool success = await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall); 
     
     if (!mounted) return; 
@@ -127,7 +170,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       if (!kIsWeb) {
         _callService.setAudioRoute(_selectedAudioRoute); 
         
-        // ✅ ADDED: Register native call state
         await FlutterCallkitIncoming.startCall(CallKitParams(
           id: _currentChannel,
           nameCaller: widget.remoteName,
@@ -157,6 +199,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _acceptIncomingCall() async {
+    bool hasPermissions = await _requestPermissions();
+    if (!hasPermissions) {
+      _endCallUI("Permissions Denied");
+      return;
+    }
+
     setState(() {
       _hasAccepted = true;
       _status = "Connecting...";
@@ -164,7 +212,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     
     _stopAudio(); 
 
-    if (widget.remoteId != null) {
+    if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
       _socketService.answerCall(widget.remoteId!, _currentChannel);
     }
     
@@ -172,14 +220,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     
     if (!kIsWeb) {
       _callService.setAudioRoute(_selectedAudioRoute); 
-      
-      // ✅ ADDED: Register native call state
-      await FlutterCallkitIncoming.startCall(CallKitParams(
-        id: _currentChannel,
-        nameCaller: widget.remoteName,
-        handle: 'Ongoing Call',
-        type: widget.isVideoCall ? 1 : 0,
-      ));
     }
   }
 
@@ -212,26 +252,27 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       });
     });
 
-    _socketListener = _socketService.callEvents.listen((event) {
+    _socketListener = _socketService.callEvents.listen((event) async {
       if (!mounted) return;
       
-      // ✅ UPDATE: Checking against mutable _currentChannel
       if (event['type'] == 'ended' && event['data']['channelName'] == _currentChannel) {
         
-        // ✅ ADDED: Collision Merge Interceptor
         if (event['data']['reason'] == "collision_merge") {
            String existingChannel = event['data']['existingChannel'];
            
-           _callService.leaveCall(); 
+           await _callService.leaveCall();
            
+           if (!mounted) return;
            setState(() {
              _currentChannel = existingChannel;
              _status = "Connecting...";
              _hasAccepted = true; 
            });
            
-           _socketService.answerCall(widget.remoteId!, _currentChannel);
-           _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall);
+           if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
+              _socketService.answerCall(widget.remoteId!, _currentChannel);
+           }
+           await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall); 
            return; 
         }
 
@@ -274,9 +315,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _pulseController.stop();
     _callService.leaveCall();
     
-    // ✅ ADDED: Clear OS Call Banner
     if (!kIsWeb) {
-      await FlutterCallkitIncoming.endAllCalls();
+      await FlutterCallkitIncoming.endAllCalls(); 
     }
     
     Future.delayed(const Duration(seconds: 1), () {
@@ -375,158 +415,175 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack( 
-        children: [
-          if (widget.isVideoCall && _isConnected)
-            _buildVideoGrid()
-          else
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                  colors: [Color(0xFF0F3621), Colors.black],
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        
+        if (widget.isIncoming && !_hasAccepted) {
+          if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
+            _socketService.socket?.emit('reject_call', {'targetUserId': widget.remoteId!, 'reason': 'declined'});
+          }
+        } else {
+          if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
+            _socketService.endCall(widget.remoteId!, _currentChannel);
+          }
+        }
+        _endCallUI("Call Ended");
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack( 
+          children: [
+            if (widget.isVideoCall && _isConnected)
+              _buildVideoGrid()
+            else
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    colors: [Color(0xFF0F3621), Colors.black],
+                  ),
                 ),
+              ),
+
+            SafeArea(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (!widget.isVideoCall || !_isConnected) const Spacer(flex: 2),
+                  
+                  if (!widget.isVideoCall || !_isConnected)
+                    _buildPulsingAvatar(),
+                  
+                  const SizedBox(height: 30),
+                  
+                  if (!widget.isVideoCall || !_isConnected)
+                    if (widget.isGroupCall)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        margin: const EdgeInsets.only(bottom: 8.0),
+                        decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
+                        child: Text(widget.isVideoCall ? "GROUP VIDEO CALL" : "GROUP CALL", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+
+                  if (!widget.isVideoCall || !_isConnected)
+                    Text(
+                      widget.remoteName,
+                      style: GoogleFonts.lato(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, shadows: [const Shadow(color: Colors.black, blurRadius: 10)]),
+                      textAlign: TextAlign.center,
+                    ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  if (!widget.isVideoCall || !_isConnected || widget.isGroupCall)
+                    Text(
+                      _isConnected ? _formattedDuration : _status,
+                      style: GoogleFonts.lato(color: Colors.white70, fontSize: _isConnected ? 20 : 16, shadows: [const Shadow(color: Colors.black, blurRadius: 10)]),
+                    ),
+
+                  const Spacer(flex: 3),
+                  
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 30.0),
+                    child: widget.isIncoming && !_hasAccepted 
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _buildActionCircle(Icons.call_end, Colors.redAccent, () {
+                            if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
+                               _socketService.socket?.emit('reject_call', {'targetUserId': widget.remoteId!, 'reason': 'declined'});
+                            }
+                            _endCallUI("Declined");
+                          }),
+                          _buildActionCircle(widget.isVideoCall ? Icons.videocam : Icons.call, Colors.green, _acceptIncomingCall),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.isVideoCall) ...[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _buildSmallBtn(Icons.flip_camera_ios, "Flip", () {
+                                  if (kIsWeb) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text("Camera flip is managed by browser."),
+                                        duration: Duration(seconds: 2),
+                                      )
+                                    );
+                                    return;
+                                  }
+                                  _callService.switchCamera();
+                                }),
+                                const SizedBox(width: 40),
+                                _buildSmallBtn(_isVideoOff ? Icons.videocam_off : Icons.videocam, _isVideoOff ? "Video Off" : "Video On", () {
+                                  setState(() => _isVideoOff = !_isVideoOff);
+                                  _callService.toggleVideo(_isVideoOff);
+                                }, isActive: !_isVideoOff),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+
+                          Row( 
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildControlButton(
+                                icon: _isMuted ? Icons.mic_off : Icons.mic,
+                                label: "Mute",
+                                isActive: _isMuted,
+                                onTap: () {
+                                  setState(() => _isMuted = !_isMuted);
+                                  _callService.toggleMute(_isMuted);
+                                },
+                              ),
+                              _buildActionCircle(Icons.call_end, Colors.redAccent, () {
+                                if (widget.isGroupCall && widget.targetIds != null && !widget.isIncoming) {
+                                   for(String target in widget.targetIds!) _socketService.endCall(target, _currentChannel);
+                                } else if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
+                                   _socketService.endCall(widget.remoteId!, _currentChannel);
+                                }
+                                _endCallUI("Call Ended");
+                              }),
+                              
+                              _buildAudioRouteMenu(),
+                            ],
+                          ),
+                        ],
+                      ),
+                  ),
+                ],
               ),
             ),
 
-          SafeArea(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (!widget.isVideoCall || !_isConnected) const Spacer(flex: 2),
-                
-                if (!widget.isVideoCall || !_isConnected)
-                  _buildPulsingAvatar(),
-                
-                const SizedBox(height: 30),
-                
-                if (!widget.isVideoCall || !_isConnected)
-                  if (widget.isGroupCall)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      margin: const EdgeInsets.only(bottom: 8.0),
-                      decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
-                      child: Text(widget.isVideoCall ? "GROUP VIDEO CALL" : "GROUP CALL", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                    ),
-
-                if (!widget.isVideoCall || !_isConnected)
-                  Text(
-                    widget.remoteName,
-                    style: GoogleFonts.lato(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, shadows: [const Shadow(color: Colors.black, blurRadius: 10)]),
-                    textAlign: TextAlign.center,
-                  ),
-                
-                const SizedBox(height: 12),
-                
-                if (!widget.isVideoCall || !_isConnected || widget.isGroupCall)
-                  Text(
-                    _isConnected ? _formattedDuration : _status,
-                    style: GoogleFonts.lato(color: Colors.white70, fontSize: _isConnected ? 20 : 16, shadows: [const Shadow(color: Colors.black, blurRadius: 10)]),
-                  ),
-
-                const Spacer(flex: 3),
-                
-                // CONTROLS UI
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 30.0),
-                  child: widget.isIncoming && !_hasAccepted 
-                  ? Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildActionCircle(Icons.call_end, Colors.redAccent, () {
-                          if (widget.remoteId != null) _socketService.endCall(widget.remoteId!, _currentChannel);
-                          _endCallUI("Declined");
-                        }),
-                        _buildActionCircle(widget.isVideoCall ? Icons.videocam : Icons.call, Colors.green, _acceptIncomingCall),
-                      ],
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.isVideoCall) ...[
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildSmallBtn(Icons.flip_camera_ios, "Flip", () {
-                                if (kIsWeb) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text("Camera flip is managed by browser."),
-                                      duration: Duration(seconds: 2),
-                                    )
-                                  );
-                                  return;
-                                }
-                                _callService.switchCamera();
-                              }),
-                              const SizedBox(width: 40),
-                              _buildSmallBtn(_isVideoOff ? Icons.videocam_off : Icons.videocam, _isVideoOff ? "Video Off" : "Video On", () {
-                                setState(() => _isVideoOff = !_isVideoOff);
-                                _callService.toggleVideo(_isVideoOff);
-                              }, isActive: !_isVideoOff),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
-                        Row( 
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _buildControlButton(
-                              icon: _isMuted ? Icons.mic_off : Icons.mic,
-                              label: "Mute",
-                              isActive: _isMuted,
-                              onTap: () {
-                                setState(() => _isMuted = !_isMuted);
-                                _callService.toggleMute(_isMuted);
-                              },
-                            ),
-                            _buildActionCircle(Icons.call_end, Colors.redAccent, () {
-                              if (widget.isGroupCall && widget.targetIds != null && !widget.isIncoming) {
-                                 for(String target in widget.targetIds!) _socketService.endCall(target, _currentChannel);
-                              } else if (widget.remoteId != null) {
-                                 _socketService.endCall(widget.remoteId!, _currentChannel);
-                              }
-                              _endCallUI("Call Ended");
-                            }),
-                            
-                            // Audio Route UI
-                            _buildAudioRouteMenu(),
-                          ],
-                        ),
-                      ],
-                    ),
-                ),
-              ],
-            ),
-          ),
-
-          if (widget.isVideoCall && _isConnected && !_isVideoOff)
-             Positioned(
-               right: 16,
-               top: MediaQuery.of(context).padding.top + 20,
-               child: Container(
-                 width: 110, height: 160,
-                 decoration: BoxDecoration(
-                   color: Colors.black,
-                   borderRadius: BorderRadius.circular(16),
-                   border: Border.all(color: Colors.white24, width: 2),
-                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10)]
-                 ),
-                 child: ClipRRect(
-                   borderRadius: BorderRadius.circular(14),
-                   child: AgoraVideoView(
-                     controller: VideoViewController(
-                       rtcEngine: _callService.engine,
-                       canvas: const VideoCanvas(uid: 0), 
+            if (widget.isVideoCall && _isConnected && !_isVideoOff)
+               Positioned(
+                 right: 16,
+                 top: MediaQuery.of(context).padding.top + 20,
+                 child: Container(
+                   width: 110, height: 160,
+                   decoration: BoxDecoration(
+                     color: Colors.black,
+                     borderRadius: BorderRadius.circular(16),
+                     border: Border.all(color: Colors.white24, width: 2),
+                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10)]
+                   ),
+                   child: ClipRRect(
+                     borderRadius: BorderRadius.circular(14),
+                     child: AgoraVideoView(
+                       controller: VideoViewController(
+                         rtcEngine: _callService.engine,
+                         canvas: const VideoCanvas(uid: 0), 
+                       ),
                      ),
                    ),
                  ),
-               ),
-             )
-        ],
+               )
+          ],
+        ),
       ),
     );
   }

@@ -54,8 +54,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     super.initState();
     _setupSocketListener();
     
-    // ✅ MASSIVE PERFORMANCE FIX: Defer data loading until AFTER the screen 
-    // finishes its slide-in animation. This prevents the UI from freezing!
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 250), () {
         if (mounted) _loadGroupInfo();
@@ -125,8 +123,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
-  // ✅ FOOLPROOF AVATAR HELPER
-  // Prevents invalid images or raw Base64 strings from crashing the main thread
   ImageProvider? _getSafeImageProvider(String? imgUrl) {
     if (imgUrl == null || imgUrl.trim().isEmpty) return null;
     final cleanUrl = imgUrl.toLowerCase().trim();
@@ -175,6 +171,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     if (image != null) {
       setState(() => _isLoading = true);
       final success = await _dataService.updateGroupIcon(widget.groupId, image);
+      
+      // ✅ CRITICAL FIX: Ensure screen still exists before showing SnackBar
+      if (!mounted) return; 
+      
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Group Icon Updated!")));
         _loadGroupInfo();
@@ -188,6 +188,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   Future<void> _revertIcon() async {
     setState(() => _isLoading = true);
     final success = await _dataService.removeGroupIcon(widget.groupId);
+    
+    if (!mounted) return; // ✅ CRITICAL FIX
+    
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Icon removed.")));
       _loadGroupInfo();
@@ -351,15 +354,13 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _uploadFile() async {
-  try {
-    FilePickerResult? result = await FilePicker.pickFiles(
-      withData: true, 
-    );
+    try {
+      FilePickerResult? result = await FilePicker.pickFiles(withData: true);
       
       if (result != null && result.files.isNotEmpty) {
         final platformFile = result.files.single;
         
-        Navigator.pop(context); 
+        if (Navigator.canPop(context)) Navigator.pop(context); 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Uploading file..."), duration: Duration(seconds: 1)),
         );
@@ -371,11 +372,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         
         if (kIsWeb) {
           if (platformFile.bytes != null) {
-            request.files.add(http.MultipartFile.fromBytes(
-              'file', 
-              platformFile.bytes!,
-              filename: platformFile.name
-            ));
+            request.files.add(http.MultipartFile.fromBytes('file', platformFile.bytes!, filename: platformFile.name));
           } else {
             throw Exception("File bytes are missing. Cannot upload on Web.");
           }
@@ -388,13 +385,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         }
         
         String? token = await AuthService().getToken();
-        if (token != null) {
-          request.headers['auth-token'] = token;
-        }
+        if (token != null) request.headers['auth-token'] = token;
         
         var response = await request.send();
         
-        if (!mounted) return;
+        if (!mounted) return; // ✅ CRITICAL FIX
 
         if (response.statusCode == 200) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("File uploaded successfully!")));
@@ -412,19 +407,19 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _deleteDocument(String docId) async {
-    Navigator.pop(context); 
+    if (Navigator.canPop(context)) Navigator.pop(context); 
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Deleting file...")));
 
     final success = await _dataService.deleteGroupDocument(widget.groupId, docId);
 
-    if (mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("File deleted.")));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Failed to delete file.")));
-      }
-      _openDocsSheet(); 
+    if (!mounted) return; // ✅ CRITICAL FIX
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("File deleted.")));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Failed to delete file.")));
     }
+    _openDocsSheet(); 
   }
 
   void _openNoticeBoard() {
@@ -581,7 +576,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("Cancel")),
           ElevatedButton(onPressed: () async {
               if(titleCtrl.text.isEmpty || bodyCtrl.text.isEmpty) return;
-              Navigator.pop(c);
+              if (Navigator.canPop(c)) Navigator.pop(c);
               
               if (isEditing) {
                 await _dataService.editGroupNotice(widget.groupId, existingNotice['_id'], titleCtrl.text, bodyCtrl.text);
@@ -589,11 +584,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 await _api.post('/api/groups/${widget.groupId}/notices', {'title': titleCtrl.text, 'content': bodyCtrl.text});
               }
               
-              if (mounted) {
-                Navigator.pop(parentContext); 
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isEditing ? "Notice Updated" : "Notice Posted")));
-                _openNoticeBoard(); 
-              }
+              if (!mounted) return; // ✅ CRITICAL FIX
+              
+              if (Navigator.canPop(parentContext)) Navigator.pop(parentContext); 
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isEditing ? "Notice Updated" : "Notice Posted")));
+              _openNoticeBoard(); 
             }, child: Text(isEditing ? "Save" : "Post")),
         ],
       )
@@ -601,8 +596,13 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _deleteNotice(String noticeId) async {
-    Navigator.pop(context); 
+    // We close the bottom sheet first so it doesn't freeze during deletion
+    if (Navigator.canPop(context)) Navigator.pop(context); 
+    
     final success = await _dataService.deleteGroupNotice(widget.groupId, noticeId);
+    
+    if (!mounted) return; // ✅ CRITICAL FIX: Stops the Null Check Operator Crash!
+    
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Notice deleted.")));
       _openNoticeBoard(); 
@@ -611,20 +611,27 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
   Future<void> _toggleAdmin(String userId, String name) async {
     await _dataService.toggleGroupAdmin(widget.groupId, userId);
+    
+    if (!mounted) return; // ✅ CRITICAL FIX
+    
     _loadGroupInfo(); 
-    if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Role updated for $name")));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Role updated for $name")));
   }
 
   Future<void> _removeMember(String userId) async {
     await _dataService.removeGroupMember(widget.groupId, userId);
+    if (!mounted) return;
     _loadGroupInfo();
   }
 
   Future<void> _viewProfile(String userId) async {
     showDialog(context: context, builder: (c) => const Center(child: CircularProgressIndicator()));
     final fullProfile = await _dataService.fetchAlumniById(userId);
-    Navigator.pop(context);
-    if (fullProfile != null && mounted) {
+    
+    if (!mounted) return; 
+    if (Navigator.canPop(context)) Navigator.pop(context);
+    
+    if (fullProfile != null) {
       Navigator.push(context, MaterialPageRoute(builder: (_) => AlumniDetailScreen(alumniData: fullProfile)));
     }
   }
@@ -781,7 +788,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
                         return ListTile(
                           onTap: () => _viewProfile(m['_id']),
-                          // ✅ FIXED: Safely render member avatars without freezing
                           leading: CircleAvatar(
                             backgroundColor: Colors.grey[200],
                             backgroundImage: imgProvider,

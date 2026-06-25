@@ -104,13 +104,15 @@ const sendBroadcastNotification = async (title, body, data = {}) => {
 
 const sendPersonalNotification = async (userId, title, body, data = {}) => {
   try {
-    // ✅ FIX: Ensure call_ended and call_rejected are processed as silent data calls
     const isCall =
       data.type === "call_offer" ||
       data.type === "video_call" ||
       data.type === "incoming_call" ||
       data.type === "call_ended" ||
       data.type === "call_rejected";
+
+    // ✅ NEW: Detect if this is a chat message to route it as a data-only message
+    const isChat = data.type === "chat_message";
 
     const extractedSenderId = data.senderId || data.id || null;
     const extractedProfilePic = data.profilePicture || "";
@@ -163,7 +165,32 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
         headers: { "apns-priority": "10" },
         payload: { aps: { "content-available": 1 } },
       };
+    } else if (isChat) {
+      // ✅ NEW: Chat-specific data-only payload for rich Flutter local notifications (Avatars & Reply)
+      const safeStringifiedData = {};
+      for (const [key, value] of Object.entries(data)) {
+        safeStringifiedData[key] =
+          typeof value === "object" ? JSON.stringify(value) : String(value);
+      }
+
+      message.data = {
+        title: title || "New Message",
+        body: body || "",
+        ...safeStringifiedData,
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+      };
+
+      message.android = { priority: "high" };
+      message.apns = {
+        payload: {
+          aps: {
+            "content-available": 1,
+            category: "CHAT_REPLY", // Triggers iOS native text input capability
+          },
+        },
+      };
     } else {
+      // Standard notifications
       message.notification = {
         title: title || "New Notification",
         body: body || "You have a new message",

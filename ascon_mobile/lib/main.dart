@@ -11,6 +11,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http; 
 
 import 'services/notification_service.dart';
 import 'services/socket_service.dart'; 
@@ -22,22 +23,81 @@ import 'utils/error_handler.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = rootNavigatorKey;
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
-
-// Global Provider Container allows us to access Riverpod outside the Widget tree
 final ProviderContainer providerContainer = ProviderContainer();
+
+// ✅ NEW: Safe Cold-Start Navigation Guard
+bool _isNavigatingToCall = false;
+
+void safeNavigateToCall(Map<String, dynamic> args) {
+  if (_isNavigatingToCall) return;
+  _isNavigatingToCall = true;
+
+  void pushRoute() {
+    final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+    if (!currentRoute.contains('/call')) {
+      appRouter.push('/call', extra: args);
+    }
+    // Release the lock after routing is complete
+    Future.delayed(const Duration(seconds: 2), () {
+      _isNavigatingToCall = false;
+    });
+  }
+
+  // If the app is waking from a dead state, context might not be ready. Wait for next frame.
+  if (rootNavigatorKey.currentContext != null) {
+    pushRoute();
+  } else {
+    WidgetsBinding.instance.addPostFrameCallback((_) => pushRoute());
+  }
+}
+
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse notificationResponse) async {
+  final String? replyText = notificationResponse.input;
+  final payload = notificationResponse.payload;
+
+  if (notificationResponse.actionId == 'REPLY_ACTION' && replyText != null && payload != null) {
+    WidgetsFlutterBinding.ensureInitialized();
+    await dotenv.load(fileName: "env.txt");
+    await Hive.initFlutter();
+    var box = await Hive.openBox('ascon_cache');
+    
+    String? token = box.get('auth_token'); 
+    final data = jsonDecode(payload);
+
+    final String conversationId = data['conversationId'] ?? '';
+    final String receiverId = data['senderId'] ?? '';
+
+    if (token != null && conversationId.isNotEmpty) {
+      try {
+        await http.post(
+          Uri.parse('${AppConfig.baseUrl}/chat/reply'), 
+          headers: {
+            'Authorization': 'Bearer $token', 
+            'Content-Type': 'application/json'
+          },
+          body: jsonEncode({
+            'conversationId': conversationId, 
+            'receiverId': receiverId, 
+            'message': replyText
+          }),
+        );
+      } catch (e) {
+        debugPrint("Background Reply failed: $e");
+      }
+    }
+  }
+}
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (kIsWeb) return;
   
-  // ✅ FIX 1: Ensure Flutter bindings are initialized in the background isolate
   WidgetsFlutterBinding.ensureInitialized();
-  
   await Firebase.initializeApp(); 
 
   final type = message.data['type'];
 
-  // Instantly dismiss CallKit if the remote user hangs up or rejects the call
   if (type == 'call_ended' || type == 'call_rejected') {
     final String? channelName = message.data['channelName'] ?? message.data['id']; 
     if (channelName != null && channelName.isNotEmpty) {
@@ -45,7 +105,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     } else {
       await FlutterCallkitIncoming.endAllCalls();
     }
-    return; // Important: Exit early so we don't process it further
+    return; 
   }
 
   if (type == 'incoming_call' || type == 'call_offer' || type == 'video_call') {
@@ -71,11 +131,14 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       android: const AndroidParams(
         isCustomNotification: true,
         isShowLogo: false,
-        ringtonePath: 'system_ringtone_default',
+        ringtonePath: 'ringtone', 
         backgroundColor: '#0F3621',
         actionColor: '#4CAF50',
         textAccept: 'Accept', 
         textDecline: 'Decline', 
+        // ✅ CRITICAL FIX: Changing this name forces Android to create a NEW notification channel, 
+        // overwriting the cached "beep" and forcing the ringtone.mp3 to loop.
+        incomingCallNotificationChannelName: 'ASCON Calls V2', 
       ),
       ios: const IOSParams(
         iconName: 'CallKitIcon',
@@ -91,7 +154,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         supportsHolding: true,
         supportsGrouping: false,
         supportsUngrouping: false,
-        ringtonePath: 'system_ringtone_default',
+        ringtonePath: 'ringtone.mp3', 
       ),
     );
 
@@ -101,13 +164,43 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
     
     const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('ic_notification');
-    await localNotifications.initialize(const InitializationSettings(android: androidSettings));
-
-    String title = "New Notification";
-    String body = "You have a new update";
+    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings();
     
-    if (message.data.containsKey('title')) title = message.data['title'];
-    if (message.data.containsKey('body')) body = message.data['body'];
+    await localNotifications.initialize(
+      const InitializationSettings(android: androidSettings, iOS: iosSettings),
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground, 
+    );
+
+    String title = message.data['title'] ?? "New Notification";
+    String body = message.data['body'] ?? "You have a new update";
+    final isChat = type == 'chat_message';
+
+    ByteArrayAndroidBitmap? largeIconBitmap;
+    ByteArrayAndroidIcon? personIcon;
+    
+    if (message.data['profilePicture'] != null && message.data['profilePicture'].toString().isNotEmpty) {
+      try {
+        final response = await http.get(Uri.parse(message.data['profilePicture']));
+        if (response.statusCode == 200) {
+          largeIconBitmap = ByteArrayAndroidBitmap(response.bodyBytes);
+          personIcon = ByteArrayAndroidIcon(response.bodyBytes);
+        }
+      } catch (e) {
+        debugPrint("Failed to load avatar for notification: $e");
+      }
+    }
+
+    MessagingStyleInformation? styleInformation;
+    if (isChat) {
+      final person = Person(
+        name: message.data['senderName'] ?? title,
+        icon: personIcon, 
+      );
+      styleInformation = MessagingStyleInformation(
+        person,
+        messages: [Message(body, DateTime.now(), person)],
+      );
+    }
 
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       AppConfig.notificationChannelId,
@@ -116,15 +209,33 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       priority: Priority.high,
       color: const Color(0xFF1B5E3A),
       icon: 'ic_notification',
+      largeIcon: largeIconBitmap, 
+      styleInformation: styleInformation, 
       enableVibration: true,
       playSound: true, 
+      actions: isChat ? [
+        const AndroidNotificationAction(
+          'REPLY_ACTION',
+          'Reply',
+          icon: DrawableResourceAndroidBitmap('ic_notification'), 
+          inputs: [
+            AndroidNotificationActionInput(
+              label: 'Type a message...',
+            ),
+          ],
+        )
+      ] : null,
+    );
+
+    final DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      categoryIdentifier: isChat ? 'CHAT_REPLY' : null,
     );
 
     await localNotifications.show(
       message.hashCode,
       title,
       body,
-      NotificationDetails(android: androidDetails),
+      NotificationDetails(android: androidDetails, iOS: iosDetails),
       payload: jsonEncode(message.data),
     );
   }
@@ -217,7 +328,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   StreamSubscription? _callSubscription;
   StreamSubscription? _fcmSubscription;
   
-  DateTime? _lastSyncTime; // Variable to throttle aggressive lifecycle syncing
+  DateTime? _lastSyncTime; 
 
   @override
   void initState() {
@@ -227,6 +338,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _listenForFCMForeground(); 
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
+    _checkColdStartCall(); 
     
     _triggerColdStartSync();
   }
@@ -243,6 +355,57 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (await AuthService().isSessionValid()) {
       _lastSyncTime = DateTime.now(); 
       AuthService().performGlobalSilentSync();
+    }
+  }
+
+  Future<void> _checkColdStartCall() async {
+    if (kIsWeb) return;
+    try {
+      var calls = await FlutterCallkitIncoming.activeCalls();
+      if (calls is List && calls.isNotEmpty) {
+        final dynamic callData = calls[0]; 
+        
+        Map<String, dynamic> data = {};
+        if (callData is Map) {
+           data = Map<String, dynamic>.from(callData);
+        } else {
+           try { data = jsonDecode(jsonEncode(callData)); } catch (_) {}
+        }
+
+        if (data.isEmpty) return;
+
+        bool isLoggedIn = await AuthService().isSessionValid();
+        if (!isLoggedIn) return;
+
+        Map<String, dynamic> extra = {};
+        if (data['extra'] != null) {
+          if (data['extra'] is Map) {
+             extra = Map<String, dynamic>.from(data['extra']);
+          } else if (data['extra'] is String) {
+             try { extra = jsonDecode(data['extra']); } catch (_) {}
+          }
+        }
+
+        String channelName = extra['channelName']?.toString() ?? data['id']?.toString() ?? "";
+        String callerId = extra['callerId']?.toString() ?? "";
+        String callerAvatar = extra['callerAvatar']?.toString() ?? data['avatar']?.toString() ?? ""; 
+        bool isVideo = data['type'] == 1 || data['type'] == "1";
+        String remoteName = data['nameCaller']?.toString() ?? "Alumni User";
+
+        // ✅ FIXED: Safely navigate after cold start parsing
+        safeNavigateToCall({
+          'isGroupCall': false, 
+          'isVideoCall': isVideo,
+          'remoteName': remoteName,
+          'remoteId': callerId,
+          'channelName': channelName,
+          'remoteAvatar': callerAvatar, 
+          'isIncoming': true,
+          'autoAccept': true,
+        });
+      }
+    } catch (e) {
+      debugPrint("Cold start call check failed: $e");
     }
   }
 
@@ -272,14 +435,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         if (isValid) {
           final now = DateTime.now();
           if (_lastSyncTime == null || now.difference(_lastSyncTime!).inMinutes >= 5) {
-            debugPrint("Triggering throttled background sync...");
             _lastSyncTime = now;
             AuthService().performGlobalSilentSync();
-          } else {
-            debugPrint("Skipping background sync (last sync was less than 5 minutes ago).");
           }
-        } else {
-          debugPrint("User is logged out. Skipping background sync.");
         }
       });
     }
@@ -290,7 +448,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (initialMessage != null) {
       _handleNotificationClick(initialMessage);
     }
-
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationClick);
   }
 
@@ -298,20 +455,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final data = message.data;
     
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
-      // ✅ FIX 2: Delay routing slightly to allow UI & Providers to boot on cold start
-      Future.delayed(const Duration(milliseconds: 400), () {
-        final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-        if (currentRoute.contains('/call')) return;
-
-        appRouter.push('/call', extra: {
-          'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
-          'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
-          'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
-          'remoteId': data['callerId'] ?? "",
-          'channelName': data['channelName'] ?? "",
-          'remoteAvatar': data['callerAvatar'] ?? data['callerPic'], 
-          'isIncoming': true,
-        });
+      safeNavigateToCall({
+        'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
+        'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
+        'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
+        'remoteId': data['callerId'] ?? "",
+        'channelName': data['channelName'] ?? "",
+        'remoteAvatar': data['callerAvatar'] ?? data['callerPic'], 
+        'isIncoming': true,
       });
     } 
     else if (data['route'] != null) {
@@ -353,35 +504,67 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     FlutterCallkitIncoming.onEvent.listen((dynamic event) {
       if (event == null) return;
 
-      final String eventName = event.event.toString(); 
+      try {
+        // ✅ CRITICAL FIX: Check the type before accessing properties
+        // We look for the specific accepted/declined events and ignore others (like timeouts)
+        String eventName = "";
+        
+        // Handle standard CallEvent objects
+        if (event.runtimeType.toString() == 'CallEvent') {
+           eventName = event.event.toString();
+        } else {
+           // If it's a specific action class, we map it to the event name
+           if (event.runtimeType.toString() == 'CallEventActionCallAccept') {
+             eventName = 'actionCallAccept';
+           } else if (event.runtimeType.toString() == 'CallEventActionCallDecline') {
+             eventName = 'actionCallDecline';
+           }
+        }
 
-      if (eventName.contains('actionCallAccept')) {
-        final data = event.body;
-        String channelName = data['extra']?['channelName'] ?? data['id'] ?? "";
-        String callerId = data['extra']?['callerId'] ?? "";
-        String callerAvatar = data['extra']?['callerAvatar'] ?? data['avatar'] ?? ""; 
+        if (eventName.contains('actionCallAccept') || eventName.contains('actionCallCallback')) {
+          final data = event.body;
+          if (data == null) return;
 
-        // ✅ FIX 3: Wait for engine to build, then verify session before routing
-        Future.delayed(const Duration(milliseconds: 400), () async {
-          bool isLoggedIn = await AuthService().isSessionValid();
-          if (!isLoggedIn) return;
+          Map<String, dynamic> extra = {};
+          if (data['extra'] != null) {
+            if (data['extra'] is Map) {
+              extra = Map<String, dynamic>.from(data['extra']);
+            } else if (data['extra'] is String) {
+              try { extra = jsonDecode(data['extra']); } catch (_) {}
+            }
+          }
 
-          final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-          if (currentRoute.contains('/call')) return;
+          String channelName = extra['channelName']?.toString() ?? data['id']?.toString() ?? "";
+          String callerId = extra['callerId']?.toString() ?? "";
+          String callerAvatar = extra['callerAvatar']?.toString() ?? data['avatar']?.toString() ?? ""; 
+          bool isVideo = data['type'] == 1 || data['type'] == "1";
+          String remoteName = data['nameCaller']?.toString() ?? "Alumni User";
 
-          appRouter.push('/call', extra: {
-            'isGroupCall': false, 
-            'isVideoCall': data['type'] == 1,
-            'remoteName': data['nameCaller'] ?? "Alumni User",
-            'remoteId': callerId,
-            'channelName': channelName,
-            'remoteAvatar': callerAvatar, 
-            'isIncoming': true,
+          Future.delayed(const Duration(milliseconds: 1000), () async {
+            bool isLoggedIn = await AuthService().isSessionValid();
+            if (!isLoggedIn) return;
+
+            final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+            if (currentRoute.contains('/call')) return;
+
+            appRouter.push('/call', extra: {
+              'isGroupCall': false, 
+              'isVideoCall': isVideo,
+              'remoteName': remoteName,
+              'remoteId': callerId,
+              'channelName': channelName,
+              'remoteAvatar': callerAvatar, 
+              'isIncoming': true,
+              'autoAccept': true, 
+            });
           });
-        });
-      } 
-      else if (eventName.contains('actionCallDecline')) {
-        SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
+        } 
+        else if (eventName.contains('actionCallDecline')) {
+          SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
+          FlutterCallkitIncoming.endAllCalls(); 
+        }
+      } catch (err) {
+        debugPrint("CallKit Listener Error: $err");
       }
     });
   }
@@ -402,7 +585,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final isAlreadyInCall = currentPath == '/call';
 
         if (!isAuthScreen && !isAlreadyInCall) {
-          appRouter.push('/call', extra: {
+          safeNavigateToCall({
             'isGroupCall': isGroup, 
             'isVideoCall': data['callerData']?['isVideoCall'] ?? false, 
             'remoteName': displayRemoteName,
