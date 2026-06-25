@@ -25,7 +25,7 @@ final GlobalKey<NavigatorState> navigatorKey = rootNavigatorKey;
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 final ProviderContainer providerContainer = ProviderContainer();
 
-// ✅ NEW: Safe Cold-Start Navigation Guard
+// Safe Cold-Start Navigation Guard
 bool _isNavigatingToCall = false;
 
 void safeNavigateToCall(Map<String, dynamic> args) {
@@ -33,22 +33,29 @@ void safeNavigateToCall(Map<String, dynamic> args) {
   _isNavigatingToCall = true;
 
   void pushRoute() {
-    final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-    if (!currentRoute.contains('/call')) {
-      appRouter.push('/call', extra: args);
+    try {
+      final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+      if (!currentRoute.contains('/call')) {
+        appRouter.push('/call', extra: args);
+      }
+    } catch (e) {
+      debugPrint("Routing delayed due to background state: $e");
+    } finally {
+      Future.delayed(const Duration(seconds: 3), () {
+        _isNavigatingToCall = false;
+      });
     }
-    // Release the lock after routing is complete
-    Future.delayed(const Duration(seconds: 2), () {
-      _isNavigatingToCall = false;
-    });
   }
 
-  // If the app is waking from a dead state, context might not be ready. Wait for next frame.
-  if (rootNavigatorKey.currentContext != null) {
-    pushRoute();
-  } else {
-    WidgetsBinding.instance.addPostFrameCallback((_) => pushRoute());
-  }
+  // ✅ FIX: Wait 800ms for Android to fully transition the app from Background to Foreground
+  // before pushing the complex Agora Call UI. This prevents the "App keeps stopping" crash.
+  Future.delayed(const Duration(milliseconds: 800), () {
+    if (rootNavigatorKey.currentContext != null) {
+      pushRoute();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => pushRoute());
+    }
+  });
 }
 
 @pragma('vm:entry-point')
@@ -109,56 +116,60 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
 
   if (type == 'incoming_call' || type == 'call_offer' || type == 'video_call') {
-    CallKitParams callKitParams = CallKitParams(
-      id: message.data['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}", 
-      nameCaller: message.data['callerName'] ?? 'Alumni User',
-      appName: 'ASCON Connect',
-      avatar: message.data['callerAvatar'] ?? '',
-      handle: 'Incoming Call',
-      type: (message.data['isVideoCall'] == "true" || type == 'video_call') ? 1 : 0,
-      missedCallNotification: const NotificationParams(
-        showNotification: true,
-        isShowCallback: false,
-        subtitle: 'Missed call',
-        callbackText: 'Call back',
-      ),
-      duration: 30000, 
-      extra: <String, dynamic>{
-        'channelName': message.data['channelName'],
-        'callerId': message.data['callerId'],
-        'callerAvatar': message.data['callerAvatar'] 
-      },
-      android: const AndroidParams(
-        isCustomNotification: true,
-        isShowLogo: false,
-        ringtonePath: 'ringtone', 
-        backgroundColor: '#0F3621',
-        actionColor: '#4CAF50',
-        textAccept: 'Accept', 
-        textDecline: 'Decline', 
-        // ✅ CRITICAL FIX: Changing this name forces Android to create a NEW notification channel, 
-        // overwriting the cached "beep" and forcing the ringtone.mp3 to loop.
-        incomingCallNotificationChannelName: 'ASCON Calls V2', 
-      ),
-      ios: const IOSParams(
-        iconName: 'CallKitIcon',
-        handleType: 'generic',
-        supportsVideo: true,
-        maximumCallGroups: 2,
-        maximumCallsPerCallGroup: 1,
-        audioSessionMode: 'default',
-        audioSessionActive: true,
-        audioSessionPreferredSampleRate: 44100.0,
-        audioSessionPreferredIOBufferDuration: 0.005,
-        supportsDTMF: true,
-        supportsHolding: true,
-        supportsGrouping: false,
-        supportsUngrouping: false,
-        ringtonePath: 'ringtone.mp3', 
-      ),
-    );
+    try {
+      CallKitParams callKitParams = CallKitParams(
+        id: message.data['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}", 
+        nameCaller: message.data['callerName'] ?? 'Alumni User',
+        appName: 'ASCON Connect',
+        avatar: message.data['callerAvatar'] ?? '',
+        handle: 'Incoming Call',
+        type: (message.data['isVideoCall'] == "true" || type == 'video_call') ? 1 : 0,
+        missedCallNotification: const NotificationParams(
+          showNotification: true,
+          isShowCallback: false,
+          subtitle: 'Missed call',
+          callbackText: 'Call back',
+        ),
+        duration: 45000, // ✅ FIX: Keep alive for 45 seconds to force continuous ringing
+        extra: <String, dynamic>{
+          'channelName': message.data['channelName']?.toString() ?? '',
+          'callerId': message.data['callerId']?.toString() ?? '',
+          'callerAvatar': message.data['callerAvatar']?.toString() ?? '' 
+        },
+        android: const AndroidParams(
+          isCustomNotification: true,
+          isShowLogo: false,
+          // ✅ FIX: The exact keyword Android requires to pull the system looping ringtone
+          ringtonePath: 'system_ringtone_default', 
+          backgroundColor: '#0F3621',
+          actionColor: '#4CAF50',
+          textAccept: 'Accept', 
+          textDecline: 'Decline', 
+          // ✅ FIX: Increment to V5 to absolutely destroy any cached Android audio bugs
+          incomingCallNotificationChannelName: 'ASCON Calls V5', 
+        ),
+        ios: const IOSParams(
+          iconName: 'CallKitIcon',
+          handleType: 'generic',
+          supportsVideo: true,
+          maximumCallGroups: 2,
+          maximumCallsPerCallGroup: 1,
+          audioSessionMode: 'default',
+          audioSessionActive: true,
+          audioSessionPreferredSampleRate: 44100.0,
+          audioSessionPreferredIOBufferDuration: 0.005,
+          supportsDTMF: true,
+          supportsHolding: true,
+          supportsGrouping: false,
+          supportsUngrouping: false,
+          ringtonePath: '', // Empty string tells iOS to use default looping ringtone
+        ),
+      );
 
-    await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
+      await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
+    } catch (e) {
+      debugPrint("CallKit Init Crash Avoided: $e");
+    }
   } 
   else if (message.notification == null && message.data.isNotEmpty) {
     final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
@@ -392,7 +403,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         bool isVideo = data['type'] == 1 || data['type'] == "1";
         String remoteName = data['nameCaller']?.toString() ?? "Alumni User";
 
-        // ✅ FIXED: Safely navigate after cold start parsing
         safeNavigateToCall({
           'isGroupCall': false, 
           'isVideoCall': isVideo,
@@ -505,15 +515,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (event == null) return;
 
       try {
-        // ✅ CRITICAL FIX: Check the type before accessing properties
-        // We look for the specific accepted/declined events and ignore others (like timeouts)
         String eventName = "";
-        
-        // Handle standard CallEvent objects
         if (event.runtimeType.toString() == 'CallEvent') {
            eventName = event.event.toString();
         } else {
-           // If it's a specific action class, we map it to the event name
            if (event.runtimeType.toString() == 'CallEventActionCallAccept') {
              eventName = 'actionCallAccept';
            } else if (event.runtimeType.toString() == 'CallEventActionCallDecline') {
@@ -544,10 +549,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             bool isLoggedIn = await AuthService().isSessionValid();
             if (!isLoggedIn) return;
 
-            final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-            if (currentRoute.contains('/call')) return;
-
-            appRouter.push('/call', extra: {
+            safeNavigateToCall({
               'isGroupCall': false, 
               'isVideoCall': isVideo,
               'remoteName': remoteName,

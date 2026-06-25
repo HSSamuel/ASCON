@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; 
 import 'package:google_fonts/google_fonts.dart';
 import 'package:audioplayers/audioplayers.dart'; 
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart'; // ✅ ADDED RINGTONE PLAYER
 import 'package:agora_rtc_engine/agora_rtc_engine.dart'; 
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart' hide CallEvent; 
 import 'package:flutter_callkit_incoming/entities/entities.dart' hide CallEvent; 
@@ -46,7 +47,7 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   final CallService _callService = CallService();
   final SocketService _socketService = SocketService();
-  final AudioPlayer _audioPlayer = AudioPlayer(); 
+  final AudioPlayer _audioPlayer = AudioPlayer(); // Kept for the outgoing dialing sound
   
   late String _currentChannel; 
 
@@ -58,6 +59,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   bool _hasAccepted = false;
   int _activeGroupUsers = 0; 
   bool _isDialing = false; 
+  bool _isCallCancelled = false; 
 
   StreamSubscription<CallEvent>? _listener;
   StreamSubscription<Map<String, dynamic>>? _socketListener;
@@ -70,7 +72,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    WakelockPlus.enable();
+    try {
+      WakelockPlus.enable();
+    } catch (_) {}
     
     _currentChannel = widget.channelName; 
     
@@ -92,11 +96,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         _hasAccepted = true;
         _status = "Connecting...";
         
-        // ✅ CRITICAL STABILITY DELAY:
-        // Wait 1.2s for the Android Activity to fully load into the foreground.
-        // Hitting hardware permissions instantly on wake causes 'keeps stopping' Native crashes.
-        Future.delayed(const Duration(milliseconds: 1200), () {
-           if (mounted) _acceptIncomingCall();
+        Future.delayed(const Duration(milliseconds: 1500), () {
+           if (mounted && !_isCallCancelled) {
+             _acceptIncomingCall();
+           }
         });
       } else {
         _status = widget.isVideoCall ? "Incoming Video Call..." : "Incoming Call...";
@@ -137,11 +140,22 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _playRingtone() async {
-    await _audioPlayer.setReleaseMode(ReleaseMode.loop);
-    await _audioPlayer.play(AssetSource('sounds/ringtone.mp3'));
+    if (kIsWeb) {
+      // Web browsers don't have a System Ringtone. Fallback to custom mp3.
+      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
+      await _audioPlayer.play(AssetSource('sounds/ringtone.mp3'));
+    } else {
+      // Native System Ringtone for Android/iOS
+      try {
+        FlutterRingtonePlayer().playRingtone(looping: true); 
+      } catch (e) {
+        debugPrint("Error playing native ringtone: $e");
+      }
+    }
   }
 
   void _playDialingSound() async {
+    // Outgoing calls still use the custom dialing sound
     _isDialing = true;
     await _audioPlayer.setReleaseMode(ReleaseMode.loop);
     
@@ -152,7 +166,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   void _stopAudio() async {
     _isDialing = false; 
-    await _audioPlayer.stop();
+    
+    if (!kIsWeb) {
+      try {
+        FlutterRingtonePlayer().stop(); // Stops Native Ringtone
+      } catch (_) {}
+    }
+    
+    await _audioPlayer.stop(); // Stops Dialing sound or Web fallback ringtone
   }
 
   void _startOutgoingCall() async {
@@ -199,27 +220,49 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _acceptIncomingCall() async {
-    bool hasPermissions = await _requestPermissions();
-    if (!hasPermissions) {
-      _endCallUI("Permissions Denied");
-      return;
-    }
+    try {
+      setState(() {
+        _hasAccepted = true;
+        _status = "Connecting...";
+      });
+      
+      _stopAudio(); 
 
-    setState(() {
-      _hasAccepted = true;
-      _status = "Connecting...";
-    });
-    
-    _stopAudio(); 
+      if (!kIsWeb) {
+        await FlutterCallkitIncoming.endAllCalls(); 
+      }
 
-    if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
-      _socketService.answerCall(widget.remoteId!, _currentChannel);
-    }
-    
-    await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall);
-    
-    if (!kIsWeb) {
-      _callService.setAudioRoute(_selectedAudioRoute); 
+      // ✅ FIX: Give the OS 500ms to settle the Activity state before requesting Mic/Camera 
+      // hardware. If we ask too fast during a cold boot, Android 13/14 throws a fatal SecurityException.
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (!mounted) return;
+        
+        bool hasPermissions = await _requestPermissions();
+        if (!hasPermissions) {
+          _endCallUI("Permissions Denied");
+          return;
+        }
+
+        if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
+          if (_socketService.socket?.connected == true) {
+             _socketService.answerCall(widget.remoteId!, _currentChannel);
+          } else {
+             _socketService.socket?.once('connect', (_) {
+                _socketService.answerCall(widget.remoteId!, _currentChannel);
+             });
+          }
+        }
+        
+        await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall);
+        
+        if (!kIsWeb) {
+          _callService.setAudioRoute(_selectedAudioRoute); 
+        }
+      });
+      
+    } catch (e) {
+      debugPrint("Critical Error in Accept Call: $e");
+      _endCallUI("Connection Error");
     }
   }
 
@@ -270,7 +313,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
            });
            
            if (widget.remoteId != null && widget.remoteId!.isNotEmpty) {
-              _socketService.answerCall(widget.remoteId!, _currentChannel);
+              if (_socketService.socket?.connected == true) {
+                 _socketService.answerCall(widget.remoteId!, _currentChannel);
+              }
            }
            await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall); 
            return; 
@@ -309,6 +354,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _endCallUI(String message) async {
+    _isCallCancelled = true; 
     setState(() => _status = message);
     _stopAudio(); 
     _stopTimer();
@@ -402,7 +448,9 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    WakelockPlus.disable();
+    try {
+      WakelockPlus.disable();
+    } catch (_) {}
     _stopAudio(); 
     _audioPlayer.dispose();
     _listener?.cancel();

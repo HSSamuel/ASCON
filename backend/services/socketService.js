@@ -10,7 +10,6 @@ const Group = require("../models/Group");
 const Message = require("../models/Message");
 const CallLog = require("../models/CallLog");
 const logger = require("../utils/logger");
-// ✅ FIX: Import notificationHandler to send FCMs for background signaling
 const { sendPersonalNotification } = require("../utils/notificationHandler");
 
 let io;
@@ -381,7 +380,7 @@ const initializeSocket = async (server) => {
           );
           activeCallTimers.delete(callKey);
 
-          // ✅ FIX: WAKE UP BACKGROUND APP TO DISMISS CALLKIT ON TIMEOUT
+          // ✅ WAKE UP BACKGROUND APP TO DISMISS CALLKIT ON TIMEOUT
           sendPersonalNotification(targetUserId, "", "", {
             type: "call_ended",
             channelName: channelName,
@@ -508,7 +507,7 @@ const initializeSocket = async (server) => {
 
       socket.to(targetUserId).emit("call_ended", { channelName });
 
-      // ✅ FIX: WAKE UP BACKGROUND APP TO DISMISS CALLKIT IF CALL IS CANCELLED
+      // ✅ WAKE UP BACKGROUND APP TO DISMISS CALLKIT IF CALL IS CANCELLED
       sendPersonalNotification(targetUserId, "", "", {
         type: "call_ended",
         channelName: channelName,
@@ -534,7 +533,7 @@ const initializeSocket = async (server) => {
                 { status: "declined", endTime: new Date() },
               );
 
-              // ✅ FIX: WAKE UP CALLER'S APP IF THEY ARE IN THE BACKGROUND
+              // ✅ WAKE UP CALLER'S APP IF THEY ARE IN THE BACKGROUND
               sendPersonalNotification(targetUserId, "", "", {
                 type: "call_rejected",
                 channelName: data.channelName,
