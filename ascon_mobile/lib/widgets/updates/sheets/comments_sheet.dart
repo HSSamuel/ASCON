@@ -21,8 +21,6 @@ class CommentsSheet extends ConsumerStatefulWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      useRootNavigator: true, // ✅ Forces the sheet to render over the bottom navigation bar
-      useSafeArea: true,      // ✅ Ensures the sheet stays within safe screen boundaries
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => CommentsSheet(postId: postId),

@@ -312,7 +312,7 @@ class AboutScreen extends StatelessWidget {
                     const SizedBox(height: 20),
                     
                     Text(
-                      "ASCON Alumni v2.1.0",
+                      "ASCON Alumni App v2.0.1",
                       style: GoogleFonts.lato(color: Colors.grey[400], fontSize: 12),
                     ),
                     const SizedBox(height: 40),

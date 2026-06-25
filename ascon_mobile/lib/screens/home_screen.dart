@@ -24,7 +24,6 @@ import 'welcome_dialog.dart';
 import '../widgets/chapter_card.dart';     
 import '../widgets/digital_id_card.dart';
 import '../widgets/shimmer_utils.dart';
-import '../widgets/updates/sheets/create_post_sheet.dart'; 
 
 import '../viewmodels/dashboard_view_model.dart';
 import '../viewmodels/events_view_model.dart'; 
@@ -292,7 +291,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         showBadge: badgeState.hasUnreadMessages || badgeState.missedCallsCount > 0,
                         badgeCount: (badgeState.unreadMessageCount ?? 0) + badgeState.missedCallsCount,
                       ),
-                      _buildNavItem(label: "Updates", icon: Icons.add, activeIcon: Icons.add, index: 2, color: primaryColor, currentIndex: uiIndex),
+                      _buildNavItem(label: "Updates", icon: Icons.dynamic_feed, activeIcon: Icons.dynamic_feed, index: 2, color: primaryColor, currentIndex: uiIndex),
                       _buildNavItem(label: "Directory", icon: Icons.list_alt, activeIcon: Icons.list, index: 3, color: primaryColor, currentIndex: uiIndex),
                       _buildNavItem(
                         label: "Profile", 
@@ -384,7 +383,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           Icon(
             isSelected ? activeIcon : icon, 
             color: isUpdates ? Colors.white : (isSelected ? color : Colors.grey[400]), 
-            size: isUpdates ? 24 : 20 
+            size: isUpdates ? 22 : 20
           ),
           
         if (showBadge)
@@ -447,12 +446,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         if (index == 1) { 
           ref.read(chatProvider.notifier).loadConversations(); 
         }
-        
-        if (index == 2 && currentIndex == 2) {
-          CreatePostSheet.show(context);
-          return;
-        }
-
         _goBranch(index);
       },
       borderRadius: BorderRadius.circular(30),
@@ -493,7 +486,7 @@ class DashboardView extends ConsumerStatefulWidget {
 class _DashboardViewState extends ConsumerState<DashboardView> with WidgetsBindingObserver {
   bool _isAdmin = false; 
   String? _currentUserId;
-  bool _notificationsEnabled = true;
+  bool _notificationsEnabled = true; // Assume true until checked to prevent layout flash
 
   @override
   void initState() {
@@ -545,22 +538,6 @@ class _DashboardViewState extends ConsumerState<DashboardView> with WidgetsBindi
         _isAdmin = isAdmin;
         _currentUserId = userId; 
       });
-    }
-  }
-
-  // ✅ Helper to assign distinct colors to event types
-  Color _getEventTypeColor(String type) {
-    switch (type.toUpperCase()) {
-      case 'REUNION': return Colors.purple;
-      case 'WEBINAR': return Colors.blue;
-      case 'WORKSHOP': return Colors.orange;
-      case 'NEWS': return Colors.green;
-      case 'SEMINAR': return Colors.teal;
-      case 'CONFERENCE': return Colors.indigo;
-      case 'AGM': return Colors.brown;
-      case 'INDUCTION': return Colors.cyan;
-      case 'EVENT': return Colors.redAccent;
-      default: return Colors.blueGrey;
     }
   }
 
@@ -721,6 +698,7 @@ class _DashboardViewState extends ConsumerState<DashboardView> with WidgetsBindi
                     child: Text(dashboardState.errorMessage!, style: const TextStyle(color: Colors.white, fontSize: 12), textAlign: TextAlign.center),
                   ),
 
+                // Persistent Notification Banner Check
                 if (!_notificationsEnabled && !kIsWeb) 
                   _buildNotificationBanner(),
 
@@ -867,9 +845,6 @@ class _DashboardViewState extends ConsumerState<DashboardView> with WidgetsBindi
     String type = (data['type'] ?? "Event").toString().toUpperCase();
     final String id = data['_id'] ?? data['id'] ?? "";
 
-    // ✅ Map dynamic colors to event types
-    final Color typeColor = _getEventTypeColor(type);
-
     String rawDate = data['date']?.toString() ?? '';
     if (rawDate.isNotEmpty) {
       try {
@@ -917,13 +892,7 @@ class _DashboardViewState extends ConsumerState<DashboardView> with WidgetsBindi
                     Column(
                       mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, 
                       children: [
-                        // ✅ Apply the dynamic background and text colors here
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 6), 
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3), 
-                          decoration: BoxDecoration(color: typeColor.withOpacity(0.15), borderRadius: BorderRadius.circular(6)), 
-                          child: Text(type, style: GoogleFonts.lato(fontSize: 8, fontWeight: FontWeight.w900, color: typeColor, letterSpacing: 0.5))
-                        ),
+                        Container(margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3), decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(6)), child: Text(type, style: GoogleFonts.lato(fontSize: 8, fontWeight: FontWeight.w800, color: primaryColor, letterSpacing: 0.5))),
                         Container(
                           width: 48, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6, offset: const Offset(0, 2))]),
                           child: ClipRRect(

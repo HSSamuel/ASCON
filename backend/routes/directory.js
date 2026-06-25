@@ -22,16 +22,6 @@ router.get("/", verifyToken, async (req, res) => {
     let profileMatch = {};
     let settingsMatch = {};
 
-    const currentUserId = new mongoose.Types.ObjectId(req.user._id);
-
-    // Fetch current user details to calculate dynamic mutual connections
-    const currentUser = await UserProfile.findOne({
-      userId: currentUserId,
-    }).select("yearOfAttendance industry");
-
-    const currentYear = currentUser?.yearOfAttendance || -1;
-    const currentInd = currentUser?.industry || "UNKNOWN_INDUSTRY_XYZ";
-
     // Filter by Mentorship Status
     if (mentorship === "true") {
       settingsMatch["settings.isOpenToMentorship"] = true;
@@ -39,8 +29,11 @@ router.get("/", verifyToken, async (req, res) => {
 
     // Filter by Classmates (Same Year)
     if (classmates === "true") {
-      if (currentYear !== -1) {
-        profileMatch.yearOfAttendance = currentYear;
+      const currentUser = await UserProfile.findOne({
+        userId: req.user._id,
+      }).select("yearOfAttendance");
+      if (currentUser && currentUser.yearOfAttendance) {
+        profileMatch.yearOfAttendance = currentUser.yearOfAttendance;
       } else {
         profileMatch.yearOfAttendance = -1;
       }
@@ -61,8 +54,10 @@ router.get("/", verifyToken, async (req, res) => {
     const alumniList = await UserProfile.aggregate([
       { $match: profileMatch },
 
-      // Exclude the currently logged-in user
-      { $match: { userId: { $ne: currentUserId } } },
+      // ✅ OPTIMIZATION: Exclude the currently logged-in user right at the database level!
+      {
+        $match: { userId: { $ne: new mongoose.Types.ObjectId(req.user._id) } },
+      },
 
       // Join with Auth table to check verification & online status
       {
@@ -100,69 +95,6 @@ router.get("/", verifyToken, async (req, res) => {
       // Limits the payload size sent over the network
       { $limit: 50 },
 
-      // ✅ REAL-TIME MUTUAL CONNECTIONS LOGIC
-      {
-        $lookup: {
-          from: "userprofiles",
-          let: {
-            targetUserId: "$userId",
-            targetYear: "$yearOfAttendance",
-            targetIndustry: "$industry",
-          },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $ne: ["$userId", currentUserId] }, // Not the current user
-                    { $ne: ["$userId", "$$targetUserId"] }, // Not the target user
-                    // Condition 1: Connected to Current User (Shares year or industry)
-                    {
-                      $or: [
-                        { $eq: ["$yearOfAttendance", currentYear] },
-                        {
-                          $and: [
-                            { $eq: ["$industry", currentInd] },
-                            { $ne: ["$industry", null] },
-                            { $ne: ["$industry", ""] },
-                          ],
-                        },
-                      ],
-                    },
-                    // Condition 2: Connected to Target User (Shares year or industry)
-                    {
-                      $or: [
-                        { $eq: ["$yearOfAttendance", "$$targetYear"] },
-                        {
-                          $and: [
-                            { $eq: ["$industry", "$$targetIndustry"] },
-                            { $ne: ["$$targetIndustry", null] },
-                            { $ne: ["$$targetIndustry", ""] },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-            { $limit: 5 }, // Only pull up to 5 to populate UI ("Name and 4 others")
-            // ✅ FIX: Included `userId` and `_id` so clicking works perfectly
-            {
-              $project: {
-                _id: "$userId",
-                userId: 1,
-                fullName: 1,
-                profilePicture: 1,
-                jobTitle: 1,
-                organization: 1,
-              },
-            },
-          ],
-          as: "mutualConnections",
-        },
-      },
-
       // Project final fields
       {
         $project: {
@@ -183,7 +115,6 @@ router.get("/", verifyToken, async (req, res) => {
           isOnline: "$auth.isOnline",
           lastSeen: "$auth.lastSeen",
           isOpenToMentorship: "$settings.isOpenToMentorship",
-          mutualConnections: 1,
         },
       },
     ]);
@@ -209,10 +140,6 @@ router.get("/smart-matches", verifyToken, async (req, res) => {
     const userIndustry = currentProfile.industry
       ? currentProfile.industry.toLowerCase()
       : "";
-
-    // Variables for mutual connection lookup
-    const currentYear = currentProfile.yearOfAttendance || -1;
-    const currentInd = currentProfile.industry || "UNKNOWN_INDUSTRY_XYZ";
 
     const topMatches = await UserProfile.aggregate([
       { $match: { userId: { $ne: currentUserId } } },
@@ -283,68 +210,6 @@ router.get("/smart-matches", verifyToken, async (req, res) => {
       { $match: { matchScore: { $gt: 0 } } },
       { $sort: { matchScore: -1 } },
       { $limit: 15 },
-
-      // ✅ REAL-TIME MUTUAL CONNECTIONS LOGIC (For Highlights)
-      {
-        $lookup: {
-          from: "userprofiles",
-          let: {
-            targetUserId: "$userId",
-            targetYear: "$yearOfAttendance",
-            targetIndustry: "$industry",
-          },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $ne: ["$userId", currentUserId] },
-                    { $ne: ["$userId", "$$targetUserId"] },
-                    {
-                      $or: [
-                        { $eq: ["$yearOfAttendance", currentYear] },
-                        {
-                          $and: [
-                            { $eq: ["$industry", currentInd] },
-                            { $ne: ["$industry", null] },
-                            { $ne: ["$industry", ""] },
-                          ],
-                        },
-                      ],
-                    },
-                    {
-                      $or: [
-                        { $eq: ["$yearOfAttendance", "$$targetYear"] },
-                        {
-                          $and: [
-                            { $eq: ["$industry", "$$targetIndustry"] },
-                            { $ne: ["$$targetIndustry", null] },
-                            { $ne: ["$$targetIndustry", ""] },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-            { $limit: 5 },
-            // ✅ FIX: Included `userId` and `_id` here as well
-            {
-              $project: {
-                _id: "$userId",
-                userId: 1,
-                fullName: 1,
-                profilePicture: 1,
-                jobTitle: 1,
-                organization: 1,
-              },
-            },
-          ],
-          as: "mutualConnections",
-        },
-      },
-
       {
         $project: {
           _id: "$userId",
@@ -361,7 +226,6 @@ router.get("/smart-matches", verifyToken, async (req, res) => {
           lastSeen: "$auth.lastSeen",
           isOpenToMentorship: "$settings.isOpenToMentorship",
           matchScore: 1,
-          mutualConnections: 1,
         },
       },
     ]);
@@ -423,7 +287,7 @@ router.get("/near-me", verifyToken, async (req, res) => {
       },
       { $unwind: "$settings" },
       { $match: { "settings.isLocationVisible": true } },
-      { $limit: 30 },
+      { $limit: 30 }, // Pagination limit you approved earlier
       {
         $project: {
           _id: "$userId",
@@ -547,8 +411,8 @@ router.get("/celebrations", verifyToken, async (req, res) => {
       },
       {
         $project: {
-          _id: "$userId",
-          userId: 1,
+          _id: "$userId", // ✅ Maps the userId to _id for the mobile app
+          userId: 1, // ✅ Explicitly includes userId
           fullName: 1,
           profilePicture: 1,
           jobTitle: 1,

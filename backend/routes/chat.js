@@ -58,16 +58,18 @@ router.get("/unread-status", verify, async (req, res) => {
       participants: req.user._id,
     }).select("_id");
     const conversationIds = conversations.map((c) => c._id);
-
+    
+    // ✅ CHANGED: Use countDocuments to get the exact number of unread messages
     const unreadCount = await Message.countDocuments({
       conversationId: { $in: conversationIds },
       sender: { $ne: req.user._id },
       isRead: false,
     });
-
-    res.status(200).json({
+    
+    // ✅ CHANGED: Return both the boolean and the exact count to the mobile app
+    res.status(200).json({ 
       hasUnread: unreadCount > 0,
-      unreadCount: unreadCount,
+      unreadCount: unreadCount 
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -81,6 +83,8 @@ router.get("/", verify, async (req, res) => {
   try {
     const chats = await Conversation.find({
       participants: { $in: [req.user._id] },
+      // ✅ FIX: Only return chats that have a last message.
+      // Removed { isGroup: true } to prevent empty groups from auto-appearing.
       lastMessage: { $exists: true, $ne: null, $ne: "" },
     })
       .populate("groupId", "name icon")
@@ -167,8 +171,10 @@ router.post("/start", verify, async (req, res) => {
   try {
     let chat;
     if (groupId) {
+      // Groups must theoretically exist or be created by admin
       chat = await Conversation.findOne({ groupId: groupId });
       if (!chat) {
+        // Fallback: If group exists in Group DB but not Conversation DB, create it.
         const group = await Group.findById(groupId);
         if (!group) return res.status(404).json({ message: "Group not found" });
 
@@ -183,6 +189,7 @@ router.post("/start", verify, async (req, res) => {
         });
         await chat.save();
       } else {
+        // Ensure user is participant
         if (!chat.participants.includes(req.user._id)) {
           const group = await Group.findById(groupId).select("members");
           if (
@@ -199,11 +206,13 @@ router.post("/start", verify, async (req, res) => {
         }
       }
     } else {
+      // 1-on-1 Chat Check
       chat = await Conversation.findOne({
         isGroup: false,
         participants: { $all: [req.user._id, receiverId], $size: 2 },
       });
 
+      // ✅ FIX: DO NOT CREATE HERE. Return null to indicate no history.
       if (!chat) {
         return res.status(200).json({ success: true, data: null });
       }
@@ -393,8 +402,9 @@ router.get("/:conversationId", verify, async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// 6. SEND MESSAGE
+// 6. SEND MESSAGE (LAZY CREATION UPDATE)
 // ---------------------------------------------------------
+// ✅ We place this BEFORE the generic /:id route so it doesn't get confused
 router.post(
   "/message/send",
   verify,
@@ -413,6 +423,8 @@ router.post(
       let activeConvId = conversationId;
       let conversation = null;
 
+      // ✅ LAZY CREATION LOGIC
+      // If we don't have a valid conversation ID yet...
       if (
         !activeConvId ||
         activeConvId === "null" ||
@@ -423,12 +435,14 @@ router.post(
             .status(400)
             .json({ message: "Recipient ID required to start new chat" });
 
+        // Double-check if one exists (race condition check)
         conversation = await Conversation.findOne({
           isGroup: false,
           participants: { $all: [req.user._id, recipientId], $size: 2 },
         });
 
         if (!conversation) {
+          // 🆕 CREATE IT NOW (because user is actually sending a message)
           conversation = new Conversation({
             participants: [req.user._id, recipientId],
             lastMessage:
@@ -439,11 +453,13 @@ router.post(
         }
         activeConvId = conversation._id;
       } else {
+        // Standard flow: Use existing ID
         conversation = await Conversation.findById(activeConvId);
         if (!conversation)
           return res.status(404).json({ message: "Conversation not found" });
       }
 
+      // ... (Standard Group Logic and Message Saving) ...
       if (conversation.isGroup && conversation.groupId) {
         const group = await Group.findById(conversation.groupId);
         if (
@@ -477,6 +493,7 @@ router.post(
 
       const savedMessage = await newMessage.save();
 
+      // Profile Enrichment
       const senderProfile = await UserProfile.findOne({ userId: req.user._id });
       const senderName = senderProfile
         ? senderProfile.fullName
@@ -502,6 +519,7 @@ router.post(
         lastMessageAt: Date.now(),
       });
 
+      // Socket Emission
       if (conversation.isGroup && conversation.groupId) {
         req.io.to(conversation.groupId.toString()).emit("new_message", {
           message: messageObj,
@@ -523,7 +541,6 @@ router.post(
                 groupId: conversation.groupId.toString(),
                 groupName: conversation.groupName,
                 senderName: senderName,
-                profilePicture: senderPic, // ✅ Ensure Avatar is sent
               },
             );
           } catch (e) {}
@@ -546,13 +563,14 @@ router.post(
                 senderId: req.user._id.toString(),
                 isGroup: "false",
                 senderName: senderName,
-                profilePicture: senderPic, // ✅ Ensure Avatar is sent
+                senderProfilePic: senderPic,
               },
             );
           } catch (e) {}
         });
       }
 
+      // ✅ Return the NEW conversation ID so the frontend can update its state
       res.status(200).json({ ...messageObj, newConversationId: activeConvId });
     } catch (err) {
       console.error("Send Message Error:", err);
@@ -562,112 +580,7 @@ router.post(
 );
 
 // ---------------------------------------------------------
-// 7. REST API REPLY ENDPOINT (For Background Notifications)
-// ---------------------------------------------------------
-router.post("/reply", verify, async (req, res) => {
-  try {
-    const { conversationId, receiverId, message } = req.body;
-    const senderId = req.user._id;
-
-    if (!conversationId || !message) {
-      return res.status(400).json({ message: "Missing required fields" });
-    }
-
-    const conversation = await Conversation.findById(conversationId);
-    if (!conversation) {
-      return res.status(404).json({ message: "Conversation not found" });
-    }
-
-    const newMessage = new Message({
-      conversationId,
-      sender: senderId,
-      text: message,
-      type: "text",
-      isRead: false,
-    });
-
-    const savedMessage = await newMessage.save();
-
-    // Profile Enrichment
-    const senderProfile = await UserProfile.findOne({ userId: senderId });
-    const senderName = senderProfile ? senderProfile.fullName : "Unknown User";
-    const senderPic = senderProfile ? senderProfile.profilePicture : "";
-
-    const messageObj = savedMessage.toObject();
-    messageObj.sender = {
-      _id: senderId,
-      fullName: senderName,
-      profilePicture: senderPic,
-    };
-
-    // Update Conversation
-    await Conversation.findByIdAndUpdate(conversationId, {
-      lastMessage: message,
-      lastMessageSender: senderId,
-      lastMessageAt: Date.now(),
-    });
-
-    // Socket Emission and Notification
-    if (conversation.isGroup && conversation.groupId) {
-      req.io.to(conversation.groupId.toString()).emit("new_message", {
-        message: messageObj,
-        conversationId: conversation._id,
-      });
-
-      conversation.participants.forEach(async (participantId) => {
-        if (participantId.toString() === senderId.toString()) return;
-        try {
-          await sendPersonalNotification(
-            participantId.toString(),
-            conversation.groupName || "Group Chat",
-            `${senderName}: ${message}`,
-            {
-              type: "chat_message",
-              conversationId: conversation._id.toString(),
-              senderId: senderId.toString(),
-              isGroup: "true",
-              groupId: conversation.groupId.toString(),
-              groupName: conversation.groupName,
-              senderName: senderName,
-              profilePicture: senderPic,
-            },
-          );
-        } catch (e) {}
-      });
-    } else {
-      conversation.participants.forEach(async (participantId) => {
-        if (participantId.toString() === senderId.toString()) return;
-        req.io.to(participantId.toString()).emit("new_message", {
-          message: messageObj,
-          conversationId: conversation._id,
-        });
-        try {
-          await sendPersonalNotification(
-            participantId.toString(),
-            senderName,
-            message,
-            {
-              type: "chat_message",
-              conversationId: conversation._id.toString(),
-              senderId: senderId.toString(),
-              isGroup: "false",
-              senderName: senderName,
-              profilePicture: senderPic,
-            },
-          );
-        } catch (e) {}
-      });
-    }
-
-    res.status(200).json({ success: true, message: messageObj });
-  } catch (err) {
-    console.error("Direct Reply Error:", err);
-    res.status(500).json({ message: "Failed to send reply" });
-  }
-});
-
-// ---------------------------------------------------------
-// 8. READ RECEIPT
+// 7. READ RECEIPT
 // ---------------------------------------------------------
 router.put("/read/:conversationId", verify, async (req, res) => {
   try {
@@ -703,7 +616,7 @@ router.put("/read/:conversationId", verify, async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// 9. DELETE CONVERSATION
+// 8. DELETE CONVERSATION
 // ---------------------------------------------------------
 router.delete("/conversation/:conversationId", verify, async (req, res) => {
   try {
@@ -719,7 +632,7 @@ router.delete("/conversation/:conversationId", verify, async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// 10. EDIT & DELETE MESSAGE
+// 9. EDIT & DELETE MESSAGE
 // ---------------------------------------------------------
 router.put("/message/:id", verify, async (req, res) => {
   try {

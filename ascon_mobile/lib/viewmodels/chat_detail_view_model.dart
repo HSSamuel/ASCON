@@ -436,11 +436,12 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     if (!mounted) return "View disposed";
     if (token == null) return "Auth error";
 
+    // ✅ FIX 1: Auto-resolve the replied message from the local state
     ChatMessage? actualReplyingToMessage = replyingToMessage;
     if (actualReplyingToMessage == null && replyToId != null) {
       try {
         actualReplyingToMessage = state.messages.firstWhere((m) => m.id == replyToId);
-      } catch (_) {} 
+      } catch (_) {} // Failsafe if message is somehow not in state
     }
 
     final tempId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -453,6 +454,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
       fileName: fileName ?? (filePath != null ? filePath.split('/').last : "File"),
       localBytes: fileBytes,
       replyToId: replyToId,
+      // ✅ FIX 2: Safely extract text or assign media labels
       replyToText: actualReplyingToMessage?.text?.isNotEmpty == true 
           ? actualReplyingToMessage!.text 
           : (actualReplyingToMessage?.type == 'image' ? "📷 Photo" : 
@@ -587,6 +589,7 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
     final socket = _socket.socket;
     if (socket == null) return;
 
+    // ✅ FIX: Force fetching new data when socket re-establishes connection
     socket.on('connect', (_) {
       if (mounted) refreshMessages();
     });
@@ -708,14 +711,13 @@ class ChatDetailNotifier extends StateNotifier<ChatDetailState> {
       }
     });
     
-    // ✅ FIX: Unified single source of truth for peer presence.
     if (!isGroup) {
       _statusSubscription = _socket.userStatusStream.listen((data) {
         if (!mounted) return;
         if (data['userId'] == receiverId) {
           state = state.copyWith(
-            isPeerOnline: data['isOnline'] == true,
-            peerLastSeen: data['lastSeen']?.toString() ?? state.peerLastSeen
+            isPeerOnline: data['isOnline'],
+            peerLastSeen: !data['isOnline'] ? data['lastSeen'] : state.peerLastSeen
           );
         }
       });
@@ -767,6 +769,5 @@ final chatDetailProvider = StateNotifierProvider.family.autoDispose<ChatDetailNo
     isGroup: args.isGroup,
     groupId: args.groupId,
     conversationId: args.conversationId,
-    initialIsOnline: false, // Ensure defaults are overridden by backend fetch
   );
 });

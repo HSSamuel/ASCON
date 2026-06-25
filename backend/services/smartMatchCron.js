@@ -86,11 +86,11 @@ const runWeeklySmartMatch = () => {
         if (topMatchResult.length > 0) {
           const match = topMatchResult[0];
 
-          let title = "New Connection Highlight";
+          let title = "🌟 New Connection Highlight";
           let body = `You share a strong professional background with ${match.fullName}. Tap to view their profile.`;
 
           if (match.isOpenToMentorship) {
-            title = "Mentorship Opportunity";
+            title = "🤝 Mentorship Opportunity";
             body = `${match.fullName} is open to mentorship in your industry. Tap to connect!`;
           }
 

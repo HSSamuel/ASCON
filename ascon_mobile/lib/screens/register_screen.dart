@@ -177,6 +177,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     showDialog(context: context, barrierDismissible: false, builder: (context) => const LoadingDialog(message: "Creating Account..."));
 
     try {
+      // ✅ Web-Safe: Read file as bytes directly before upload
       Uint8List? imageBytes;
       String? imageName;
       if (_pickedImage != null) {
@@ -222,169 +223,189 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardColor = Theme.of(context).cardColor;
 
-    // ✅ Simplified Scaffold with plain white/dark background
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF0F4F8),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: isDark ? const Color(0xFF121212) : Colors.white, 
+        backgroundColor: Colors.transparent, 
         elevation: 0,
         leading: IconButton(icon: Icon(Icons.arrow_back, color: primaryColor), onPressed: () => Navigator.pop(context)),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
-          // ✅ Removed the Container decoration (glassmorphism, borders, shadows)
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ----------------------------------------
-                // Profile Picture Upload Widget
-                // ----------------------------------------
-                Center(
-                  child: GestureDetector(
-                    onTap: _pickImage,
-                    child: Stack(
-                      alignment: Alignment.bottomRight,
-                      children: [
-                        Container(
-                          height: 110, 
-                          width: 110,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle, 
-                            color: isDark ? Colors.grey[900] : Colors.grey[100], 
-                            border: Border.all(color: primaryColor.withOpacity(0.4), width: 2.5),
-                          ),
-                          child: ClipOval(
-                            child: _pickedImage != null
-                                ? (kIsWeb 
-                                    ? Image.network(  
-                                        _pickedImage!.path, 
-                                        fit: BoxFit.cover,
-                                        width: 110,
-                                        height: 110,
-                                      )
-                                    : Image.file(     
-                                        File(_pickedImage!.path), 
-                                        fit: BoxFit.cover,
-                                        width: 110,
-                                        height: 110,
-                                      ))
-                                : Icon(
-                                    Icons.person, 
-                                    size: 70, 
-                                    color: primaryColor.withOpacity(0.5)
-                                  ),
-                          ),
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: primaryColor,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isDark ? const Color(0xFF121212) : Colors.white, 
-                                width: 3
+      body: Stack(
+        children: [
+          Positioned(top: -50, left: -50, child: Container(height: 250, width: 250, decoration: BoxDecoration(shape: BoxShape.circle, color: primaryColor.withOpacity(isDark ? 0.3 : 0.2)))),
+          Positioned(bottom: -100, right: -50, child: Container(height: 300, width: 300, decoration: BoxDecoration(shape: BoxShape.circle, color: primaryColor.withOpacity(isDark ? 0.4 : 0.15)))),
+          Positioned.fill(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 60.0, sigmaY: 60.0), child: const SizedBox())),
+
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
+              child: Container(
+                padding: const EdgeInsets.all(24.0),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.black.withOpacity(0.4) : Colors.white.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.white.withOpacity(0.8), width: 1.5),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10))],
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // ----------------------------------------
+                      // Profile Picture Upload Widget
+                      // ----------------------------------------
+                      Center(
+                        child: GestureDetector(
+                          onTap: _pickImage,
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              Container(
+                                height: 110, 
+                                width: 110,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle, 
+                                  color: isDark ? Colors.grey[800] : Colors.white, 
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: primaryColor.withOpacity(0.15), 
+                                      blurRadius: 15, 
+                                      offset: const Offset(0, 8),
+                                    )
+                                  ],
+                                  border: Border.all(color: primaryColor.withOpacity(0.4), width: 2.5),
+                                ),
+                                child: ClipOval(
+                                  child: _pickedImage != null
+                                      ? (kIsWeb 
+                                          ? Image.network(  // ✅ Web safe viewer
+                                              _pickedImage!.path, 
+                                              fit: BoxFit.cover,
+                                              width: 110,
+                                              height: 110,
+                                            )
+                                          : Image.file(     // ✅ Mobile safe viewer
+                                              File(_pickedImage!.path), 
+                                              fit: BoxFit.cover,
+                                              width: 110,
+                                              height: 110,
+                                            ))
+                                      : Icon(
+                                          Icons.person, 
+                                          size: 70, 
+                                          color: primaryColor.withOpacity(0.5)
+                                        ),
+                                ),
                               ),
-                            ),
-                            child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: primaryColor,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: isDark ? Colors.grey[900]! : Colors.white, 
+                                      width: 3
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text("Tap to Upload Photo", textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: subTextColor, fontWeight: FontWeight.w500)),
+                      const SizedBox(height: 20),
+                      
+                      Text("Create Account", textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: primaryColor, letterSpacing: -0.5)),
+                      const SizedBox(height: 4),
+                      Text("Join the ASCON Alumni Network", textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: subTextColor)),
+                      const SizedBox(height: 30),
+
+                      Text("Account Details", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: primaryColor)),
+                      const SizedBox(height: 10),
+                      _buildTextField("Full Name", _nameController, Icons.person_outline),
+                      const SizedBox(height: 12),
+                      _buildTextField("Email Address", _emailController, Icons.email_outlined),
+                      const SizedBox(height: 12),
+                      _buildTextField("Password", _passwordController, Icons.lock_outline, isPassword: true),
+                      const SizedBox(height: 12),
+                      _buildTextField("Confirm Password", _confirmPasswordController, Icons.lock_outline, isPassword: true),
+
+                      const SizedBox(height: 24),
+                      Text("Professional Profile", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: primaryColor)),
+                      const SizedBox(height: 10),
+
+                      DropdownButtonFormField<String>(
+                        value: _selectedProgramme,
+                        isExpanded: true, isDense: true, dropdownColor: cardColor,
+                        decoration: InputDecoration(
+                          labelText: "Programme Attended",
+                          labelStyle: TextStyle(fontSize: 13, color: subTextColor),
+                          prefixIcon: Icon(Icons.school_outlined, color: primaryColor, size: 20),
+                          filled: true, fillColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                        ),
+                        items: _programmeOptions.map((String value) {
+                          return DropdownMenuItem<String>(value: value, child: Text(value, style: TextStyle(fontSize: 14, color: textColor), overflow: TextOverflow.ellipsis));
+                        }).toList(),
+                        onChanged: (newValue) => setState(() => _selectedProgramme = newValue),
+                        validator: (value) => value == null ? 'Please select a programme' : null,
+                      ),
+
+                      if (_selectedProgramme == "Other") ...[
+                        const SizedBox(height: 12),
+                        _buildTextField("Specify Programme Name", _otherProgrammeController, Icons.edit_note),
                       ],
-                    ),
+                      const SizedBox(height: 12),
+                      _buildTextField("Class Year (e.g. 2023)", _yearController, Icons.calendar_today_outlined, isNumber: true),
+                      const SizedBox(height: 12),
+                      _buildTextField("Job Title", _jobController, Icons.work_outline),
+                      const SizedBox(height: 12),
+                      _buildTextField("Organization", _orgController, Icons.business_outlined),
+                      const SizedBox(height: 12),
+                      _buildTextField("Short Bio", _bioController, Icons.person_outline, maxLines: 3),
+
+                      const SizedBox(height: 32),
+
+                      SizedBox(
+                        height: 45,
+                        child: ElevatedButton(
+                          onPressed: _handleRegister, 
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor, foregroundColor: Colors.white,
+                            elevation: 5, shadowColor: primaryColor.withOpacity(0.5),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text("REGISTER", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text("Already a member? ", style: TextStyle(fontSize: 14, color: subTextColor)),
+                          GestureDetector(
+                            onTap: () => Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false),
+                            child: Text("Login", style: TextStyle(color: primaryColor, fontSize: 14, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text("Tap to Upload Photo", textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: subTextColor, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 20),
-                
-                Text("Create Account", textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: primaryColor, letterSpacing: -0.5)),
-                const SizedBox(height: 4),
-                Text("Join the ASCON Alumni Network", textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: subTextColor)),
-                const SizedBox(height: 30),
-
-                Text("Account Details", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: primaryColor)),
-                const SizedBox(height: 10),
-                _buildTextField("Full Name", _nameController, Icons.person_outline),
-                const SizedBox(height: 12),
-                _buildTextField("Email Address", _emailController, Icons.email_outlined),
-                const SizedBox(height: 12),
-                _buildTextField("Password", _passwordController, Icons.lock_outline, isPassword: true),
-                const SizedBox(height: 12),
-                _buildTextField("Confirm Password", _confirmPasswordController, Icons.lock_outline, isPassword: true),
-
-                const SizedBox(height: 24),
-                Text("Professional Profile", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: primaryColor)),
-                const SizedBox(height: 10),
-
-                DropdownButtonFormField<String>(
-                  value: _selectedProgramme,
-                  isExpanded: true, isDense: true, dropdownColor: cardColor,
-                  decoration: InputDecoration(
-                    labelText: "Programme Attended",
-                    labelStyle: TextStyle(fontSize: 13, color: subTextColor),
-                    prefixIcon: Icon(Icons.school_outlined, color: primaryColor, size: 20),
-                    filled: true, 
-                    // ✅ Flat solid grey background
-                    fillColor: isDark ? Colors.grey[900] : Colors.grey[100],
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                  ),
-                  items: _programmeOptions.map((String value) {
-                    return DropdownMenuItem<String>(value: value, child: Text(value, style: TextStyle(fontSize: 14, color: textColor), overflow: TextOverflow.ellipsis));
-                  }).toList(),
-                  onChanged: (newValue) => setState(() => _selectedProgramme = newValue),
-                  validator: (value) => value == null ? 'Please select a programme' : null,
-                ),
-
-                if (_selectedProgramme == "Other") ...[
-                  const SizedBox(height: 12),
-                  _buildTextField("Specify Programme Name", _otherProgrammeController, Icons.edit_note),
-                ],
-                const SizedBox(height: 12),
-                _buildTextField("Class Year (e.g. 2023)", _yearController, Icons.calendar_today_outlined, isNumber: true),
-                const SizedBox(height: 12),
-                _buildTextField("Job Title", _jobController, Icons.work_outline),
-                const SizedBox(height: 12),
-                _buildTextField("Organization", _orgController, Icons.business_outlined),
-                const SizedBox(height: 12),
-                _buildTextField("Short Bio", _bioController, Icons.person_outline, maxLines: 3),
-
-                const SizedBox(height: 32),
-
-                SizedBox(
-                  height: 45,
-                  child: ElevatedButton(
-                    onPressed: _handleRegister, 
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor, foregroundColor: Colors.white,
-                      elevation: 2, // ✅ Reduced elevation for a flatter look
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text("REGISTER", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text("Already a member? ", style: TextStyle(fontSize: 14, color: subTextColor)),
-                    GestureDetector(
-                      onTap: () => Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false),
-                      child: Text("Login", style: TextStyle(color: primaryColor, fontSize: 14, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -393,7 +414,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final subTextColor = Theme.of(context).textTheme.bodyMedium?.color;
     final textColor = Theme.of(context).textTheme.bodyLarge?.color;
     final primaryColor = Theme.of(context).primaryColor;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return TextFormField(
       controller: controller,
@@ -410,9 +430,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         labelText: label,
         labelStyle: TextStyle(fontSize: 13, color: subTextColor),
         prefixIcon: Icon(icon, color: primaryColor, size: 20),
-        filled: true, 
-        // ✅ Flat solid grey background
-        fillColor: isDark ? Colors.grey[900] : Colors.grey[100],
+        filled: true, fillColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
         suffixIcon: isPassword 
           ? IconButton(icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey, size: 20), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)) 

@@ -135,7 +135,7 @@ exports.register = asyncHandler(async (req, res) => {
     const refreshToken = jwt.sign(
       { _id: newAuthId },
       process.env.REFRESH_SECRET,
-      { expiresIn: "30d" }, // ✅ Extended to 30 days
+      { expiresIn: "30d" },
     );
     const safeFcmTokens = fcmToken && fcmToken.trim() !== "" ? [fcmToken] : [];
 
@@ -151,6 +151,7 @@ exports.register = asyncHandler(async (req, res) => {
     });
     const savedAuth = await newUserAuth.save({ session });
 
+    // ✅ ADDED: Safely grab the Cloudinary URL from Multer (if an image was uploaded)
     const profilePicUrl = req.file ? req.file.path : "";
 
     const newUserProfile = new UserProfile({
@@ -162,7 +163,7 @@ exports.register = asyncHandler(async (req, res) => {
       jobTitle,
       organization,
       bio,
-      profilePicture: profilePicUrl,
+      profilePicture: profilePicUrl, // ✅ Inject URL into profile
       alumniId: generatedAlumniId,
     });
     await newUserProfile.save({ session });
@@ -187,6 +188,7 @@ exports.register = asyncHandler(async (req, res) => {
     ).catch((e) => console.error("Group Sync Error:", e));
 
     try {
+      // Modern HTML Email Template (Updated)
       const emailHtmlContent = `
       <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #eaeaea; border-radius: 12px; background-color: #ffffff;">
           <div style="text-align: center; margin-bottom: 25px;">
@@ -196,7 +198,7 @@ exports.register = asyncHandler(async (req, res) => {
           <h3 style="color: #333333; font-size: 20px;">Hello ${fullName},</h3>
           
           <p style="color: #555555; line-height: 1.6; font-size: 15px;">
-              Welcome to the official digital platform for the <a href="https://ascon.gov.ng" target="_blank" style="color: #1B5E3A; text-decoration: none;"><strong>Administrative Staff College of Nigeria (ASCON)</strong></a> Alumni! We are thrilled to have you join our growing network of esteemed professionals and public administrators.
+              Welcome to the official digital platform for the <strong>Administrative Staff College of Nigeria (ASCON)</strong> Alumni! We are thrilled to have you join our growing network of esteemed professionals and public administrators.
           </p>
 
           <div style="background-color: #F4F7F6; padding: 20px; border-radius: 8px; text-align: center; margin: 25px 0; border: 1px solid #e0e6ed;">
@@ -217,7 +219,7 @@ exports.register = asyncHandler(async (req, res) => {
 
           <p style="color: #888888; font-size: 12px; border-top: 1px solid #eaeaea; padding-top: 20px; text-align: center; line-height: 1.5; margin-top: 35px;">
               If you have any questions or need assistance, please contact the administrative team at <a href="mailto:info@ascon.gov.ng" style="color: #1B5E3A; text-decoration: none; font-weight: bold;">info@ascon.gov.ng</a>.<br>
-              &copy; ${new Date().getFullYear()} <a href="https://ascon.gov.ng" target="_blank" style="color: #888888; text-decoration: none;">Administrative Staff College of Nigeria (ASCON)</a>.
+              &copy; ${new Date().getFullYear()} Administrative Staff College of Nigeria (ASCON).
           </p>
       </div>
       `;
@@ -292,7 +294,7 @@ exports.login = asyncHandler(async (req, res) => {
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
     process.env.REFRESH_SECRET,
-    { expiresIn: "30d" }, // ✅ Extended to 30 days
+    { expiresIn: "30d" },
   );
 
   const currentTokens = userAuth.refreshTokens || [];
@@ -423,7 +425,7 @@ exports.googleLogin = asyncHandler(async (req, res) => {
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
     process.env.REFRESH_SECRET,
-    { expiresIn: "30d" }, // ✅ Extended to 30 days
+    { expiresIn: "30d" },
   );
 
   const currentTokens = userAuth.refreshTokens || [];
@@ -458,26 +460,20 @@ exports.googleLogin = asyncHandler(async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// 6. REFRESH TOKEN (WITH ROTATION)
+// 6. REFRESH TOKEN
 // --------------------------------------------------------------------------
 exports.refreshToken = asyncHandler(async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) throw new AppError("Refresh Token Required", 401);
 
   try {
-    // 1. Verify the incoming token
     const verified = jwt.verify(refreshToken, process.env.REFRESH_SECRET);
     const userAuth = await UserAuth.findById(verified._id);
 
-    // 2. Check if the token exists in the user's active array
     if (!userAuth || !userAuth.refreshTokens.includes(refreshToken)) {
       throw new AppError("Invalid, Stolen, or Expired Refresh Token", 403);
     }
 
-    // 3. ROTATION: Remove the used refresh token
-    userAuth.refreshTokens = userAuth.refreshTokens.filter(rt => rt !== refreshToken);
-
-    // 4. Generate a NEW Access Token
     const newAccessToken = jwt.sign(
       {
         _id: userAuth._id,
@@ -488,19 +484,7 @@ exports.refreshToken = asyncHandler(async (req, res) => {
       { expiresIn: "2h" },
     );
 
-    // 5. Generate a NEW Refresh Token (30 Days)
-    const newRefreshToken = jwt.sign(
-      { _id: userAuth._id },
-      process.env.REFRESH_SECRET,
-      { expiresIn: "30d" }, // ✅ Extended to 30 days
-    );
-
-    // 6. Add the new refresh token to the array and save
-    userAuth.refreshTokens.push(newRefreshToken);
-    await userAuth.save();
-
-    // 7. Send BOTH tokens back to the client
-    res.json({ token: newAccessToken, refreshToken: newRefreshToken });
+    res.json({ token: newAccessToken });
   } catch (err) {
     throw new AppError("Invalid Refresh Token", 403);
   }
@@ -520,15 +504,11 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   const userName = userProfile ? userProfile.fullName : "Alumni";
 
   const token = crypto.randomBytes(20).toString("hex");
-  // ✅ FIX: Hash the token before storing it in the database
-  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
-
-  userAuth.resetPasswordToken = hashedToken;
+  userAuth.resetPasswordToken = token;
   userAuth.resetPasswordExpires = Date.now() + 3600000;
   await userAuth.save();
 
   const clientUrl = process.env.CLIENT_URL || "https://asconalumni.org";
-  // ✅ FIX: Email the unhashed original token to the user
   const resetUrl = `${clientUrl}/reset-password?token=${token}`;
 
   try {
@@ -555,11 +535,8 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   if (!newPassword || newPassword.length < 6)
     throw new AppError("Password too short.", 400);
 
-  // ✅ FIX: Hash the incoming token to match what is stored in the database
-  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
-
   const userAuth = await UserAuth.findOne({
-    resetPasswordToken: hashedToken,
+    resetPasswordToken: token,
     resetPasswordExpires: { $gt: Date.now() },
   });
   if (!userAuth) throw new AppError("Invalid or expired token.", 400);
@@ -580,28 +557,13 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 // 9. LOGOUT
 // --------------------------------------------------------------------------
 exports.logout = asyncHandler(async (req, res) => {
-  const { userId, fcmToken, refreshToken, logoutAllDevices } = req.body;
+  const { userId, fcmToken, refreshToken } = req.body;
 
   if (userId) {
-    if (logoutAllDevices) {
-      await UserAuth.updateOne(
-        { _id: userId },
-        { $set: { fcmTokens: [], refreshTokens: [] } },
-      );
-    } else {
-      if (fcmToken) {
-        await UserAuth.updateOne(
-          { _id: userId },
-          { $pull: { fcmTokens: fcmToken, refreshTokens: refreshToken } },
-        );
-      } else {
-        await UserAuth.updateOne(
-          { _id: userId },
-          { $set: { fcmTokens: [] }, $pull: { refreshTokens: refreshToken } },
-        );
-      }
-    }
+    await UserAuth.updateOne(
+      { _id: userId },
+      { $pull: { fcmTokens: fcmToken, refreshTokens: refreshToken } },
+    );
   }
-
   res.status(200).json({ message: "Logged out successfully" });
 });

@@ -11,11 +11,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:http/http.dart' as http; 
 
 import 'services/notification_service.dart';
 import 'services/socket_service.dart'; 
-import 'services/auth_service.dart'; 
+import 'services/auth_service.dart'; // ✅ ADDED: AuthService import for global sync
 import 'config/theme.dart';
 import 'config.dart';
 import 'router.dart'; 
@@ -23,195 +22,78 @@ import 'utils/error_handler.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = rootNavigatorKey;
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
+
+// Global Provider Container allows us to access Riverpod outside the Widget tree
 final ProviderContainer providerContainer = ProviderContainer();
-
-// Safe Cold-Start Navigation Guard
-bool _isNavigatingToCall = false;
-
-void safeNavigateToCall(Map<String, dynamic> args) {
-  if (_isNavigatingToCall) return;
-  _isNavigatingToCall = true;
-
-  void pushRoute() {
-    try {
-      final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-      if (!currentRoute.contains('/call')) {
-        appRouter.push('/call', extra: args);
-      }
-    } catch (e) {
-      debugPrint("Routing delayed due to background state: $e");
-    } finally {
-      Future.delayed(const Duration(seconds: 3), () {
-        _isNavigatingToCall = false;
-      });
-    }
-  }
-
-  // ✅ FIX: Wait 800ms for Android to fully transition the app from Background to Foreground
-  // before pushing the complex Agora Call UI. This prevents the "App keeps stopping" crash.
-  Future.delayed(const Duration(milliseconds: 800), () {
-    if (rootNavigatorKey.currentContext != null) {
-      pushRoute();
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) => pushRoute());
-    }
-  });
-}
-
-@pragma('vm:entry-point')
-void notificationTapBackground(NotificationResponse notificationResponse) async {
-  final String? replyText = notificationResponse.input;
-  final payload = notificationResponse.payload;
-
-  if (notificationResponse.actionId == 'REPLY_ACTION' && replyText != null && payload != null) {
-    WidgetsFlutterBinding.ensureInitialized();
-    await dotenv.load(fileName: "env.txt");
-    await Hive.initFlutter();
-    var box = await Hive.openBox('ascon_cache');
-    
-    String? token = box.get('auth_token'); 
-    final data = jsonDecode(payload);
-
-    final String conversationId = data['conversationId'] ?? '';
-    final String receiverId = data['senderId'] ?? '';
-
-    if (token != null && conversationId.isNotEmpty) {
-      try {
-        await http.post(
-          Uri.parse('${AppConfig.baseUrl}/chat/reply'), 
-          headers: {
-            'Authorization': 'Bearer $token', 
-            'Content-Type': 'application/json'
-          },
-          body: jsonEncode({
-            'conversationId': conversationId, 
-            'receiverId': receiverId, 
-            'message': replyText
-          }),
-        );
-      } catch (e) {
-        debugPrint("Background Reply failed: $e");
-      }
-    }
-  }
-}
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  if (kIsWeb) return;
-  
-  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(); 
 
+  if (kIsWeb) return;
+
   final type = message.data['type'];
-
-  if (type == 'call_ended' || type == 'call_rejected') {
-    final String? channelName = message.data['channelName'] ?? message.data['id']; 
-    if (channelName != null && channelName.isNotEmpty) {
-      await FlutterCallkitIncoming.endCall(channelName);
-    } else {
-      await FlutterCallkitIncoming.endAllCalls();
-    }
-    return; 
-  }
-
   if (type == 'incoming_call' || type == 'call_offer' || type == 'video_call') {
-    try {
-      CallKitParams callKitParams = CallKitParams(
-        id: message.data['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}", 
-        nameCaller: message.data['callerName'] ?? 'Alumni User',
-        appName: 'ASCON Connect',
-        avatar: message.data['callerAvatar'] ?? '',
-        handle: 'Incoming Call',
-        type: (message.data['isVideoCall'] == "true" || type == 'video_call') ? 1 : 0,
-        missedCallNotification: const NotificationParams(
-          showNotification: true,
-          isShowCallback: false,
-          subtitle: 'Missed call',
-          callbackText: 'Call back',
-        ),
-        duration: 45000, // ✅ FIX: Keep alive for 45 seconds to force continuous ringing
-        extra: <String, dynamic>{
-          'channelName': message.data['channelName']?.toString() ?? '',
-          'callerId': message.data['callerId']?.toString() ?? '',
-          'callerAvatar': message.data['callerAvatar']?.toString() ?? '' 
-        },
-        android: const AndroidParams(
-          isCustomNotification: true,
-          isShowLogo: false,
-          // ✅ FIX: The exact keyword Android requires to pull the system looping ringtone
-          ringtonePath: 'system_ringtone_default', 
-          backgroundColor: '#0F3621',
-          actionColor: '#4CAF50',
-          textAccept: 'Accept', 
-          textDecline: 'Decline', 
-          // ✅ FIX: Increment to V5 to absolutely destroy any cached Android audio bugs
-          incomingCallNotificationChannelName: 'ASCON Calls V5', 
-        ),
-        ios: const IOSParams(
-          iconName: 'CallKitIcon',
-          handleType: 'generic',
-          supportsVideo: true,
-          maximumCallGroups: 2,
-          maximumCallsPerCallGroup: 1,
-          audioSessionMode: 'default',
-          audioSessionActive: true,
-          audioSessionPreferredSampleRate: 44100.0,
-          audioSessionPreferredIOBufferDuration: 0.005,
-          supportsDTMF: true,
-          supportsHolding: true,
-          supportsGrouping: false,
-          supportsUngrouping: false,
-          ringtonePath: '', // Empty string tells iOS to use default looping ringtone
-        ),
-      );
+    
+    CallKitParams callKitParams = CallKitParams(
+      id: message.data['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}", 
+      nameCaller: message.data['callerName'] ?? 'Alumni User',
+      appName: 'ASCON Connect',
+      avatar: message.data['callerAvatar'] ?? '',
+      handle: 'Incoming Call',
+      type: (message.data['isVideoCall'] == "true" || type == 'video_call') ? 1 : 0,
+      textAccept: 'Accept',
+      textDecline: 'Decline',
+      missedCallNotification: const NotificationParams(
+        showNotification: true,
+        isShowCallback: false,
+        subtitle: 'Missed call',
+        callbackText: 'Call back',
+      ),
+      duration: 30000, 
+      extra: <String, dynamic>{
+        'channelName': message.data['channelName'],
+        'callerId': message.data['callerId'],
+        'callerAvatar': message.data['callerAvatar'] 
+      },
+      android: const AndroidParams(
+        isCustomNotification: true,
+        isShowLogo: false,
+        ringtonePath: 'system_ringtone_default',
+        backgroundColor: '#0F3621',
+        actionColor: '#4CAF50',
+      ),
+      ios: const IOSParams(
+        iconName: 'CallKitIcon',
+        handleType: 'generic',
+        supportsVideo: true,
+        maximumCallGroups: 2,
+        maximumCallsPerCallGroup: 1,
+        audioSessionMode: 'default',
+        audioSessionActive: true,
+        audioSessionPreferredSampleRate: 44100.0,
+        audioSessionPreferredIOBufferDuration: 0.005,
+        supportsDTMF: true,
+        supportsHolding: true,
+        supportsGrouping: false,
+        supportsUngrouping: false,
+        ringtonePath: 'system_ringtone_default',
+      ),
+    );
 
-      await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
-    } catch (e) {
-      debugPrint("CallKit Init Crash Avoided: $e");
-    }
+    await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
   } 
   else if (message.notification == null && message.data.isNotEmpty) {
     final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
     
     const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('ic_notification');
-    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings();
+    await localNotifications.initialize(const InitializationSettings(android: androidSettings));
+
+    String title = "New Notification";
+    String body = "You have a new update";
     
-    await localNotifications.initialize(
-      const InitializationSettings(android: androidSettings, iOS: iosSettings),
-      onDidReceiveBackgroundNotificationResponse: notificationTapBackground, 
-    );
-
-    String title = message.data['title'] ?? "New Notification";
-    String body = message.data['body'] ?? "You have a new update";
-    final isChat = type == 'chat_message';
-
-    ByteArrayAndroidBitmap? largeIconBitmap;
-    ByteArrayAndroidIcon? personIcon;
-    
-    if (message.data['profilePicture'] != null && message.data['profilePicture'].toString().isNotEmpty) {
-      try {
-        final response = await http.get(Uri.parse(message.data['profilePicture']));
-        if (response.statusCode == 200) {
-          largeIconBitmap = ByteArrayAndroidBitmap(response.bodyBytes);
-          personIcon = ByteArrayAndroidIcon(response.bodyBytes);
-        }
-      } catch (e) {
-        debugPrint("Failed to load avatar for notification: $e");
-      }
-    }
-
-    MessagingStyleInformation? styleInformation;
-    if (isChat) {
-      final person = Person(
-        name: message.data['senderName'] ?? title,
-        icon: personIcon, 
-      );
-      styleInformation = MessagingStyleInformation(
-        person,
-        messages: [Message(body, DateTime.now(), person)],
-      );
-    }
+    if (message.data.containsKey('title')) title = message.data['title'];
+    if (message.data.containsKey('body')) body = message.data['body'];
 
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       AppConfig.notificationChannelId,
@@ -220,33 +102,15 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       priority: Priority.high,
       color: const Color(0xFF1B5E3A),
       icon: 'ic_notification',
-      largeIcon: largeIconBitmap, 
-      styleInformation: styleInformation, 
       enableVibration: true,
       playSound: true, 
-      actions: isChat ? [
-        const AndroidNotificationAction(
-          'REPLY_ACTION',
-          'Reply',
-          icon: DrawableResourceAndroidBitmap('ic_notification'), 
-          inputs: [
-            AndroidNotificationActionInput(
-              label: 'Type a message...',
-            ),
-          ],
-        )
-      ] : null,
-    );
-
-    final DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      categoryIdentifier: isChat ? 'CHAT_REPLY' : null,
     );
 
     await localNotifications.show(
       message.hashCode,
       title,
       body,
-      NotificationDetails(android: androidDetails, iOS: iosDetails),
+      NotificationDetails(android: androidDetails),
       payload: jsonEncode(message.data),
     );
   }
@@ -294,7 +158,7 @@ void main() async {
       }
     }
 
-    FlutterError.onError = (errorDetails) {
+FlutterError.onError = (errorDetails) {
       if (!kIsWeb) {
         FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
       } else {
@@ -322,9 +186,7 @@ void main() async {
     
   }, (error, stack) {
     debugPrint("🔴 Uncaught Zone Error: $error\n$stack");
-    if (!kIsWeb) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-    }
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
   });
 }
 
@@ -337,20 +199,15 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   StreamSubscription? _callSubscription;
-  StreamSubscription? _fcmSubscription;
-  
-  DateTime? _lastSyncTime; 
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this); 
-    _setupInteractedMessage(); 
-    _listenForFCMForeground(); 
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
-    _checkColdStartCall(); 
     
+    // ✅ ADDED: Trigger sync immediately when app starts
     _triggerColdStartSync();
   }
 
@@ -358,96 +215,37 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this); 
     _callSubscription?.cancel();
-    _fcmSubscription?.cancel();
     super.dispose();
   }
 
+  // ✅ ADDED: Verify session and fetch fresh data from backend
   Future<void> _triggerColdStartSync() async {
     if (await AuthService().isSessionValid()) {
-      _lastSyncTime = DateTime.now(); 
       AuthService().performGlobalSilentSync();
     }
   }
 
-  Future<void> _checkColdStartCall() async {
-    if (kIsWeb) return;
-    try {
-      var calls = await FlutterCallkitIncoming.activeCalls();
-      if (calls is List && calls.isNotEmpty) {
-        final dynamic callData = calls[0]; 
-        
-        Map<String, dynamic> data = {};
-        if (callData is Map) {
-           data = Map<String, dynamic>.from(callData);
-        } else {
-           try { data = jsonDecode(jsonEncode(callData)); } catch (_) {}
-        }
-
-        if (data.isEmpty) return;
-
-        bool isLoggedIn = await AuthService().isSessionValid();
-        if (!isLoggedIn) return;
-
-        Map<String, dynamic> extra = {};
-        if (data['extra'] != null) {
-          if (data['extra'] is Map) {
-             extra = Map<String, dynamic>.from(data['extra']);
-          } else if (data['extra'] is String) {
-             try { extra = jsonDecode(data['extra']); } catch (_) {}
-          }
-        }
-
-        String channelName = extra['channelName']?.toString() ?? data['id']?.toString() ?? "";
-        String callerId = extra['callerId']?.toString() ?? "";
-        String callerAvatar = extra['callerAvatar']?.toString() ?? data['avatar']?.toString() ?? ""; 
-        bool isVideo = data['type'] == 1 || data['type'] == "1";
-        String remoteName = data['nameCaller']?.toString() ?? "Alumni User";
-
-        safeNavigateToCall({
-          'isGroupCall': false, 
-          'isVideoCall': isVideo,
-          'remoteName': remoteName,
-          'remoteId': callerId,
-          'channelName': channelName,
-          'remoteAvatar': callerAvatar, 
-          'isIncoming': true,
-          'autoAccept': true,
-        });
-      }
-    } catch (e) {
-      debugPrint("Cold start call check failed: $e");
-    }
-  }
-
-  @override
+  // =======================================================================
+  // 🚀 GLOBAL LIFECYCLE SYNCING
+  // =======================================================================
+ @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
-    final currentPath = appRouter.routerDelegate.currentConfiguration.uri.path;
-    final isInCall = currentPath.contains('/call');
-
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
       SocketService().disconnect(); 
-      if (!isInCall) {
-        debugPrint("App Backgrounded: Socket Disconnected");
-      } else {
-        debugPrint("App Backgrounded: Socket Disconnected. Relying on FCM and Agora for background signaling.");
-      }
+      debugPrint("App Backgrounded: Socket Disconnected");
     } 
     else if (state == AppLifecycleState.resumed) {
       debugPrint("App Resumed: Reconnecting Socket and Syncing Data");
+      SocketService().initSocket(); 
       
-      if (SocketService().socket?.connected != true) {
-        SocketService().initSocket(); 
-      }
-      
+      // ✅ FIX: Only trigger the massive background sync if the user is actually logged in!
       AuthService().isSessionValid().then((isValid) {
         if (isValid) {
-          final now = DateTime.now();
-          if (_lastSyncTime == null || now.difference(_lastSyncTime!).inMinutes >= 5) {
-            _lastSyncTime = now;
-            AuthService().performGlobalSilentSync();
-          }
+          AuthService().performGlobalSilentSync();
+        } else {
+          debugPrint("User is logged out. Skipping background sync.");
         }
       });
     }
@@ -458,6 +256,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (initialMessage != null) {
       _handleNotificationClick(initialMessage);
     }
+
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationClick);
   }
 
@@ -465,7 +264,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final data = message.data;
     
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
-      safeNavigateToCall({
+      final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+      if (currentRoute.contains('/call')) return;
+
+      appRouter.push('/call', extra: {
         'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
         'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
         'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
@@ -476,97 +278,40 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       });
     } 
     else if (data['route'] != null) {
-      Future.delayed(const Duration(milliseconds: 400), () {
-        appRouter.push('/${data['route']}', extra: data);
-      });
+      appRouter.push('/${data['route']}', extra: data);
     }
-  }
-
-  void _listenForFCMForeground() {
-    if (kIsWeb) return;
-    _fcmSubscription = FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      final data = message.data;
-      final type = data['type'];
-      
-      if (type == 'call_ended' || type == 'call_rejected') {
-        final String? channelName = data['channelName'];
-        if (channelName != null && channelName.isNotEmpty) {
-          await FlutterCallkitIncoming.endCall(channelName);
-        } else {
-          await FlutterCallkitIncoming.endAllCalls();
-        }
-        
-        final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-        if (currentRoute.contains('/call')) {
-          if (appRouter.canPop()) {
-            appRouter.pop();
-          } else {
-            appRouter.go('/');
-          }
-        }
-      }
-    });
   }
 
   void _listenForCallKitEvents() {
     if (kIsWeb) return;
-    
-    FlutterCallkitIncoming.onEvent.listen((dynamic event) {
-      if (event == null) return;
-
-      try {
-        String eventName = "";
-        if (event.runtimeType.toString() == 'CallEvent') {
-           eventName = event.event.toString();
-        } else {
-           if (event.runtimeType.toString() == 'CallEventActionCallAccept') {
-             eventName = 'actionCallAccept';
-           } else if (event.runtimeType.toString() == 'CallEventActionCallDecline') {
-             eventName = 'actionCallDecline';
-           }
-        }
-
-        if (eventName.contains('actionCallAccept') || eventName.contains('actionCallCallback')) {
+    FlutterCallkitIncoming.onEvent.listen((event) {
+      switch (event!.event) {
+        case Event.actionCallAccept:
           final data = event.body;
-          if (data == null) return;
+          String channelName = data['extra']?['channelName'] ?? data['id'] ?? "";
+          String callerId = data['extra']?['callerId'] ?? "";
+          String callerAvatar = data['extra']?['callerAvatar'] ?? data['avatar'] ?? ""; 
 
-          Map<String, dynamic> extra = {};
-          if (data['extra'] != null) {
-            if (data['extra'] is Map) {
-              extra = Map<String, dynamic>.from(data['extra']);
-            } else if (data['extra'] is String) {
-              try { extra = jsonDecode(data['extra']); } catch (_) {}
-            }
-          }
+          final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+          if (currentRoute.contains('/call')) return;
 
-          String channelName = extra['channelName']?.toString() ?? data['id']?.toString() ?? "";
-          String callerId = extra['callerId']?.toString() ?? "";
-          String callerAvatar = extra['callerAvatar']?.toString() ?? data['avatar']?.toString() ?? ""; 
-          bool isVideo = data['type'] == 1 || data['type'] == "1";
-          String remoteName = data['nameCaller']?.toString() ?? "Alumni User";
-
-          Future.delayed(const Duration(milliseconds: 1000), () async {
-            bool isLoggedIn = await AuthService().isSessionValid();
-            if (!isLoggedIn) return;
-
-            safeNavigateToCall({
-              'isGroupCall': false, 
-              'isVideoCall': isVideo,
-              'remoteName': remoteName,
-              'remoteId': callerId,
-              'channelName': channelName,
-              'remoteAvatar': callerAvatar, 
-              'isIncoming': true,
-              'autoAccept': true, 
-            });
+          appRouter.push('/call', extra: {
+            'isGroupCall': false, 
+            'isVideoCall': data['type'] == 1,
+            'remoteName': data['nameCaller'] ?? "Alumni User",
+            'remoteId': callerId,
+            'channelName': channelName,
+            'remoteAvatar': callerAvatar, 
+            'isIncoming': true,
           });
-        } 
-        else if (eventName.contains('actionCallDecline')) {
+          break;
+          
+        case Event.actionCallDecline:
           SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
-          FlutterCallkitIncoming.endAllCalls(); 
-        }
-      } catch (err) {
-        debugPrint("CallKit Listener Error: $err");
+          break;
+          
+        default:
+          break;
       }
     });
   }
@@ -587,7 +332,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final isAlreadyInCall = currentPath == '/call';
 
         if (!isAuthScreen && !isAlreadyInCall) {
-          safeNavigateToCall({
+          appRouter.push('/call', extra: {
             'isGroupCall': isGroup, 
             'isVideoCall': data['callerData']?['isVideoCall'] ?? false, 
             'remoteName': displayRemoteName,

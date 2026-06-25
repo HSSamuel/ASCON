@@ -60,19 +60,6 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
 
     <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function () {
-          navigator.serviceWorker.register('/firebase-messaging-sw.js')
-            .then(function(registration) {
-              console.log('✅ Firebase Service Worker registered successfully.');
-            }).catch(function(err) {
-              console.log('❌ Firebase Service Worker registration failed:', err);
-            });
-        });
-      }
-    </script>
-
-    <script>
       const origLog = console.log;
       const origDebug = console.debug;
       const origInfo = console.info;

@@ -154,23 +154,25 @@ class PostCard extends ConsumerWidget {
                     children: [
                       Row(
                         children: [
-                          Flexible(
-                            child: GestureDetector(
-                              onTap: () => _viewProfile(context, author),
-                              child: Text(author['fullName'] ?? 'Alumni Member', 
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: textColor), 
-                              overflow: TextOverflow.ellipsis),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text("• $timeAgo", style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                          // Bumping name to 15, time to 12
+Flexible(
+  child: GestureDetector(
+    onTap: () => _viewProfile(context, author),
+    child: Text(author['fullName'] ?? 'Alumni Member', 
+        style: GoogleFonts.lato(fontWeight: FontWeight.bold, fontSize: 15, color: textColor), 
+        overflow: TextOverflow.ellipsis),
+  ),
+),
+const SizedBox(width: 6), // Slightly wider gap
+Text("• $timeAgo", style: GoogleFonts.lato(fontSize: 12, color: Colors.grey[500])),
                         ],
                       ),
-                      if (author['jobTitle'] != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2.0),
-                          child: Text(author['jobTitle'], style: TextStyle(color: subTextColor, fontSize: 12, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ),
+                      // Bumping job to 12, adding a tiny top padding so it doesn't crowd the name
+if (author['jobTitle'] != null)
+  Padding(
+    padding: const EdgeInsets.only(top: 2.0),
+    child: Text(author['jobTitle'], style: GoogleFonts.lato(color: subTextColor, fontSize: 12, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
+  ),
                     ],
                   ),
                 ),
@@ -208,10 +210,20 @@ class PostCard extends ConsumerWidget {
                     if (cleanText.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                        child: ExpandableMarkdownText(
-                          text: cleanText,
-                          maxLines: 3,
-                          textColor: textColor,
+                        child: // Bumping text to 14.5 (or 15) and line height to 1.45 for excellent readability
+MarkdownBody(
+  selectable: true, 
+  data: cleanText,
+  styleSheet: MarkdownStyleSheet(
+    p: GoogleFonts.lato(fontSize: 14.5, color: textColor, height: 1.45, letterSpacing: 0.2),
+    listBullet: GoogleFonts.lato(color: textColor, fontSize: 14.5, height: 1.45),
+    a: GoogleFonts.lato(color: Colors.blue, decoration: TextDecoration.underline, fontWeight: FontWeight.w500),
+  ),
+                          onTapLink: (text, href, title) async {
+                            if (href != null && await canLaunchUrl(Uri.parse(href))) {
+                              await launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
+                            }
+                          },
                         ),
                       ),
                     if (extractedUrl != null)
@@ -293,117 +305,6 @@ class PostCard extends ConsumerWidget {
           Container(height: 5, color: isDark ? Colors.black : Colors.grey[200]),
         ],
       ),
-    );
-  }
-}
-
-/// Upgraded Expandable Text Widget supporting Markdown formatting
-class ExpandableMarkdownText extends StatefulWidget {
-  final String text;
-  final int maxLines;
-  final Color? textColor;
-
-  const ExpandableMarkdownText({
-    super.key,
-    required this.text,
-    this.maxLines = 3,
-    this.textColor,
-  });
-
-  @override
-  State<ExpandableMarkdownText> createState() => _ExpandableMarkdownTextState();
-}
-
-class _ExpandableMarkdownTextState extends State<ExpandableMarkdownText> {
-  bool _isExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.text.isEmpty) return const SizedBox.shrink();
-
-    return LayoutBuilder(
-      builder: (context, size) {
-        // Strip out Markdown formatting to accurately calculate the plain text line height
-        final plainText = widget.text
-            .replaceAll(RegExp(r'\[([^\]]+)\]\([^\)]+\)'), r'$1') // Converts links to pure text
-            .replaceAll(RegExp(r'(\*\*|\*|~~|__|_)'), '') // Removes bold, italic, strikethrough
-            .replaceAll(RegExp(r'#+\s'), '') // Removes header hashtags
-            .replaceAll(RegExp(r'-\s'), ''); // Removes bullet points
-
-        final span = TextSpan(
-          text: plainText, 
-          style: const TextStyle(fontSize: 13.5, height: 1.4)
-        );
-        
-        final tp = TextPainter(
-          text: span,
-          maxLines: widget.maxLines,
-          textDirection: TextDirection.ltr,
-        );
-        
-        tp.layout(maxWidth: size.maxWidth);
-
-        if (tp.didExceedMaxLines) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              _isExpanded
-                  ? MarkdownBody(
-                      selectable: true, 
-                      data: widget.text,
-                      styleSheet: MarkdownStyleSheet(
-                        p: TextStyle(fontSize: 13.5, color: widget.textColor, height: 1.4, letterSpacing: 0),
-                        listBullet: TextStyle(color: widget.textColor, fontSize: 13.5, height: 1.4),
-                        a: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline, fontWeight: FontWeight.w500, fontSize: 13.5),
-                      ),
-                      onTapLink: (text, href, title) async {
-                        if (href != null && await canLaunchUrl(Uri.parse(href))) {
-                          await launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
-                        }
-                      },
-                    )
-                  : Text(
-                      plainText,
-                      maxLines: widget.maxLines,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 13.5, color: widget.textColor, height: 1.4, letterSpacing: 0),
-                    ),
-              const SizedBox(height: 4),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isExpanded = !_isExpanded;
-                  });
-                },
-                child: Text(
-                  _isExpanded ? "Show less" : "more",
-                  style: TextStyle(
-                    color: Theme.of(context).primaryColor, 
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13.5,
-                  ),
-                ),
-              ),
-            ],
-          );
-        } else {
-          // The text naturally fits in 3 lines, just show standard markdown
-          return MarkdownBody(
-            selectable: true, 
-            data: widget.text,
-            styleSheet: MarkdownStyleSheet(
-              p: TextStyle(fontSize: 13.5, color: widget.textColor, height: 1.4, letterSpacing: 0),
-              listBullet: TextStyle(color: widget.textColor, fontSize: 13.5, height: 1.4),
-              a: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline, fontWeight: FontWeight.w500, fontSize: 13.5),
-            ),
-            onTapLink: (text, href, title) async {
-              if (href != null && await canLaunchUrl(Uri.parse(href))) {
-                await launchUrl(Uri.parse(href), mode: LaunchMode.externalApplication);
-              }
-            },
-          );
-        }
-      },
     );
   }
 }

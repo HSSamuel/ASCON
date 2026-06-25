@@ -6,6 +6,7 @@ import 'package:vibration/vibration.dart';
 
 import '../viewmodels/updates_view_model.dart';
 import '../widgets/updates/post_card.dart';
+import '../widgets/updates/sheets/create_post_sheet.dart';
 import '../widgets/updates/updates_sliver_app_bar.dart';
 import '../widgets/updates/highlights_section.dart';
 
@@ -20,10 +21,9 @@ class UpdatesScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      // ✅ Removed the entire floatingActionButton block from here
       body: NestedScrollView(
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          const UpdatesSliverAppBar(), 
+          const UpdatesSliverAppBar(), // ✅ Extracted
         ],
         body: RefreshIndicator(
           onRefresh: () async {
@@ -33,8 +33,10 @@ class UpdatesScreen extends ConsumerWidget {
           color: const Color(0xFFD4AF37),
           child: CustomScrollView(
             slivers: [
+              // ✅ Extracted Highlights
               HighlightsSection(highlights: updateState.highlights, isSearching: false),
 
+              // ✅ Media Filter Badge
               if (updateState.showMediaOnly)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -50,6 +52,7 @@ class UpdatesScreen extends ConsumerWidget {
                   ),
                 ),
 
+              // ✅ Dynamic Feed State
               if (updateState.isLoading)
                 const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
               else if (updateState.filteredPosts.isEmpty)
@@ -66,10 +69,17 @@ class UpdatesScreen extends ConsumerWidget {
                   ),
                 ),
                 
-              const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
+              const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
             ],
           ),
         ),
+      ),
+      
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'updates_fab_tag',
+        onPressed: () => CreatePostSheet.show(context), // ✅ Extracted
+        backgroundColor: const Color(0xFFD4AF37),
+        child: const Icon(Icons.edit, color: Colors.white),
       ),
     );
   }

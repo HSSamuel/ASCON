@@ -55,7 +55,6 @@ class DirectoryState {
 class DirectoryNotifier extends StateNotifier<DirectoryState> {
   final ApiClient _api = ApiClient();
   final DataService _dataService = DataService();
-  final SocketService _socket = SocketService(); // ✅ Extracted for real-time hooks
   StreamSubscription? _statusSubscription;
   
   final Box _cacheBox = Hive.box('ascon_cache');
@@ -67,7 +66,6 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
   void init() {
     loadDirectory();
     loadSmartMatches();
-    _setupPresenceListener(); // ✅ Active directory optimization initialized
   }
 
   void clearState() {
@@ -78,39 +76,8 @@ class DirectoryNotifier extends StateNotifier<DirectoryState> {
 
   @override
   void dispose() {
-    _statusSubscription?.cancel(); // ✅ Prevents memory leaks
+    _statusSubscription?.cancel();
     super.dispose();
-  }
-
-  // ✅ ACTIVE PRESENCE SYNC: Automatically refreshes the UI online dots whenever backend broadcasts.
-  void _setupPresenceListener() {
-    _statusSubscription = _socket.userStatusStream.listen((data) {
-      if (!mounted) return;
-      final String userId = data['userId'].toString();
-      final bool isOnline = data['isOnline'] == true;
-      final dynamic lastSeen = data['lastSeen'];
-
-      Map<String, dynamic> updateItem(dynamic item) {
-        final Map<String, dynamic> map = item is Map ? Map<String, dynamic>.from(item) : {};
-        final String uid = (map['userId'] ?? map['_id'] ?? '').toString();
-        if (uid == userId) {
-          map['isOnline'] = isOnline;
-          if (lastSeen != null) map['lastSeen'] = lastSeen;
-        }
-        return map;
-      }
-
-      final updatedAll = state.allAlumni.map(updateItem).toList();
-      final updatedSearch = state.searchResults.map(updateItem).toList();
-      final updatedMatches = state.smartMatches.map(updateItem).toList();
-
-      state = state.copyWith(
-        allAlumni: updatedAll,
-        searchResults: updatedSearch,
-        smartMatches: updatedMatches,
-        groupedAlumni: _groupUsersByYear(updatedSearch),
-      );
-    });
   }
 
   void setFilter(String filter) {
