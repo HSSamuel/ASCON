@@ -14,9 +14,16 @@ class CreatePostSheet extends ConsumerStatefulWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useRootNavigator: true,
+      useSafeArea: true,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => const CreatePostSheet(),
+      // ✅ Removed border radius to make it truly flat/full screen
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      // ✅ Forces the bottom sheet to take 100% of the available height
+      builder: (_) => const FractionallySizedBox(
+        heightFactor: 1.0, 
+        child: CreatePostSheet(),
+      ),
     );
   }
 
@@ -98,13 +105,25 @@ class _CreatePostSheetState extends ConsumerState<CreatePostSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 16, right: 16, top: 16),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max, // ✅ Allows Column to expand fully inside the FractionallySizedBox
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("New Update", style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  // ✅ Added an explicit Close/Cancel button for the full screen sheet
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(width: 12),
+                  Text("New Update", style: GoogleFonts.lato(fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
               _isPostingLocal 
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 : TextButton(
@@ -134,17 +153,21 @@ class _CreatePostSheetState extends ConsumerState<CreatePostSheet> {
             ),
           ),
 
-          TextField(
-            controller: _textController,
-            maxLines: 8,
-            minLines: 4,
-            autofocus: true,
-            style: GoogleFonts.lato(fontSize: 14), 
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              hintText: "What's happening? Use the toolbar for bold, italics, etc.", 
-              border: InputBorder.none,
-              isDense: true,
+          // ✅ Wrapped TextField in Expanded so it pushes everything up and feels like a massive canvas
+          Expanded(
+            child: TextField(
+              controller: _textController,
+              maxLines: null, // ✅ Allow infinite lines
+              expands: true,  // ✅ Expand vertically to fill the remaining screen real estate
+              autofocus: true,
+              textAlignVertical: TextAlignVertical.top, // ✅ Keep text at the top
+              style: GoogleFonts.lato(fontSize: 14), 
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                hintText: "What's happening? Use the toolbar for bold, italics, etc.", 
+                border: InputBorder.none,
+                isDense: true,
+              ),
             ),
           ),
           
@@ -177,7 +200,7 @@ class _CreatePostSheetState extends ConsumerState<CreatePostSheet> {
               ),
             ),
 
-          const Divider(height: 30),
+          const Divider(height: 10),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.image_rounded, color: Colors.green)),

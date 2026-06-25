@@ -3,7 +3,6 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:ascon_mobile/services/api_client.dart';
 import 'package:audio_session/audio_session.dart';
@@ -30,15 +29,9 @@ class CallService with WidgetsBindingObserver {
   Future<void> init() async {
     if (_isInitialized) return;
 
-    if (!kIsWeb) {
-      // ✅ ADDED: SystemAlertWindow and IgnoreBatteryOptimizations for offline Doze routing
-      await [
-        Permission.microphone, 
-        Permission.camera,
-        Permission.systemAlertWindow, 
-        Permission.ignoreBatteryOptimizations
-      ].request();
-    }
+    // ✅ FIX: Removed Permission.systemAlertWindow and Permission.ignoreBatteryOptimizations
+    // Natively requesting these during a background wake triggers a fatal SecurityException crash.
+    // CallScreen._requestPermissions() safely handles Mic & Camera natively later.
 
     String appId = dotenv.env['AGORA_APP_ID'] ?? '';
     if (appId.isEmpty) {
@@ -102,6 +95,10 @@ class CallService with WidgetsBindingObserver {
 
   Future<bool> joinCall({required String channelName, bool isVideo = false}) async {
     if (!_isInitialized) await init();
+    
+    // ✅ FIX: Prevents Null Pointer Exceptions if initialization fails
+    if (!_isInitialized) return false; 
+
     _isVideo = isVideo; 
 
     try {

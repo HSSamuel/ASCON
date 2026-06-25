@@ -2,7 +2,7 @@ name: ascon_mobile
 description: "ASCON Alumni Connect Mobile App."
 publish_to: "none"
 
-version: 2.0.1+6
+version: 2.1.0+7
 
 environment:
   sdk: ^3.0.0
@@ -15,7 +15,7 @@ dependencies:
 
   # ✅ UI & Utility
   cupertino_icons: ^1.0.8
-  http: ^1.2.1
+  http: ^1.6.0
   path_provider: ^2.1.2
   shared_preferences: 2.3.2
   google_fonts: 6.3.2
@@ -40,7 +40,7 @@ dependencies:
   # ✅ Content Display
   qr_flutter: ^4.1.0
   cached_network_image: ^3.4.1
-  share_plus: ^12.0.1
+  share_plus: ^13.1.0
   open_file: ^3.5.0
   add_2_calendar: ^3.0.1
   flutter_linkify: ^6.0.0
@@ -51,14 +51,14 @@ dependencies:
   flutter_markdown_plus: ^1.0.0
 
   # ✅ File & Media
-  file_picker: ^8.1.4
-  record: ^6.2.0
+  file_picker: 12.0.0-beta.7
+  record: ^7.1.0
   audioplayers: ^6.0.0
   permission_handler: ^12.0.1
   shimmer: ^3.0.0
   socket_io_client: ^3.1.4
   badges: ^3.1.2
-  vibration: ^2.0.0
+  vibration: ^3.2.0
 
   # ✅ Router
   go_router: ^14.2.0
@@ -72,10 +72,12 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   connectivity_plus: ^6.0.3
-  flutter_callkit_incoming: ^3.0.0
+  flutter_callkit_incoming: ^3.1.3
 
   firebase_crashlytics: ^4.1.3
   flutter_staggered_animations: ^1.1.1
+  device_info_plus: 13.1.0
+  flutter_ringtone_player: ^4.0.0+4
 
 dev_dependencies:
   flutter_test:

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../services/api_client.dart';
+import '../widgets/robust_avatar.dart'; // ✅ Make sure RobustAvatar is imported
+import 'alumni_detail_screen.dart'; 
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -24,7 +26,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   // ✅ GET: Fetch notifications from backend
   Future<void> _fetchNotifications() async {
     try {
-      final res = await _api.get('/api/notifications');
+      final res = await _api.get('/api/notifications/my-notifications'); 
       if (mounted) {
         setState(() {
           if (res['success'] == true && res['data'] is List) {
@@ -106,8 +108,32 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
 
     try {
-      await _api.put('/api/notifications/read/$id', {});
+      await _api.put('/api/notifications/$id/read', {}); 
     } catch (_) {}
+  }
+
+  // ✅ Handle routing to user profile if applicable
+  void _handleNotificationTap(Map<String, dynamic> item, int index) {
+    _markAsRead(item['_id'], index);
+
+    final String targetUserId = item['senderId'] 
+        ?? item['relatedUserId'] 
+        ?? (item['metadata'] != null ? item['metadata']['userId'] : null) 
+        ?? '';
+
+    if (targetUserId.isNotEmpty) {
+      final Map<String, dynamic> basicAlumniData = {
+        'userId': targetUserId,
+        '_id': targetUserId, 
+        'fullName': item['title'] ?? 'Alumni', 
+      };
+
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          builder: (_) => AlumniDetailScreen(alumniData: basicAlumniData)
+        )
+      );
+    }
   }
 
   @override
@@ -150,12 +176,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     itemCount: _notifications.length,
                     separatorBuilder: (c, i) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
-                      final item = _notifications[index];
+                      final item = _notifications[index] is Map ? Map<String, dynamic>.from(_notifications[index]) : <String, dynamic>{};
                       final bool isRead = item['isRead'] == true;
-                      final date = DateTime.tryParse(item['createdAt'].toString()) ?? DateTime.now();
+                      final date = DateTime.tryParse(item['createdAt']?.toString() ?? '') ?? DateTime.now();
+
+                      // ✅ SMART AVATAR EXTRACTION
+                      // The app will look for the image URL in various places depending on how your backend structures the payload
+                      final String avatarUrl = item['profilePicture'] 
+                          ?? item['avatar'] 
+                          ?? (item['data'] != null ? (item['data']['profilePicture'] ?? item['data']['avatar']) : null) 
+                          ?? '';
 
                       return Dismissible(
-                        key: Key(item['_id']),
+                        key: Key(item['_id'] ?? index.toString()),
                         direction: DismissDirection.endToStart,
                         background: Container(
                           alignment: Alignment.centerRight,
@@ -168,7 +201,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         ),
                         onDismissed: (direction) => _deleteNotification(item['_id'], index),
                         child: InkWell(
-                          onTap: () => _markAsRead(item['_id'], index),
+                          onTap: () => _handleNotificationTap(item, index),
                           borderRadius: BorderRadius.circular(12),
                           child: Container(
                             padding: const EdgeInsets.all(16),
@@ -187,18 +220,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: isRead ? Colors.grey.withOpacity(0.1) : Colors.blue.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.notifications, 
-                                    size: 20, 
-                                    color: isRead ? Colors.grey : Colors.blue
-                                  ),
-                                ),
+                                
+                                // ✅ DYNAMIC AVATAR UI
+                                avatarUrl.isNotEmpty
+                                    ? RobustAvatar(imageUrl: avatarUrl, radius: 20) // Displays the profile picture
+                                    : Container( // Fallback if no picture is sent from the backend
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: isRead ? Colors.grey.withOpacity(0.1) : Colors.blue.withOpacity(0.1),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          Icons.notifications, 
+                                          size: 20, 
+                                          color: isRead ? Colors.grey : Colors.blue
+                                        ),
+                                      ),
+
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(

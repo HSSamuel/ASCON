@@ -2,12 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 
-class FullScreenImage extends StatelessWidget {
+class FullScreenImage extends StatefulWidget {
   final String? imageUrl;
   final String heroTag;
 
@@ -17,22 +18,88 @@ class FullScreenImage extends StatelessWidget {
     required this.heroTag,
   });
 
-  // ✅ PRO FEATURE: Intelligent Share Logic
+  @override
+  State<FullScreenImage> createState() => _FullScreenImageState();
+}
+
+// ✅ FIX: Added SingleTickerProviderStateMixin for the Double-tap Zoom Animation
+class _FullScreenImageState extends State<FullScreenImage> with SingleTickerProviderStateMixin {
+  bool _showUI = true;
+
+  late TransformationController _transformationController;
+  late AnimationController _animationController;
+  Animation<Matrix4>? _animation;
+  TapDownDetails? _doubleTapDetails;
+
+  @override
+  void initState() {
+    super.initState();
+    _transformationController = TransformationController();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    )..addListener(() {
+        _transformationController.value = _animation!.value;
+      });
+  }
+
+  @override
+  void dispose() {
+    // Ensure the system status bar comes back when the user leaves this screen
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _transformationController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  // ✅ Register double-tap location to zoom into the specific tapped point
+  void _handleDoubleTapDown(TapDownDetails details) {
+    _doubleTapDetails = details;
+  }
+
+  void _handleDoubleTap() {
+    if (_animationController.isAnimating) return;
+
+    final position = _doubleTapDetails?.localPosition;
+    if (position == null) return;
+
+    if (_transformationController.value != Matrix4.identity()) {
+      // Zoom out to normal
+      _animation = Matrix4Tween(
+        begin: _transformationController.value,
+        end: Matrix4.identity(),
+      ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+      _animationController.forward(from: 0);
+    } else {
+      // Zoom in to tap location
+      const double scale = 3.0; // Level of zoom 
+      final x = -position.dx * (scale - 1);
+      final y = -position.dy * (scale - 1);
+      
+      final zoomedMatrix = Matrix4.identity()
+        ..translate(x, y)
+        ..scale(scale);
+
+      _animation = Matrix4Tween(
+        begin: _transformationController.value,
+        end: zoomedMatrix,
+      ).animate(CurveTween(curve: Curves.easeInOut).animate(_animationController));
+      _animationController.forward(from: 0);
+    }
+  }
+
   Future<void> _shareImage(BuildContext context) async {
-    if (imageUrl == null || imageUrl!.isEmpty) return;
+    if (widget.imageUrl == null || widget.imageUrl!.isEmpty) return;
 
     try {
       Uint8List? bytes;
       String fileName = "shared_image.png";
 
-      // Case A: It's a Network URL -> Download it
-      if (imageUrl!.startsWith('http')) {
-        final response = await http.get(Uri.parse(imageUrl!));
+      if (widget.imageUrl!.startsWith('http')) {
+        final response = await http.get(Uri.parse(widget.imageUrl!));
         bytes = response.bodyBytes;
-      } 
-      // Case B: It's Base64 -> Decode it
-      else {
-        String cleanBase64 = imageUrl!;
+      } else {
+        String cleanBase64 = widget.imageUrl!;
         if (cleanBase64.contains(',')) {
           cleanBase64 = cleanBase64.split(',').last;
         }
@@ -44,7 +111,6 @@ class FullScreenImage extends StatelessWidget {
         final file = File('${tempDir.path}/$fileName');
         await file.writeAsBytes(bytes);
 
-        // Share the file using native share sheet
         await Share.shareXFiles([XFile(file.path)], text: 'Check out this image!');
       }
     } catch (e) {
@@ -66,38 +132,60 @@ class FullScreenImage extends StatelessWidget {
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true, 
       
-      appBar: AppBar(
-        backgroundColor: Colors.black.withOpacity(0.4),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: () => _shareImage(context),
-            tooltip: "Share Image",
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: AnimatedOpacity(
+          opacity: _showUI ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 250),
+          child: AppBar(
+            backgroundColor: Colors.black.withOpacity(0.4),
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.white),
+            leading: IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(context),
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.share),
+                onPressed: () => _shareImage(context),
+                tooltip: "Share Image",
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
-          const SizedBox(width: 8),
-        ],
+        ),
       ),
       
-      // ✅ Wrap InteractiveViewer in a GestureDetector to easily dismiss on double tap
       body: GestureDetector(
-        onDoubleTap: () => Navigator.pop(context),
-        child: Center(
-          child: Hero(
-            tag: heroTag,
-            child: InteractiveViewer(
-              panEnabled: true,
-              // ✅ FIX: Allow infinite panning beyond the image borders
-              boundaryMargin: const EdgeInsets.all(double.infinity), 
-              clipBehavior: Clip.none, // ✅ FIX: Don't cut off the image when zooming
-              minScale: 0.5,
-              maxScale: 6.0, // ✅ Increased max zoom level for better inspection
-              child: _buildSafeImage(),
+        onTap: () {
+          setState(() {
+            _showUI = !_showUI;
+            // Hide the phone's battery/time status bar for true full screen
+            if (_showUI) {
+              SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+            } else {
+              SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+            }
+          });
+        },
+        // ✅ Add Double-Tap Handlers
+        onDoubleTapDown: _handleDoubleTapDown,
+        onDoubleTap: _handleDoubleTap,
+        child: SizedBox.expand(
+          child: InteractiveViewer(
+            transformationController: _transformationController,
+            panEnabled: true,
+            // ✅ FIX: "expand the image zoom borders" - Infinite boundary allows unlimited panning while zoomed
+            boundaryMargin: const EdgeInsets.all(double.infinity), 
+            clipBehavior: Clip.none, 
+            minScale: 1.0, 
+            maxScale: 8.0, 
+            child: Hero(
+              tag: widget.heroTag,
+              child: SizedBox.expand(
+                child: _buildSafeImage(),
+              ),
             ),
           ),
         ),
@@ -106,10 +194,9 @@ class FullScreenImage extends StatelessWidget {
   }
 
   Widget _buildSafeImage() {
-    // 1. If Image is a URL (Network) -> Use CachedNetworkImage (Pro Performance)
-    if (imageUrl != null && imageUrl!.startsWith('http')) {
+    if (widget.imageUrl != null && widget.imageUrl!.startsWith('http')) {
       return CachedNetworkImage(
-        imageUrl: imageUrl!,
+        imageUrl: widget.imageUrl!,
         fit: BoxFit.contain,
         placeholder: (context, url) => const Center(
           child: CircularProgressIndicator(color: Colors.white),
@@ -118,11 +205,9 @@ class FullScreenImage extends StatelessWidget {
       );
     }
 
-    // 2. If Image is Base64 (Database string)
-    if (imageUrl != null && imageUrl!.isNotEmpty) {
+    if (widget.imageUrl != null && widget.imageUrl!.isNotEmpty) {
       try {
-        // Remove header if present (e.g., "data:image/png;base64,")
-        String cleanBase64 = imageUrl!;
+        String cleanBase64 = widget.imageUrl!;
         if (cleanBase64.contains(',')) {
           cleanBase64 = cleanBase64.split(',').last;
         }
@@ -136,17 +221,16 @@ class FullScreenImage extends StatelessWidget {
       }
     }
 
-    // 3. Fallback if empty
     return _buildFallbackIcon();
   }
 
   Widget _buildFallbackIcon() {
     return Center(
       child: Column(
-        mainAxisSize: MainAxisSize.min, // ✅ FIX: Prevents the column from expanding infinitely and crashing
+        mainAxisSize: MainAxisSize.min, 
         mainAxisAlignment: MainAxisAlignment.center,
         children: const [
-          Icon(Icons.broken_image, size: 60, color: Colors.white38), // Slightly smaller icon
+          Icon(Icons.broken_image, size: 60, color: Colors.white38), 
           SizedBox(height: 12),
           Text(
             "Image could not load", 

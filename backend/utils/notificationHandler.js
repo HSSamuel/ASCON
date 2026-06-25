@@ -71,16 +71,15 @@ const sendBroadcastNotification = async (title, body, data = {}) => {
       try {
         const response = await admin.messaging().sendEachForMulticast(message);
         const failedTokens = [];
-        
+
         response.responses.forEach((res, idx) => {
           if (!res.success) {
             const errorCode = res.error?.code;
-            // ✅ ENHANCED: Catch all variations of dead/invalid tokens
             const invalidTokenErrors = [
               "messaging/registration-token-not-registered",
-              "messaging/invalid-registration-token",       
-              "messaging/invalid-argument",                  
-              "messaging/mismatched-credential"              
+              "messaging/invalid-registration-token",
+              "messaging/invalid-argument",
+              "messaging/mismatched-credential",
             ];
 
             if (invalidTokenErrors.includes(errorCode)) {
@@ -88,7 +87,7 @@ const sendBroadcastNotification = async (title, body, data = {}) => {
             }
           }
         });
-        
+
         if (failedTokens.length > 0) {
           await cleanupTokens(user._id, failedTokens);
         }
@@ -108,15 +107,24 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
     const isCall =
       data.type === "call_offer" ||
       data.type === "video_call" ||
-      data.type === "incoming_call";
+      data.type === "incoming_call" ||
+      data.type === "call_ended" ||
+      data.type === "call_rejected";
 
-    // Only save non-call notifications to DB history
+    // ✅ NEW: Detect if this is a chat message to route it as a data-only message
+    const isChat = data.type === "chat_message";
+
+    const extractedSenderId = data.senderId || data.id || null;
+    const extractedProfilePic = data.profilePicture || "";
+
     if (title && body && !isCall) {
       const newNotification = new Notification({
         recipientId: userId,
         title,
         message: body,
         isBroadcast: false,
+        senderId: extractedSenderId,
+        profilePicture: extractedProfilePic,
         data: data,
       });
       await newNotification.save();
@@ -133,37 +141,56 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
       return;
     }
 
-    // ✅ FIX: Separate Data-Only payloads (Calls) from Standard Notifications
     let message = {
       tokens: uniqueTokens,
     };
 
     if (isCall) {
-      // 🚨 CRITICAL FIX: Ensure every single value in the data payload is a string.
-      // FCM will silently fail to deliver background messages if it contains booleans or numbers.
       const safeStringifiedData = {};
       for (const [key, value] of Object.entries(data)) {
-        safeStringifiedData[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+        safeStringifiedData[key] =
+          typeof value === "object" ? JSON.stringify(value) : String(value);
       }
 
       message.data = {
         ...safeStringifiedData,
-        type: data.type || "incoming_call", 
-      };
-      
-      message.android = {
-        priority: "high", 
+        type: data.type || "incoming_call",
       };
 
-      // ✅ ADDED FOR iOS: Standard FCM data messages won't wake a terminated iOS app.
-      // You must include APNs headers to force the iOS device to wake up.
+      message.android = {
+        priority: "high",
+      };
+
       message.apns = {
         headers: { "apns-priority": "10" },
-        payload: { aps: { "content-available": 1 } }
+        payload: { aps: { "content-available": 1 } },
+      };
+    } else if (isChat) {
+      // ✅ NEW: Chat-specific data-only payload for rich Flutter local notifications (Avatars & Reply)
+      const safeStringifiedData = {};
+      for (const [key, value] of Object.entries(data)) {
+        safeStringifiedData[key] =
+          typeof value === "object" ? JSON.stringify(value) : String(value);
+      }
+
+      message.data = {
+        title: title || "New Message",
+        body: body || "",
+        ...safeStringifiedData,
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
       };
 
+      message.android = { priority: "high" };
+      message.apns = {
+        payload: {
+          aps: {
+            "content-available": 1,
+            category: "CHAT_REPLY", // Triggers iOS native text input capability
+          },
+        },
+      };
     } else {
-      // STANDARD NOTIFICATION PAYLOAD (Chat, Events, etc)
+      // Standard notifications
       message.notification = {
         title: title || "New Notification",
         body: body || "You have a new message",
@@ -188,7 +215,6 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
     response.responses.forEach((res, idx) => {
       if (!res.success) {
         const errorCode = res.error?.code;
-        // ✅ ENHANCED: Catch all variations of dead/invalid tokens
         const invalidTokenErrors = [
           "messaging/registration-token-not-registered",
           "messaging/invalid-registration-token",
@@ -212,11 +238,11 @@ const sendPersonalNotification = async (userId, title, body, data = {}) => {
 
 const notifyPeersOfNewUser = async (newUserProfile) => {
   try {
-    const { userId, fullName, yearOfAttendance, city } = newUserProfile;
+    const { userId, fullName, yearOfAttendance, city, profilePicture } =
+      newUserProfile;
 
     const queries = [];
 
-    // 1. Check for Same Class
     if (
       yearOfAttendance &&
       yearOfAttendance !== "General" &&
@@ -225,15 +251,12 @@ const notifyPeersOfNewUser = async (newUserProfile) => {
       queries.push({ yearOfAttendance: yearOfAttendance });
     }
 
-    // 2. Check for Same City
     if (city && city.trim() !== "") {
-      // Case insensitive exact match for city
       queries.push({ city: { $regex: new RegExp(`^${city.trim()}$`, "i") } });
     }
 
     if (queries.length === 0) return;
 
-    // Find peers (excluding the newly registered user)
     const peers = await UserProfile.find({
       userId: { $ne: userId },
       $or: queries,
@@ -244,12 +267,10 @@ const notifyPeersOfNewUser = async (newUserProfile) => {
     const newUserIdStr = userId.toString();
     const firstName = fullName.split(" ")[0];
 
-    // Send personalized notifications to each matched peer
     const promises = peers.map((peer) => {
       let title = "New Alumni Joined! 🎉";
       let body = `${firstName} just joined the ASCON Alumni Network!`;
 
-      // Prioritize Classmate notification over City notification
       if (peer.yearOfAttendance == yearOfAttendance) {
         title = "Classmate Alert! 🎓";
         body = `${fullName} from your Class of ${yearOfAttendance} just joined!`;
@@ -266,6 +287,8 @@ const notifyPeersOfNewUser = async (newUserProfile) => {
         type: "new_alumni",
         route: "alumni_detail",
         id: newUserIdStr,
+        senderId: newUserIdStr,
+        profilePicture: profilePicture || "",
         fullName: fullName,
       });
     });

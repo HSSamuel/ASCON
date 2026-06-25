@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/gestures.dart';
 import '../services/data_service.dart';
+import '../widgets/full_screen_image.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final Map<String, dynamic> eventData;
@@ -78,12 +79,12 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
-  void _openFullScreenImage(String imageUrl) {
+  void _openFullScreenImage(String imageUrl, String heroTag) {
     if (imageUrl.isEmpty) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => FullScreenImageViewer(imageUrl: imageUrl),
+        builder: (_) => FullScreenImage(imageUrl: imageUrl, heroTag: heroTag),
       ),
     );
   }
@@ -244,9 +245,13 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                         });
                       },
                       itemBuilder: (context, index) {
+                        final tag = 'event_img_${_event['id'] ?? _event['_id']}_$index';
                         return GestureDetector(
-                          onTap: () => _openFullScreenImage(images[index]),
-                          child: _buildSafeImage(images[index]),
+                          onTap: () => _openFullScreenImage(images[index], tag),
+                          child: Hero(
+                            tag: tag,
+                            child: _buildSafeImage(images[index]),
+                          ),
                         );
                       },
                     )
@@ -290,7 +295,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       bottom: 40,
                       right: 16,
                       child: GestureDetector(
-                        onTap: () => _openFullScreenImage(images[_currentImageIndex]),
+                        onTap: () {
+                          final tag = 'event_img_${_event['id'] ?? _event['_id']}_$_currentImageIndex';
+                          _openFullScreenImage(images[_currentImageIndex], tag);
+                        },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
@@ -420,7 +428,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               children: [
                 Text("• ", style: baseStyle.copyWith(fontWeight: FontWeight.bold)),
                 Expanded(
-                  child: SelectableText.rich( // ✅ ADDED SELECTABLE
+                  child: SelectableText.rich( 
                     _parseRichText(cleanText.substring(2).trimLeft(), baseStyle, isDark),
                     textAlign: TextAlign.justify,
                   ),
@@ -431,7 +439,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         } else {
           textContent = Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
-            child: SelectableText.rich( // ✅ ADDED SELECTABLE
+            child: SelectableText.rich( 
               _parseRichText(cleanText, baseStyle, isDark),
               textAlign: TextAlign.justify,
             ),
@@ -515,52 +523,5 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         ),
       ],
     );
-  }
-}
-
-class FullScreenImageViewer extends StatelessWidget {
-  final String imageUrl;
-
-  const FullScreenImageViewer({super.key, required this.imageUrl});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          panEnabled: true,
-          minScale: 0.5,
-          maxScale: 4.0,
-          child: _buildSafeImage(imageUrl),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSafeImage(String? imageUrl) {
-    if (imageUrl == null || imageUrl.isEmpty) {
-      return const Icon(Icons.image_not_supported, color: Colors.white, size: 50);
-    }
-
-    if (imageUrl.startsWith('http')) {
-      return Image.network(imageUrl, fit: BoxFit.contain);
-    }
-
-    try {
-      String cleanBase64 = imageUrl;
-      if (cleanBase64.contains(',')) cleanBase64 = cleanBase64.split(',').last;
-      return Image.memory(base64Decode(cleanBase64), fit: BoxFit.contain);
-    } catch (e) {
-      return const Icon(Icons.broken_image, color: Colors.white, size: 50);
-    }
   }
 }

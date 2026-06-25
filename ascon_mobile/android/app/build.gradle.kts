@@ -21,7 +21,7 @@ android {
     // ✅ UPDATED: Bumped to 36. 
     // Newer Flutter plugins and AndroidX Media3 dependencies strictly require SDK 35/36.
     compileSdk = 36 
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         // ✅ Enable Desugaring

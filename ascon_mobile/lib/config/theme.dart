@@ -14,7 +14,6 @@ class AppTheme {
     cardColor: Colors.white,
     dividerColor: Colors.grey[200],
     
-    // ✅ NEW: Fix Invisible Cursor & Text Selection
     textSelectionTheme: TextSelectionThemeData(
       cursorColor: primaryGreen,
       selectionColor: primaryGreen.withOpacity(0.3),
@@ -37,7 +36,8 @@ class AppTheme {
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: primaryGreen, width: 1.5)),
     ),
 
-    textTheme: GoogleFonts.latoTextTheme(
+    // ✅ FIX: Upgraded to Inter for that highly modern, crisp UI look
+    textTheme: GoogleFonts.interTextTheme(
       const TextTheme(
         bodyLarge: TextStyle(color: Colors.black87), 
         bodyMedium: TextStyle(color: Colors.black54), 
@@ -56,7 +56,6 @@ class AppTheme {
     cardColor: const Color(0xFF1E1E1E),
     dividerColor: Colors.grey[800],
 
-    // ✅ NEW: Fix Invisible Cursor in Dark Mode
     textSelectionTheme: TextSelectionThemeData(
       cursorColor: accentGold,
       selectionColor: accentGold.withOpacity(0.3),
@@ -79,7 +78,8 @@ class AppTheme {
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: primaryGreen, width: 1.5)),
     ),
 
-    textTheme: GoogleFonts.latoTextTheme(
+    // ✅ FIX: Upgraded to Inter for Dark Mode
+    textTheme: GoogleFonts.interTextTheme(
       const TextTheme(
         bodyLarge: TextStyle(color: Colors.white), 
         bodyMedium: TextStyle(color: Colors.grey), 

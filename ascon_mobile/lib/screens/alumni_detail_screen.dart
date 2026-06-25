@@ -42,6 +42,7 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
     super.initState();
     _currentAlumniData = Map<String, dynamic>.from(widget.alumniData);
 
+    // Initial load from whatever data was passed in
     _isOnline = _currentAlumniData['isOnline'] == true;
     _lastSeen = _currentAlumniData['lastSeen']?.toString();
 
@@ -80,9 +81,21 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
 
     setState(() {
       _currentAlumniData.addAll(fullData);
+      
+      // ✅ FIX: Ensure local state captures the fresh presence data returned by the backend DB fetch
+      if (fullData.containsKey('isOnline')) {
+        _isOnline = fullData['isOnline'] == true;
+      }
+      if (fullData.containsKey('lastSeen')) {
+        _lastSeen = fullData['lastSeen']?.toString();
+      }
+
       _isLoadingFullProfile = false;
       _profileExists = true;
     });
+
+    // ✅ FIX: Force a fresh ping through the socket for absolute real-time accuracy after fetch
+    SocketService().checkUserStatus(lookupId);
   }
 
   void _setupSocketListeners() {
@@ -334,7 +347,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
 
                   const SizedBox(height: 20),
 
-                  // ✅ Circular Actions Area - Restored completely with only Message, Voice Call, and Email.
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -459,7 +471,6 @@ class _AlumniDetailScreenState extends ConsumerState<AlumniDetailScreen> {
                             ),
                           ),
 
-                        // ✅ RESTORED: Programme Attended Box
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
