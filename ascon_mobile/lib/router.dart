@@ -162,7 +162,6 @@ final GoRouter appRouter = GoRouter(
           channelName: args['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}",
           remoteAvatar: args['remoteAvatar'],
           isIncoming: args['isIncoming'] ?? false,
-          autoAccept: args['autoAccept'] ?? false, // ✅ ACCEPTED HERE
         );
       },
     ),
@@ -191,16 +190,21 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) {
         final args = state.extra as Map<String, dynamic>? ?? {};
         
+        // 1. If navigated internally from Directory (alumniData is present)
         if (args.containsKey('alumniData') && args['alumniData'] != null) {
           return AlumniDetailScreen(
             alumniData: args['alumniData'] as Map<String, dynamic>,
           );
         }
 
+        // 2. If navigated via FCM Notification (Smart Match or New Joiner)
+        // Extract the flat strings provided by the FCM data payload.
+        // We check 'id' as well, because notificationHandler.js uses 'id' instead of 'userId'
         final String profileId = args['profileId']?.toString() ?? '';
         final String userId = args['userId']?.toString() ?? args['id']?.toString() ?? '';
         final String fullName = args['fullName']?.toString() ?? 'Alumni';
 
+        // Reconstruct the map that AlumniDetailScreen expects
         final Map<String, dynamic> reconstructedData = {
           '_id': profileId.isNotEmpty ? profileId : userId, 
           'userId': userId,

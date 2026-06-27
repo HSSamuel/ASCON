@@ -14,7 +14,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'services/notification_service.dart';
 import 'services/socket_service.dart'; 
-import 'services/auth_service.dart'; 
+import 'services/auth_service.dart'; // ✅ ADDED: AuthService import for global sync
 import 'config/theme.dart';
 import 'config.dart';
 import 'router.dart'; 
@@ -22,6 +22,8 @@ import 'utils/error_handler.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = rootNavigatorKey;
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
+
+// Global Provider Container allows us to access Riverpod outside the Widget tree
 final ProviderContainer providerContainer = ProviderContainer();
 
 @pragma('vm:entry-point')
@@ -54,8 +56,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         'callerId': message.data['callerId'],
         'callerAvatar': message.data['callerAvatar'] 
       },
-      // ✅ FIX: Reverted strictly to the original baseline. Removing custom channel name
-      // forces Android to use the plugin's native looping channel, curing the "single beep" bug.
       android: const AndroidParams(
         isCustomNotification: true,
         isShowLogo: false,
@@ -158,7 +158,7 @@ void main() async {
       }
     }
 
-    FlutterError.onError = (errorDetails) {
+FlutterError.onError = (errorDetails) {
       if (!kIsWeb) {
         FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
       } else {
@@ -206,7 +206,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this); 
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
-    _setupInteractedMessage();
+    
+    // ✅ ADDED: Trigger sync immediately when app starts
     _triggerColdStartSync();
   }
 
@@ -217,13 +218,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  // ✅ ADDED: Verify session and fetch fresh data from backend
   Future<void> _triggerColdStartSync() async {
     if (await AuthService().isSessionValid()) {
       AuthService().performGlobalSilentSync();
     }
   }
 
-  @override
+  // =======================================================================
+  // 🚀 GLOBAL LIFECYCLE SYNCING
+  // =======================================================================
+ @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
@@ -235,9 +240,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       debugPrint("App Resumed: Reconnecting Socket and Syncing Data");
       SocketService().initSocket(); 
       
+      // ✅ FIX: Only trigger the massive background sync if the user is actually logged in!
       AuthService().isSessionValid().then((isValid) {
         if (isValid) {
           AuthService().performGlobalSilentSync();
+        } else {
+          debugPrint("User is logged out. Skipping background sync.");
         }
       });
     }
@@ -248,6 +256,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (initialMessage != null) {
       _handleNotificationClick(initialMessage);
     }
+
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationClick);
   }
 
@@ -255,20 +264,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final data = message.data;
     
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
-      Future.delayed(const Duration(milliseconds: 400), () {
-        final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-        if (currentRoute.contains('/call')) return;
+      final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
+      if (currentRoute.contains('/call')) return;
 
-        appRouter.push('/call', extra: {
-          'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
-          'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
-          'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
-          'remoteId': data['callerId'] ?? "",
-          'channelName': data['channelName'] ?? "",
-          'remoteAvatar': data['callerAvatar'] ?? data['callerPic'], 
-          'isIncoming': true,
-          'autoAccept': false, // ✅ False: They tapped the body, not "Accept", so show flutter ringing UI
-        });
+      appRouter.push('/call', extra: {
+        'isGroupCall': data['isGroupCall'] == 'true' || data['isGroupCall'] == true,
+        'isVideoCall': data['isVideoCall'] == 'true' || data['isVideoCall'] == true,
+        'remoteName': data['callerName'] ?? data['groupName'] ?? "Alumni User",
+        'remoteId': data['callerId'] ?? "",
+        'channelName': data['channelName'] ?? "",
+        'remoteAvatar': data['callerAvatar'] ?? data['callerPic'], 
+        'isIncoming': true,
       });
     } 
     else if (data['route'] != null) {
@@ -278,69 +284,34 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   void _listenForCallKitEvents() {
     if (kIsWeb) return;
-    
     FlutterCallkitIncoming.onEvent.listen((event) {
-      if (event == null) return;
+      switch (event!.event) {
+        case Event.actionCallAccept:
+          final data = event.body;
+          String channelName = data['extra']?['channelName'] ?? data['id'] ?? "";
+          String callerId = data['extra']?['callerId'] ?? "";
+          String callerAvatar = data['extra']?['callerAvatar'] ?? data['avatar'] ?? ""; 
 
-      if (event.event == Event.actionCallAccept || event.event == Event.actionCallCallback) {
-        final data = event.body;
-        if (data == null) return;
-
-        Map<String, dynamic> extra = {};
-        if (data['extra'] != null) {
-          if (data['extra'] is Map) {
-            extra = Map<String, dynamic>.from(data['extra']);
-          } else if (data['extra'] is String) {
-            try { extra = jsonDecode(data['extra']); } catch (_) {}
-          }
-        }
-
-        String channelName = extra['channelName']?.toString() ?? data['id']?.toString() ?? "";
-        String callerId = extra['callerId']?.toString() ?? "";
-        String callerAvatar = extra['callerAvatar']?.toString() ?? data['avatar']?.toString() ?? ""; 
-        bool isVideo = data['type'] == 1 || data['type'] == "1";
-        String remoteName = data['nameCaller']?.toString() ?? "Alumni User";
-
-        // ✅ THE BULLETPROOF GUARD:
-        // Instead of a fixed timer, we actively poll the WidgetsBinding to ensure 
-        // the Android UI is 100% attached and resumed before pushing the heavy Agora screen.
-        void safePush() {
           final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
-          if (!currentRoute.contains('/call')) {
-            appRouter.push('/call', extra: {
-              'isGroupCall': false, 
-              'isVideoCall': isVideo,
-              'remoteName': remoteName,
-              'remoteId': callerId,
-              'channelName': channelName,
-              'remoteAvatar': callerAvatar, 
-              'isIncoming': true,
-              'autoAccept': true, 
-            });
-          }
-        }
+          if (currentRoute.contains('/call')) return;
 
-        if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-          safePush();
-        } else {
-          // If the app is still waking up, wait for it to resume, then push.
-          late AppLifecycleListener listener;
-          listener = AppLifecycleListener(
-            onResume: () {
-              Future.delayed(const Duration(milliseconds: 300), safePush);
-              listener.dispose();
-            },
-          );
-          // Failsafe: if the listener misses the transition, force it after 2 seconds
-          Future.delayed(const Duration(seconds: 2), () {
-             safePush();
-             try { listener.dispose(); } catch (_) {}
+          appRouter.push('/call', extra: {
+            'isGroupCall': false, 
+            'isVideoCall': data['type'] == 1,
+            'remoteName': data['nameCaller'] ?? "Alumni User",
+            'remoteId': callerId,
+            'channelName': channelName,
+            'remoteAvatar': callerAvatar, 
+            'isIncoming': true,
           });
-        }
-      } 
-      else if (event.event == Event.actionCallDecline) {
-        SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
-        FlutterCallkitIncoming.endAllCalls(); 
+          break;
+          
+        case Event.actionCallDecline:
+          SocketService().socket?.emit('reject_call', {'reason': 'user_busy'});
+          break;
+          
+        default:
+          break;
       }
     });
   }
@@ -369,13 +340,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             'channelName': data['channelName'] ?? "",
             'remoteAvatar': data['callerData']?['callerAvatar'], 
             'isIncoming': true, 
-            'autoAccept': false,
           });
         } else if (isAlreadyInCall) {
           SocketService().socket?.emit('reject_call', {
             'targetUserId': data['callerId'],
             'reason': 'user_busy'
           });
+          debugPrint('Rejected background call from ${data['callerId']} because user is busy.');
         }
       }
     });
