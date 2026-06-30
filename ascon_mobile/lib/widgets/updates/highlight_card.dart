@@ -14,38 +14,63 @@ class HighlightCard extends StatelessWidget {
     final image = item['image'] ?? item['imageUrl'];
     
     return Container(
-      width: 100,
+      width: 120, // ✅ Slightly wider to accommodate the full-bleed aesthetic
       margin: const EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15), 
+            blurRadius: 6, 
+            offset: const Offset(0, 3)
+          )
+        ]
       ),
       child: GestureDetector(
         onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (_) => ProgrammeDetailScreen(programme: item)));
         },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center, // ✅ CENTER ALL CHILDREN
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)), 
-                child: image != null 
-                  ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, width: double.infinity)
-                  : Container(color: Colors.grey[300], child: const Icon(Icons.article, color: Colors.grey)),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ✅ Full-Bleed Background Image
+              image != null 
+                  ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover)
+                  : Container(color: Colors.grey[800], child: const Icon(Icons.article, color: Colors.grey)),
+                  
+              // ✅ Gradient Overlay for Text Readability
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.3),
+                      Colors.black.withOpacity(0.85),
+                    ],
+                    stops: const [0.4, 0.7, 1.0],
+                  ),
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(
-                title, 
-                maxLines: 2, 
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center, // ✅ CENTER THE TEXT DIRECTLY
-                style: GoogleFonts.lato(fontSize: 11, fontWeight: FontWeight.bold)
-              ),
-            )
-          ],
+
+              // ✅ Text safely anchored at the bottom over the dark gradient
+              Positioned(
+                bottom: 10,
+                left: 8,
+                right: 8,
+                child: Text(
+                  title, 
+                  maxLines: 2, 
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center, 
+                  style: GoogleFonts.lato(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)
+                ),
+              )
+            ],
+          ),
         ),
       ),
     );

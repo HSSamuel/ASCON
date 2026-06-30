@@ -1,17 +1,79 @@
-import 'dart:convert';
-// ✅ FIX: Corrected the firebase_messaging import path
+import 'dart:convert'; 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
+import 'package:http/http.dart' as http; 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:typed_data'; 
 
 import '../config.dart';
 import '../router.dart'; 
 import '../services/socket_service.dart';
+
+// ============================================================================
+// ✅ BACKGROUND HANDLER FOR INLINE REPLIES AND ACTIONS
+// Must be a top-level function to run isolated in the background.
+// ============================================================================
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) async {
+  if (response.payload == null) return;
+  
+  try {
+    final data = jsonDecode(response.payload!);
+    
+    // Handle Inline Reply
+    if (response.actionId == 'REPLY_ACTION' && response.input != null) {
+      final String replyText = response.input!;
+      final String? conversationId = data['conversationId'];
+      final String? receiverId = data['senderId'];
+
+      if (conversationId != null && replyText.isNotEmpty) {
+        const storage = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+        String? token = await storage.read(key: 'auth_token');
+        
+        if (token == null) {
+          final prefs = await SharedPreferences.getInstance();
+          token = prefs.getString('auth_token');
+        }
+
+        if (token != null) {
+          // Fire the reply directly to the backend
+          await http.post(
+            Uri.parse('${AppConfig.baseUrl}/api/chat/reply'),
+            headers: {
+              'Content-Type': 'application/json',
+              'auth-token': token,
+            },
+            body: jsonEncode({
+              'conversationId': conversationId,
+              'receiverId': receiverId,
+              'message': replyText,
+            }),
+          );
+        }
+      }
+    } 
+    // Handle Mark as Read
+    else if (response.actionId == 'MARK_READ_ACTION') {
+      final String? conversationId = data['conversationId'];
+      if (conversationId != null) {
+        const storage = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+        String? token = await storage.read(key: 'auth_token');
+        if (token != null) {
+          await http.put(
+            Uri.parse('${AppConfig.baseUrl}/api/chat/read/$conversationId'),
+            headers: {'auth-token': token},
+          );
+        }
+      }
+    }
+  } catch (e) {
+    debugPrint("Background Action Error: $e");
+  }
+}
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -45,7 +107,7 @@ class NotificationService {
       await _localNotifications.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (NotificationResponse response) {
-          if (response.payload != null) {
+          if (response.payload != null && response.actionId == null) {
             try {
               final data = jsonDecode(response.payload!);
               handleNavigation(data);
@@ -54,6 +116,8 @@ class NotificationService {
             }
           }
         },
+        // ✅ Register the background handler for our new Action Buttons
+        onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
       );
 
       const AndroidNotificationChannel callChannel = AndroidNotificationChannel(
@@ -131,7 +195,6 @@ class NotificationService {
       return;
     }
 
-    // ✅ CALL ROUTING
     if (type == 'call_offer' || type == 'video_call' || type == 'incoming_call') {
       SocketService().initSocket(); 
       bool isVideo = data['isVideoCall'].toString().toLowerCase() == 'true' || type == 'video_call';
@@ -152,7 +215,6 @@ class NotificationService {
       return;
     }
 
-    // ✅ CHAT ROUTING
     if (type == 'chat_message') {
       final conversationId = data['conversationId'];
       final senderId = data['senderId'];
@@ -181,11 +243,9 @@ class NotificationService {
       return;
     }
 
-// ✅ ALUMNI ROUTING
     if (route == 'alumni_detail' || type == 'new_alumni' || type == 'new_match') {
       appRouter.push('/alumni_detail', extra: {
         'alumniData': {
-          // ✅ FIX: Map the specific keys sent by the cron job
           '_id': data['profileId'] ?? id?.toString() ?? '', 
           'userId': data['userId'] ?? id?.toString() ?? '', 
           'fullName': data['fullName'] ?? 'New Alumni',
@@ -196,7 +256,6 @@ class NotificationService {
       return;
     }
 
-    // ✅ TAB ROUTING
     if (type == 'new_update' || route == 'updates') {
       appRouter.go('/updates'); 
       return;
@@ -207,7 +266,6 @@ class NotificationService {
       return;
     }
 
-    // ✅ DETAIL SCREEN ROUTING
     if (route == 'polls' || type == 'poll') {
       appRouter.push('/polls');
       return;
@@ -222,6 +280,18 @@ class NotificationService {
     }
   }
 
+  Future<Uint8List?> _downloadImageBytes(String url) async {
+    try {
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+    } catch (e) {
+      debugPrint('Failed to download notification image: $e');
+    }
+    return null;
+  }
+
   Future<void> _showLocalNotification(RemoteMessage message) async {
     String originalTitle = message.notification?.title ?? 'New Message';
     String body = message.notification?.body ?? '';
@@ -230,6 +300,52 @@ class NotificationService {
     String channelId = isCall ? AppConfig.callChannelId : AppConfig.notificationChannelId;
     String channelName = isCall ? AppConfig.callChannelName : AppConfig.notificationChannelName;
 
+    String? imageUrl = message.data['image'] ?? message.data['profilePicture'] ?? message.notification?.android?.imageUrl;
+    
+    ByteArrayAndroidBitmap? largeIcon;
+    BigPictureStyleInformation? bigPictureStyle;
+
+    if (imageUrl != null && imageUrl.isNotEmpty && imageUrl.startsWith('http')) {
+      final imageBytes = await _downloadImageBytes(imageUrl);
+      if (imageBytes != null) {
+        largeIcon = ByteArrayAndroidBitmap(imageBytes);
+
+        if (message.data['type'] == 'event' || message.data['type'] == 'programme') {
+          bigPictureStyle = BigPictureStyleInformation(
+            ByteArrayAndroidBitmap(imageBytes),
+            largeIcon: ByteArrayAndroidBitmap(imageBytes),
+            contentTitle: originalTitle,
+            summaryText: body,
+            htmlFormatContentTitle: true,
+            htmlFormatSummaryText: true,
+          );
+        }
+      }
+    }
+
+    // ✅ ADDED: Define actionable buttons for Chat messages
+    List<AndroidNotificationAction> actions = [];
+    if (message.data['type'] == 'chat_message') {
+      actions = [
+        const AndroidNotificationAction(
+          'REPLY_ACTION',
+          'Reply',
+          allowGeneratedReplies: true,
+          showsUserInterface: false, // Ensures app stays in background
+          inputs: [
+            AndroidNotificationActionInput(
+              label: 'Type a message...',
+            ),
+          ],
+        ),
+        const AndroidNotificationAction(
+          'MARK_READ_ACTION',
+          'Mark as Read',
+          showsUserInterface: false,
+        ),
+      ];
+    }
+
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       channelId,
       channelName,
@@ -237,6 +353,9 @@ class NotificationService {
       priority: Priority.high, 
       color: const Color(0xFF1B5E3A),
       icon: 'ic_notification',
+      largeIcon: largeIcon, 
+      styleInformation: bigPictureStyle, 
+      actions: actions, // ✅ Attach the Quick Actions
       enableVibration: true,
       playSound: true, 
     );

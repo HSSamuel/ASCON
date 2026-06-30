@@ -29,7 +29,12 @@ const cleanupTokens = async (userId, tokensToRemove) => {
   }
 };
 
-const sendBroadcastNotification = async (title, body, data = {}) => {
+const sendBroadcastNotification = async (
+  title,
+  body,
+  data = {},
+  imageUrl = null,
+) => {
   try {
     const newNotification = new Notification({
       title,
@@ -57,14 +62,23 @@ const sendBroadcastNotification = async (title, body, data = {}) => {
       if (uniqueTokens.length === 0) return;
 
       const message = {
-        notification: { title, body },
+        notification: {
+          title,
+          body,
+          ...(imageUrl && { image: imageUrl }), // ✅ Add standard FCM image support
+        },
         android: {
           notification: {
             channelId: "ascon_high_importance",
             priority: "high",
+            ...(imageUrl && { imageUrl: imageUrl }), // ✅ Android specific image flag
           },
         },
-        data: { ...data, click_action: "FLUTTER_NOTIFICATION_CLICK" },
+        data: {
+          ...data,
+          image: imageUrl || "", // ✅ Pass it in the data payload for the Flutter custom handler
+          click_action: "FLUTTER_NOTIFICATION_CLICK",
+        },
         tokens: uniqueTokens,
       };
 

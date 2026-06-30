@@ -5,7 +5,10 @@ const UserProfile = require("../models/UserProfile");
 const UserAuth = require("../models/UserAuth"); // ✅ Added to fetch online status
 const verifyToken = require("./verifyToken");
 const upload = require("../config/cloudinary");
-const { sendPersonalNotification, sendBroadcastNotification } = require("../utils/notificationHandler");
+const {
+  sendPersonalNotification,
+  sendBroadcastNotification,
+} = require("../utils/notificationHandler");
 
 // =========================================================
 // 1. CREATE A NEW UPDATE (Text + Multiple Images)
@@ -38,14 +41,15 @@ router.post("/", verifyToken, upload.array("media", 5), async (req, res) => {
 
     const savedPost = await newPost.save();
     const authorProfile = await UserProfile.findOne({ userId: req.user._id });
-    
+
     const authorName = authorProfile?.fullName || "A member";
 
     // ✅ FIX: Trigger the broadcast notification to all users
     try {
       let previewText = "shared a new update.";
       if (text) {
-        previewText = text.length > 40 ? `"${text.substring(0, 40)}..."` : `"${text}"`;
+        previewText =
+          text.length > 40 ? `"${text.substring(0, 40)}..."` : `"${text}"`;
       } else if (mediaUrls.length > 0) {
         previewText = "shared a new photo.";
       }
@@ -56,11 +60,15 @@ router.post("/", verifyToken, upload.array("media", 5), async (req, res) => {
         {
           type: "new_update",
           route: "updates",
-          id: savedPost._id.toString()
-        }
+          id: savedPost._id.toString(),
+        },
+        authorProfile?.profilePicture || "",
       );
     } catch (notifyError) {
-      console.error("Failed to broadcast new update notification:", notifyError.message);
+      console.error(
+        "Failed to broadcast new update notification:",
+        notifyError.message,
+      );
     }
 
     res.status(201).json({

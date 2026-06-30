@@ -12,9 +12,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
 
+import 'package:http/http.dart' as http; 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart'; 
+import 'package:shared_preferences/shared_preferences.dart'; 
+
 import 'services/notification_service.dart';
 import 'services/socket_service.dart'; 
-import 'services/auth_service.dart'; // ✅ ADDED: AuthService import for global sync
+import 'services/auth_service.dart'; 
 import 'config/theme.dart';
 import 'config.dart';
 import 'router.dart'; 
@@ -22,19 +26,43 @@ import 'utils/error_handler.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = rootNavigatorKey;
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
-
-// Global Provider Container allows us to access Riverpod outside the Widget tree
 final ProviderContainer providerContainer = ProviderContainer();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(); 
+  await dotenv.load(fileName: "env.txt"); 
 
   if (kIsWeb) return;
 
   final type = message.data['type'];
+
+  // SILENT BACKGROUND DELIVERY RECEIPT 
+  if (type == 'chat_message') {
+    final String? messageId = message.data['messageId'];
+    if (messageId != null) {
+      const storage = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+      String? token = await storage.read(key: 'auth_token');
+      
+      if (token == null) {
+        final prefs = await SharedPreferences.getInstance();
+        token = prefs.getString('auth_token');
+      }
+
+      if (token != null) {
+        try {
+          await http.put(
+            Uri.parse('${AppConfig.baseUrl}/api/chat/message/$messageId/delivered'),
+            headers: {'auth-token': token},
+          );
+        } catch (e) {
+          debugPrint("Delivery receipt failed: $e");
+        }
+      }
+    }
+  }
+
   if (type == 'incoming_call' || type == 'call_offer' || type == 'video_call') {
-    
     CallKitParams callKitParams = CallKitParams(
       id: message.data['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}", 
       nameCaller: message.data['callerName'] ?? 'Alumni User',
@@ -98,6 +126,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       AppConfig.notificationChannelId,
       AppConfig.notificationChannelName,
+      channelDescription: AppConfig.notificationChannelDesc, // ✅ FIX: Renamed from 'description' to 'channelDescription'
       importance: Importance.max,
       priority: Priority.high,
       color: const Color(0xFF1B5E3A),
@@ -158,7 +187,7 @@ void main() async {
       }
     }
 
-FlutterError.onError = (errorDetails) {
+    FlutterError.onError = (errorDetails) {
       if (!kIsWeb) {
         FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
       } else {
@@ -206,8 +235,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this); 
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
-    
-    // ✅ ADDED: Trigger sync immediately when app starts
     _triggerColdStartSync();
   }
 
@@ -218,17 +245,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // ✅ ADDED: Verify session and fetch fresh data from backend
   Future<void> _triggerColdStartSync() async {
     if (await AuthService().isSessionValid()) {
       AuthService().performGlobalSilentSync();
     }
   }
 
-  // =======================================================================
-  // 🚀 GLOBAL LIFECYCLE SYNCING
-  // =======================================================================
- @override
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
@@ -240,7 +263,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       debugPrint("App Resumed: Reconnecting Socket and Syncing Data");
       SocketService().initSocket(); 
       
-      // ✅ FIX: Only trigger the massive background sync if the user is actually logged in!
       AuthService().isSessionValid().then((isValid) {
         if (isValid) {
           AuthService().performGlobalSilentSync();

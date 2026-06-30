@@ -113,8 +113,9 @@ router.post(
         await sendBroadcastNotification(
           savedEvent.title,
           `${savedEvent.description.substring(0, 50)}...`,
-          { route: "event_detail", id: savedEvent._id.toString() },
-        );
+          { route: "event_detail", id: savedEvent._id.toString(), type: "event" }, // Added type: "event"
+  mainImage // ✅ Pass the uploaded image URL here
+);
       } catch (notifyErr) {
         console.error("Notification failed:", notifyErr);
       }

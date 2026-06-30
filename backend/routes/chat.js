@@ -523,7 +523,8 @@ router.post(
                 groupId: conversation.groupId.toString(),
                 groupName: conversation.groupName,
                 senderName: senderName,
-                profilePicture: senderPic, // ✅ Ensure Avatar is sent
+                profilePicture: senderPic,
+                messageId: savedMessage._id.toString(), // ✅ ADDED
               },
             );
           } catch (e) {}
@@ -546,7 +547,8 @@ router.post(
                 senderId: req.user._id.toString(),
                 isGroup: "false",
                 senderName: senderName,
-                profilePicture: senderPic, // ✅ Ensure Avatar is sent
+                profilePicture: senderPic,
+                messageId: savedMessage._id.toString(), // ✅ ADDED
               },
             );
           } catch (e) {}
@@ -630,6 +632,7 @@ router.post("/reply", verify, async (req, res) => {
               groupName: conversation.groupName,
               senderName: senderName,
               profilePicture: senderPic,
+              messageId: savedMessage._id.toString(), // ✅ ADDED
             },
           );
         } catch (e) {}
@@ -653,6 +656,7 @@ router.post("/reply", verify, async (req, res) => {
               isGroup: "false",
               senderName: senderName,
               profilePicture: senderPic,
+              messageId: savedMessage._id.toString(), // ✅ ADDED
             },
           );
         } catch (e) {}
@@ -677,7 +681,7 @@ router.put("/read/:conversationId", verify, async (req, res) => {
         sender: { $ne: req.user._id },
         isRead: false,
       },
-      { $set: { isRead: true } },
+      { $set: { isRead: true, status: "read" } },
     );
     const conversation = await Conversation.findById(req.params.conversationId);
     if (!conversation) return res.status(200).json({ success: true });
@@ -689,7 +693,7 @@ router.put("/read/:conversationId", verify, async (req, res) => {
       });
     } else {
       conversation.participants.forEach((pId) => {
-        if (pId.toString() !== req.user._id)
+        if (pId.toString() !== req.user._id.toString())
           req.io.to(pId.toString()).emit("messages_read", {
             conversationId: req.params.conversationId,
             readerId: req.user._id,
@@ -746,6 +750,33 @@ router.delete("/message/:id", verify, async (req, res) => {
     const conversation = await Conversation.findById(msg.conversationId);
     _emitDeleteEvent(req, msg.conversationId, [msg._id], true, conversation);
     res.status(200).json({ message: "Deleted" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ---------------------------------------------------------
+// 11. MARK MESSAGE DELIVERED (Background Push Receipt) ✅ ADDED
+// ---------------------------------------------------------
+router.put("/message/:id/delivered", verify, async (req, res) => {
+  try {
+    const msg = await Message.findById(req.params.id);
+    if (!msg) return res.status(404).json({ message: "Not found" });
+
+    // Only update if it hasn't been read yet
+    if (msg.status === "sent" || msg.status === "sending") {
+      msg.status = "delivered";
+      await msg.save();
+
+      if (req.io) {
+        req.io.to(msg.conversationId.toString()).emit("message_status_update", {
+          messageId: msg._id,
+          status: "delivered",
+          chatId: msg.conversationId,
+        });
+      }
+    }
+    res.status(200).json({ success: true });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

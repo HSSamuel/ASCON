@@ -58,7 +58,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     });
   }
 
-  // ✅ UNIFIED CARD DECORATION
   BoxDecoration _getUnifiedCardDecoration(BuildContext context, bool isDark) {
     return BoxDecoration(
       color: Theme.of(context).cardColor,
@@ -78,7 +77,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     );
   }
 
-  // ✅ UPDATED: Bottom Sheet now has clickable users navigating to AlumniDetailScreen
   void _showMutualConnectionsSheet(BuildContext context, List<dynamic> mutuals) {
     showModalBottomSheet(
       context: context,
@@ -94,7 +92,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           child: Column(
             children: [
               const SizedBox(height: 12),
-              // Drag Handle
               Container(
                 width: 40, height: 4,
                 decoration: BoxDecoration(
@@ -107,7 +104,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
               const SizedBox(height: 8),
               Divider(color: Colors.grey.withOpacity(0.1)),
               
-              // Connections List
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -117,9 +113,7 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                     
                     return InkWell(
                       onTap: () {
-                        // Close the bottom sheet first
                         Navigator.pop(context);
-                        // Navigate to the detail screen
                         Navigator.of(context, rootNavigator: true).push(
                           MaterialPageRoute(
                             builder: (_) => AlumniDetailScreen(alumniData: mutual)
@@ -150,6 +144,40 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           ),
         );
       }
+    );
+  }
+
+  // ✅ NEW: Extract just the scrollable filters
+  Widget _buildScrollableFilters(DirectoryState state, DirectoryNotifier notifier, Color primaryColor, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _filters.map((filter) {
+            final bool isSelected = state.activeFilter == filter;
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: ChoiceChip(
+                label: Text(filter),
+                selected: isSelected,
+                selectedColor: primaryColor.withOpacity(0.15),
+                backgroundColor: isDark ? Colors.grey[800] : Colors.white,
+                side: BorderSide(color: isDark ? Colors.grey[700]! : Colors.grey[300]!, width: 0.5),
+                labelStyle: GoogleFonts.inter(
+                  color: isSelected ? primaryColor : Colors.grey[600],
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 13
+                ),
+                onSelected: (val) {
+                  if (val) notifier.setFilter(filter);
+                },
+              ),
+            );
+          }).toList(),
+        ),
+      ),
     );
   }
 
@@ -185,7 +213,12 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           child: SizedBox(
             height: MediaQuery.of(context).size.height * 0.6,
-            child: _buildEmptyState(context, "No alumni found.")
+            child: Column(
+              children: [
+                _buildScrollableFilters(state, notifier, primaryColor, isDark),
+                Expanded(child: _buildEmptyState(context, "No alumni found.")),
+              ],
+            )
           ),
         ),
       );
@@ -193,9 +226,11 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     else {
       List<Map<String, dynamic>> flattenedList = [];
       
+      // ✅ Inject Filters as the first scrollable item
+      flattenedList.add({'type': 'filters'});
+
       final bool showHighlights = state.smartMatches.isNotEmpty && _searchController.text.isEmpty && state.activeFilter == "All";
       if (showHighlights) {
-        // Filter out myself from highlights
         final matches = state.smartMatches.where((u) {
             final uid = u['userId'] ?? u['_id'] ?? '';
             return uid != _myUserId && uid.isNotEmpty;
@@ -210,13 +245,12 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
       }
 
       for (String year in sortedKeys) {
-        // Filter out myself from the folder list
         final users = (state.groupedAlumni[year] ?? []).where((u) {
             final uid = u['userId'] ?? u['_id'] ?? '';
             return uid != _myUserId && uid.isNotEmpty;
         }).toList();
 
-        if (users.isEmpty) continue; // Skip folders that only contain the current user
+        if (users.isEmpty) continue; 
 
         flattenedList.add({
           'type': 'header', 
@@ -243,7 +277,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
               final item = flattenedList[index];
               Widget listItem;
 
-              if (item['type'] == 'highlights') {
+              if (item['type'] == 'filters') {
+                listItem = _buildScrollableFilters(state, notifier, primaryColor, isDark);
+              }
+              else if (item['type'] == 'highlights') {
                 listItem = _buildHighlightHorizon(item['data'], context, isDark);
               }
               else if (item['type'] == 'header') {
@@ -299,13 +336,19 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
       backgroundColor: scaffoldBg,
       body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ✅ PINNED HEADER AND SEARCH BAR
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
               decoration: BoxDecoration(
                 color: cardColor,
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05), 
+                    blurRadius: 10, 
+                    offset: const Offset(0, 4)
+                  )
+                ]
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,38 +378,11 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                         : null,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: _filters.map((filter) {
-                        final bool isSelected = state.activeFilter == filter;
-
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: ChoiceChip(
-                            label: Text(filter),
-                            selected: isSelected,
-                            selectedColor: primaryColor.withOpacity(0.15),
-                            backgroundColor: isDark ? Colors.grey[800] : Colors.grey[100],
-                            side: BorderSide.none,
-                            labelStyle: GoogleFonts.inter(
-                              color: isSelected ? primaryColor : Colors.grey[600],
-                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                              fontSize: 13
-                            ),
-                            onSelected: (val) {
-                              if (val) notifier.setFilter(filter);
-                            },
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
                 ],
               ),
             ),
             
+            // ✅ SCROLLABLE CONTENT (Filters + Cards)
             Expanded(child: content),
           ],
         ),
@@ -450,7 +466,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     final String userId = user['userId'] ?? user['_id'] ?? '';
     final bool isOnline = user['isOnline'] == true;
 
-    // Real-time mutual connection calculation
     final List<dynamic> mutuals = user['mutualConnections'] ?? [];
     String mutualText = "Mutual Connection"; 
     String mutualAvatar = "";
@@ -481,7 +496,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 1. Banner Background & Overlapping Avatar Stack
               SizedBox(
                 height: 95,
                 child: Stack(
@@ -525,7 +539,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                 ),
               ),
               
-              // 2. Name & Verified Badge 
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
@@ -535,7 +548,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                     Flexible(
                       child: Text(
                         name,
-                        // ✅ ENHANCED: Bolder weight and dynamic pure black/white for high contrast
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w800, 
                           fontSize: 13.5,
@@ -555,12 +567,10 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                 ),
               ),
               
-              // 3. Headline / Job Title
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 child: Text(
                   job.isNotEmpty ? "$job${org.isNotEmpty ? ' | $org' : ''}" : "ASCON Alumni Member",
-                  // ✅ ENHANCED: Heavier weight and darker grey to prevent washing out
                   style: GoogleFonts.inter(
                     fontWeight: FontWeight.w600,
                     fontSize: 10.5, 
@@ -575,7 +585,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
               
               const Spacer(),
               
-              // 4. Real-time Clickable Mutual Connections
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: Material(
@@ -596,7 +605,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                           Expanded(
                             child: Text(
                               mutualText,
-                              // ✅ ENHANCED: Darker text for improved accessibility
                               style: GoogleFonts.inter(
                                 fontWeight: FontWeight.w500,
                                 fontSize: 9.5, 
@@ -615,12 +623,11 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
               
               const SizedBox(height: 8),
               
-              // 5. Connect Button
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10), // ✅ Slightly reduced side padding
+                padding: const EdgeInsets.symmetric(horizontal: 10), 
                 child: SizedBox(
                   width: double.infinity,
-                  height: 28, // ✅ Reduced height from 32 to 28 to prevent vertical clipping
+                  height: 28, 
                   child: OutlinedButton.icon(
                     onPressed: () {
                       Navigator.of(context, rootNavigator: true).push(
@@ -632,17 +639,17 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
                         ))
                       );
                     },
-                    icon: Icon(Icons.person_add_alt_1, size: 14, color: primaryColor), // ✅ Smaller icon
-                    label: Text("Connect", style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 11, color: primaryColor)), // ✅ Smaller text
+                    icon: Icon(Icons.person_add_alt_1, size: 14, color: primaryColor), 
+                    label: Text("Connect", style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 11, color: primaryColor)), 
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: primaryColor, width: 1.2),
-                      padding: const EdgeInsets.symmetric(horizontal: 2), // ✅ Add slight internal padding to let it breathe
+                      padding: const EdgeInsets.symmetric(horizontal: 2), 
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 8), // ✅ Reduced bottom margin from 12 to 8 to pull it away from the edge
+              const SizedBox(height: 8), 
             ],
           ),
         ),
@@ -663,10 +670,6 @@ class _DirectoryScreenState extends ConsumerState<DirectoryScreen> {
     );
   }
 }
-
-// =======================================================================
-// ✅ WIDGETS FOR FLUID INTERACTIONS AND PULSING DOT
-// =======================================================================
 
 class BouncingCard extends StatefulWidget {
   final Widget child;

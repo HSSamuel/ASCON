@@ -347,7 +347,8 @@ router.post(
       await sendBroadcastNotification(
         title,
         `${description.substring(0, 60)}...`,
-        { route: "event_detail", id: newEvent._id.toString() },
+        { route: "event_detail", id: newEvent._id.toString(), type: "event" },
+        mainImage 
       );
 
       res.status(201).json({ message: "Event created!", event: newEvent });
@@ -470,7 +471,12 @@ router.post(
       await sendBroadcastNotification(
         title,
         `${description.substring(0, 60)}...`,
-        { route: "programme_detail", id: newProg._id.toString() },
+        {
+          route: "programme_detail",
+          id: newProg._id.toString(),
+          type: "programme",
+        }, // Added type: "programme"
+        mainImage, // ✅ Pass the uploaded image URL here
       );
 
       res.status(201).json({ message: "Programme added!", programme: newProg });

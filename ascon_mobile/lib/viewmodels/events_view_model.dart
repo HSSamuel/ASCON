@@ -229,22 +229,28 @@ class EventsNotifier extends StateNotifier<EventsState> {
         }
       }
 
-      var response = await request.send();
-      final respStr = await response.stream.bytesToString();
+var response = await request.send();
+final respStr = await response.stream.bytesToString();
 
-      state = state.copyWith(isPosting: false);
+// Safeguard the state update
+if (mounted) {
+  state = state.copyWith(isPosting: false);
+}
 
-      if (response.statusCode == 201) {
-        await loadEvents(silent: true);
-        return null;
-      } else {
-        final errorJson = jsonDecode(respStr);
-        return errorJson['message'] ?? "Upload failed";
-      }
-    } catch (e) {
-      state = state.copyWith(isPosting: false);
-      return "Connection Error: ${e.toString()}";
-    }
+if (response.statusCode == 201) {
+  await loadEvents(silent: true);
+  return null;
+} else {
+  final errorJson = jsonDecode(respStr);
+  return errorJson['message'] ?? "Upload failed";
+}
+} catch (e) {
+  // Safeguard the error catch block
+  if (mounted) {
+    state = state.copyWith(isPosting: false);
+  }
+  return "Connection Error: ${e.toString()}";
+}
   }
 }
 
