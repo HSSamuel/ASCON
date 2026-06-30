@@ -139,10 +139,16 @@ router.get("/", verify, async (req, res) => {
           isRead: false,
         });
 
+        // ✅ NEW: Fetch the actual last message document to get its true status
+        const lastMsgDoc = await Message.findOne({ conversationId: chat._id }).sort({ createdAt: -1 });
+
         return {
           ...chat,
           participants: enrichedParticipants,
           unreadCount: unreadCount,
+          // ✅ NEW: Expose the status to the Flutter app
+          lastMessageStatus: lastMsgDoc ? lastMsgDoc.status : "sent",
+          lastMessageIsRead: lastMsgDoc ? lastMsgDoc.isRead : false,
         };
       }),
     );

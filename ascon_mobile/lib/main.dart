@@ -228,6 +228,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   StreamSubscription? _callSubscription;
+  static bool _isNavigatingToCall = false;
 
   @override
   void initState() {
@@ -247,6 +248,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _triggerColdStartSync() async {
     if (await AuthService().isSessionValid()) {
+      NotificationService().init(); // ⬅️ Initialize to capture killed-app payloads
       AuthService().performGlobalSilentSync();
     }
   }
@@ -286,6 +288,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final data = message.data;
     
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
+      if (_isNavigatingToCall) return; // ✅ Block double-push
+      _isNavigatingToCall = true;
+      Future.delayed(const Duration(seconds: 2), () => _isNavigatingToCall = false);
+
       final currentRoute = appRouter.routerDelegate.currentConfiguration.uri.toString();
       if (currentRoute.contains('/call')) return;
 
@@ -309,6 +315,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     FlutterCallkitIncoming.onEvent.listen((event) {
       switch (event!.event) {
         case Event.actionCallAccept:
+          if (_isNavigatingToCall) return; // ✅ Block double-push
+          _isNavigatingToCall = true;
+          Future.delayed(const Duration(seconds: 2), () => _isNavigatingToCall = false);
+
           final data = event.body;
           String channelName = data['extra']?['channelName'] ?? data['id'] ?? "";
           String callerId = data['extra']?['callerId'] ?? "";
@@ -353,8 +363,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         final isAuthScreen = currentPath == '/' || currentPath == '/login';
         final isAlreadyInCall = currentPath == '/call';
 
-        if (!isAuthScreen && !isAlreadyInCall) {
-          appRouter.push('/call', extra: {
+        if (isAlreadyInCall) {
+          SocketService().socket?.emit('reject_call', {
+            'targetUserId': data['callerId'],
+            'reason': 'user_busy'
+          });
+          debugPrint('Rejected background call from ${data['callerId']} because user is busy.');
+          return;
+        }
+
+        if (!isAuthScreen) {
+          final callArgs = {
             'isGroupCall': isGroup, 
             'isVideoCall': data['callerData']?['isVideoCall'] ?? false, 
             'remoteName': displayRemoteName,
@@ -362,16 +381,129 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             'channelName': data['channelName'] ?? "",
             'remoteAvatar': data['callerData']?['callerAvatar'], 
             'isIncoming': true, 
-          });
-        } else if (isAlreadyInCall) {
-          SocketService().socket?.emit('reject_call', {
-            'targetUserId': data['callerId'],
-            'reason': 'user_busy'
-          });
-          debugPrint('Rejected background call from ${data['callerId']} because user is busy.');
-        }
+          };
+
+          if (kIsWeb) {
+            // ✅ WEB FALLBACK: Show Custom Banner
+            _showWebCallBanner(callArgs);
+          } else {
+            // Mobile Native Behavior
+            appRouter.push('/call', extra: callArgs);
+          }
+        } 
       }
     });
+  }
+
+  // ✅ NEW METHOD: Display a sliding banner for incoming web calls
+  void _showWebCallBanner(Map<String, dynamic> callArgs) {
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black45,
+      transitionDuration: const Duration(milliseconds: 400),
+      pageBuilder: (context, anim1, anim2) {
+        return Align(
+          alignment: Alignment.topCenter,
+          child: SafeArea(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                margin: const EdgeInsets.only(top: 16, left: 16, right: 16),
+                padding: const EdgeInsets.all(16),
+                constraints: const BoxConstraints(maxWidth: 500), // Keep it centered on wide screens
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2), 
+                      blurRadius: 20, 
+                      offset: const Offset(0, 10)
+                    )
+                  ]
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 26,
+                      backgroundColor: Colors.grey[200],
+                      backgroundImage: (callArgs['remoteAvatar'] != null && callArgs['remoteAvatar'].toString().isNotEmpty && !callArgs['remoteAvatar'].toString().contains('profile/picture')) 
+                          ? NetworkImage(callArgs['remoteAvatar']) 
+                          : null,
+                      child: (callArgs['remoteAvatar'] == null || callArgs['remoteAvatar'].toString().isEmpty || callArgs['remoteAvatar'].toString().contains('profile/picture')) 
+                          ? Icon(Icons.person, color: Colors.grey[600], size: 28) 
+                          : null,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            callArgs['remoteName'], 
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            callArgs['isVideoCall'] ? "Incoming Video Call..." : "Incoming Voice Call...", 
+                            style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 13, fontWeight: FontWeight.w600)
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Decline Button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        SocketService().socket?.emit('reject_call', {
+                          'targetUserId': callArgs['remoteId'],
+                          'reason': 'declined'
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                        child: const Icon(Icons.call_end, color: Colors.white, size: 22),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Accept Button
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        // ✅ User interacted! Audio autoplay is now unlocked.
+                        appRouter.push('/call', extra: callArgs);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle),
+                        child: Icon(callArgs['isVideoCall'] ? Icons.videocam : Icons.call, color: Colors.white, size: 22),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        // Slide down from top effect
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, -1), 
+            end: Offset.zero
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutBack)),
+          child: child,
+        );
+      },
+    );
   }
 
   @override

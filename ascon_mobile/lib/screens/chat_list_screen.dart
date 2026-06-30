@@ -282,24 +282,45 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     final other = _getOtherParticipant(chat, myId);
     final String convId = chat['_id'];
     
-    dynamic lastMsgObj = chat['lastMessage']; 
-    String lastMessageText = "Photo";
+    // ✅ 1. Safely extract text and sender
+    String lastMessageText = "Message";
     String? senderId;
-    bool isRead = true;
+    
+    // ✅ 2. Read the new accurate backend fields!
+    String status = chat['lastMessageStatus'] ?? 'sent'; 
+    bool isRead = chat['lastMessageIsRead'] == true || status == 'read';
 
-    if (lastMsgObj is Map) {
-      lastMessageText = lastMsgObj['text'] ?? (lastMsgObj['fileUrl'] != null ? "Attachment" : "Message");
-      senderId = lastMsgObj['senderId'];
-      isRead = lastMsgObj['isRead'] ?? true;
+    dynamic lastMsgObj = chat['lastMessage']; 
+    if (lastMsgObj is Map) { 
+      lastMessageText = lastMsgObj['text'] ?? "Message";
+      senderId = lastMsgObj['senderId']?.toString();
     } else if (lastMsgObj is String) {
       lastMessageText = lastMsgObj;
+      var rawSender = chat['lastMessageSender'];
+      if (rawSender is Map) {
+         senderId = rawSender['_id']?.toString();
+      } else {
+         senderId = rawSender?.toString();
+      }
     }
 
     final int unreadCount = chat['unreadCount'] ?? 0;
     final bool isOnline = other['isOnline'] == true;
     final bool isTyping = typingStatus[convId] ?? false;
     final String time = _formatTime(chat['lastMessageAt']);
-    final bool isMe = senderId == myId;
+    final bool isMe = (senderId != null && senderId == myId);
+
+    // ✅ 3. Determine exact icon and color based on status
+    IconData tickIcon = Icons.check; // Single Grey (Sent)
+    Color tickColor = Colors.grey;
+
+    if (status == 'delivered') {
+       tickIcon = Icons.done_all; // Double Grey (Delivered)
+       tickColor = Colors.grey;
+    } else if (status == 'read' || isRead) {
+       tickIcon = Icons.done_all; // Double Blue (Read)
+       tickColor = Colors.blue;
+    }
 
     return Dismissible(
       key: Key(convId),
@@ -348,7 +369,6 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
             children: [
               Stack(
                 children: [
-                  // ✅ UPDATED: Call RobustAvatar directly
                   RobustAvatar(imageUrl: other['profilePicture'], radius: 28),
                   if (isOnline)
                     Positioned(
@@ -413,11 +433,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
                               )
                             : Row(
                                 children: [
+                                  // ✅ 4. Render the dynamic ticks
                                   if (isMe) ...[
                                     Icon(
-                                      isRead ? Icons.done_all : Icons.check, 
+                                      tickIcon, 
                                       size: 16, 
-                                      color: isRead ? Colors.blue : Colors.grey
+                                      color: tickColor
                                     ),
                                     const SizedBox(width: 4),
                                   ],

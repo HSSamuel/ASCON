@@ -62,7 +62,6 @@ class _AddContentScreenState extends ConsumerState<AddContentScreen> {
     String? error;
     
     if (widget.type == 'Event') {
-      // ✅ Create Event (Pass images list)
       error = await ref.read(eventsProvider.notifier).createEvent(
         title: _titleController.text,
         description: _descController.text,
@@ -70,23 +69,22 @@ class _AddContentScreenState extends ConsumerState<AddContentScreen> {
         time: _timeController.text,
         type: _eventType,
         date: _selectedDate ?? DateTime.now(),
-        images: _selectedImages, // Updated parameter
+        images: _selectedImages, 
       );
     } else {
-      // ✅ Create Programme (Pass images list)
       error = await ref.read(eventsProvider.notifier).createProgramme(
         title: _titleController.text,
         description: _descController.text,
         location: _locationController.text,
         duration: _durationController.text,
         fee: _feeController.text,
-        images: _selectedImages, // Updated parameter
+        images: _selectedImages, 
       );
-      
-      // Refresh Dashboard to show new programme
-      if (error == null) {
-        ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
-      }
+    }
+
+    // ⬅️ Refresh Dashboard for BOTH Events and Programmes
+    if (error == null) {
+      ref.read(dashboardProvider.notifier).loadData(isRefresh: true);
     }
 
     setState(() => _isSubmitting = false);

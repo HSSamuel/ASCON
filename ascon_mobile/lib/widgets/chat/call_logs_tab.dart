@@ -232,21 +232,20 @@ class _CallLogsTabState extends ConsumerState<CallLogsTab> {
                 ],
               ),
               trailing: IconButton(
-                // ✅ Dynamic Trailing Icon (Phone vs Video)
                 icon: Icon(callType == 'video' ? Icons.videocam : Icons.call, color: Colors.green),
                 onPressed: () {
                   final userProfile = ref.read(profileProvider).userProfile;
                   final currentUserName = userProfile?['fullName'] ?? "Alumni User";
                   final currentUserAvatar = userProfile?['profilePicture'];
 
-                  Navigator.push(context, MaterialPageRoute(
+                  // ⬅️ Added rootNavigator: true to hide the bottom tab bar
+                  Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
                     builder: (_) => CallScreen(
                       remoteName: log['remoteName'] ?? "Unknown",
                       remoteId: log['remoteId'],                  
                       remoteAvatar: log['remotePic'],
                       channelName: "call_${DateTime.now().millisecondsSinceEpoch}",
                       isIncoming: false,
-                      // ✅ Set to true if redialing a video call
                       isVideoCall: callType == 'video', 
                       currentUserName: currentUserName,           
                       currentUserAvatar: currentUserAvatar,       

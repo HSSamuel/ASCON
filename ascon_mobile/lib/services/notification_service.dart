@@ -146,7 +146,7 @@ class NotificationService {
     }
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      debugPrint("🔔 Foreground Message: ${message.data}");
+      // debugPrint("🔔 Foreground Message: ${message.data}");
 
       if (message.data['type'] == 'call_offer' || 
           message.data['type'] == 'video_call' || 
@@ -167,7 +167,7 @@ class NotificationService {
 
     RemoteMessage? initialMessage = await _firebaseMessaging.getInitialMessage();
     if (initialMessage != null) {
-      Future.delayed(const Duration(milliseconds: 300), () {
+      Future.delayed(const Duration(milliseconds: 3500), () {
         handleNavigation(initialMessage.data);
       });
     }
@@ -303,15 +303,25 @@ class NotificationService {
     String? imageUrl = message.data['image'] ?? message.data['profilePicture'] ?? message.notification?.android?.imageUrl;
     
     ByteArrayAndroidBitmap? largeIcon;
-    BigPictureStyleInformation? bigPictureStyle;
+    StyleInformation? styleInfo;
 
     if (imageUrl != null && imageUrl.isNotEmpty && imageUrl.startsWith('http')) {
       final imageBytes = await _downloadImageBytes(imageUrl);
       if (imageBytes != null) {
         largeIcon = ByteArrayAndroidBitmap(imageBytes);
 
-        if (message.data['type'] == 'event' || message.data['type'] == 'programme') {
-          bigPictureStyle = BigPictureStyleInformation(
+        if (message.data['type'] == 'chat_message') {
+          // ⬅️ Use MessagingStyle for native chat avatars
+          final person = Person(
+            name: originalTitle,
+            icon: ByteArrayAndroidIcon(imageBytes),
+          );
+          styleInfo = MessagingStyleInformation(
+            person,
+            messages: [Message(body, DateTime.now(), person)],
+          );
+        } else if (message.data['type'] == 'event' || message.data['type'] == 'programme') {
+          styleInfo = BigPictureStyleInformation(
             ByteArrayAndroidBitmap(imageBytes),
             largeIcon: ByteArrayAndroidBitmap(imageBytes),
             contentTitle: originalTitle,
@@ -354,8 +364,8 @@ class NotificationService {
       color: const Color(0xFF1B5E3A),
       icon: 'ic_notification',
       largeIcon: largeIcon, 
-      styleInformation: bigPictureStyle, 
-      actions: actions, // ✅ Attach the Quick Actions
+      styleInformation: styleInfo, 
+      actions: actions,
       enableVibration: true,
       playSound: true, 
     );

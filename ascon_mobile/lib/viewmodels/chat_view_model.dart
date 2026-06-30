@@ -220,27 +220,53 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final socket = _socket.socket;
     if (socket == null) return;
 
-    // ✅ FIX: Force fetching new data when socket re-establishes connection
-    socket.on('connect', (_) {
-      if (mounted) loadConversations();
-    });
-    
-    socket.on('reconnect', (_) {
-      if (mounted) loadConversations();
-    });
+    socket.on('connect', (_) { if (mounted) loadConversations(); });
+    socket.on('reconnect', (_) { if (mounted) loadConversations(); });
 
     socket.on('new_message', (data) {
       if (!mounted) return;
       _handleIncomingMessage(data);
     });
 
+    // ✅ Update the top-level keys when read
     socket.on('messages_read', (data) {
       if (!mounted) return;
       final convId = data['conversationId'];
+      final readerId = data['readerId']; 
+
       final updated = List<dynamic>.from(state.conversations);
       final index = updated.indexWhere((c) => c != null && c is Map && c['_id'] == convId);
+      
       if (index != -1) {
-        updated[index] = Map.from(updated[index])..['unreadCount'] = 0;
+        var chat = Map<String, dynamic>.from(updated[index]);
+        if (readerId == state.myId) chat['unreadCount'] = 0;
+
+        chat['lastMessageStatus'] = 'read';
+        chat['lastMessageIsRead'] = true;
+
+        updated[index] = chat;
+        state = state.copyWith(conversations: updated, filteredConversations: updated);
+        _cacheBox.put('chat_list_cache', jsonEncode(updated));
+      }
+    });
+
+    // ✅ Update the top-level keys when delivered
+    socket.on('message_status_update', (data) {
+      if (!mounted) return;
+      final convId = data['chatId']; 
+      final status = data['status']; 
+
+      final updated = List<dynamic>.from(state.conversations);
+      final index = updated.indexWhere((c) => c != null && c is Map && c['_id'] == convId);
+
+      if (index != -1) {
+        var chat = Map<String, dynamic>.from(updated[index]);
+        
+        if (chat['lastMessageStatus'] != 'read' && chat['lastMessageIsRead'] != true) {
+            chat['lastMessageStatus'] = status;
+        }
+        
+        updated[index] = chat;
         state = state.copyWith(conversations: updated, filteredConversations: updated);
         _cacheBox.put('chat_list_cache', jsonEncode(updated));
       }
@@ -273,7 +299,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
       chat['lastMessage'] = data['message']['text'] ?? "Media";
       chat['lastMessageAt'] = data['message']['createdAt'];
       
-      if (data['message']['senderId'] != state.myId) {
+      // ✅ Inject status directly from incoming socket payload
+      chat['lastMessageStatus'] = data['message']['status'] ?? 'sent';
+      chat['lastMessageIsRead'] = data['message']['isRead'] ?? false;
+      
+      if (data['message']['senderId'] != state.myId && data['message']['sender'] != state.myId) {
         chat['unreadCount'] = (chat['unreadCount'] ?? 0) + 1;
       }
 

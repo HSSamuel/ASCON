@@ -156,6 +156,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     }
   }
 
+  // Update _acceptIncomingCall around line 105 in lib/screens/call_screen.dart
   void _acceptIncomingCall() async {
     setState(() {
       _hasAccepted = true;
@@ -172,14 +173,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     
     if (!kIsWeb) {
       _callService.setAudioRoute(_selectedAudioRoute); 
-      
-      // ✅ ADDED: Register native call state
-      await FlutterCallkitIncoming.startCall(CallKitParams(
-        id: _currentChannel,
-        nameCaller: widget.remoteName,
-        handle: 'Ongoing Call',
-        type: widget.isVideoCall ? 1 : 0,
-      ));
     }
   }
 

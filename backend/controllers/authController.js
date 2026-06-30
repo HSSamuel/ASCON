@@ -237,7 +237,7 @@ exports.register = asyncHandler(async (req, res) => {
     const token = jwt.sign(
       { _id: savedAuth._id, isAdmin: false, canEdit: false },
       process.env.JWT_SECRET,
-      { expiresIn: "2h" },
+      { expiresIn: "30d" },
     );
 
     res.status(201).json({
@@ -287,7 +287,7 @@ exports.login = asyncHandler(async (req, res) => {
   const token = jwt.sign(
     { _id: userAuth._id, isAdmin: userAuth.isAdmin, canEdit: userAuth.canEdit },
     process.env.JWT_SECRET,
-    { expiresIn: "2h" },
+    { expiresIn: "30d" },
   );
   const refreshToken = jwt.sign(
     { _id: userAuth._id },
