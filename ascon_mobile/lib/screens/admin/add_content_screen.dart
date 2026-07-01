@@ -223,9 +223,9 @@ class _AddContentScreenState extends ConsumerState<AddContentScreen> {
                 // Programme Fields
                 Row(
                   children: [
-                    Expanded(child: _buildTextField(_durationController, "Duration (e.g. 2 Weeks)", icon: Icons.timer)),
+                    Expanded(child: _buildTextField(_durationController, "Duration (2 Wks)", icon: Icons.timer)),
                     const SizedBox(width: 12),
-                    Expanded(child: _buildTextField(_feeController, "Fee (e.g. ₦50,000)", icon: Icons.attach_money)),
+                    Expanded(child: _buildTextField(_feeController, "Fee (₦50,000)", icon: Icons.attach_money)),
                   ],
                 )
               ],

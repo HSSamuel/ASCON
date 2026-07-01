@@ -126,6 +126,9 @@ class PostCard extends ConsumerWidget {
       images = [post['mediaUrl']];
     }
 
+    final int likesCount = post['likes']?.length ?? 0;
+    final int commentsCount = post['comments']?.length ?? 0;
+
     return Container(
       color: cardColor,
       child: Column(
@@ -231,27 +234,42 @@ class PostCard extends ConsumerWidget {
               child: ClipRRect(borderRadius: BorderRadius.circular(8), child: PostImageGallery(images: images, isDark: isDark)),
             ),
 
-          if ((post['likes']?.length ?? 0) > 0 || (post['comments']?.length ?? 0) > 0)
+          // ✅ CLEANED UP: Just use the variables we declared above!
+          if (likesCount > 0 || commentsCount > 0)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
-                  if ((post['likes']?.length ?? 0) > 0)
+                  if (likesCount > 0)
                     GestureDetector(
                       onTap: () => LikesSheet.show(context, post['_id']),
                       child: Row(
                         children: [
-                          Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle), child: const Icon(Icons.thumb_up, size: 8, color: Colors.white)),
+                          Container(
+                            padding: const EdgeInsets.all(3), 
+                            decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle), 
+                            child: const Icon(Icons.thumb_up, size: 8, color: Colors.white)
+                          ),
                           const SizedBox(width: 4),
-                          Text("${post['likes']?.length}", style: TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.bold)),
+                          // ✅ FIX: Dynamically pluralize Like/Likes
+                          Text(
+                            "$likesCount ${likesCount == 1 ? 'Like' : 'Likes'}", 
+                            style: TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.bold)
+                          ),
                         ],
                       ),
                     ),
+                  
                   const Spacer(),
-                  if ((post['comments']?.length ?? 0) > 0)
+                  
+                  if (commentsCount > 0)
                     GestureDetector(
                       onTap: () => CommentsSheet.show(context, post['_id']),
-                      child: Text("${post['comments']?.length} comments", style: TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        // Dynamically switch between "comment" and "comments"
+                        "$commentsCount ${commentsCount == 1 ? 'comment' : 'comments'}", 
+                        style: TextStyle(fontSize: 11, color: subTextColor, fontWeight: FontWeight.bold)
+                      ),
                     ),
                 ],
               ),
@@ -266,7 +284,8 @@ class PostCard extends ConsumerWidget {
                 Expanded(
                   child: TextButton.icon(
                     icon: Icon(post['isLikedByMe'] == true ? Icons.thumb_up : Icons.thumb_up_outlined, size: 16, color: post['isLikedByMe'] == true ? Colors.blue : subTextColor),
-                    label: Text("Like", style: GoogleFonts.lato(color: post['isLikedByMe'] == true ? Colors.blue : subTextColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                    // ✅ FIX: Change button text to "Liked" if the user has already liked it
+                    label: Text(post['isLikedByMe'] == true ? "Liked" : "Like", style: GoogleFonts.lato(color: post['isLikedByMe'] == true ? Colors.blue : subTextColor, fontSize: 13, fontWeight: FontWeight.w600)),
                     onPressed: () {
                       if (!kIsWeb) Vibration.hasVibrator().then((v) { if (v ?? false) Vibration.vibrate(duration: 10); });
                       notifier.toggleLike(post['_id']);

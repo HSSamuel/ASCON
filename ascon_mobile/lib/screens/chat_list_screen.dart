@@ -278,47 +278,52 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> with SingleTick
     );
   }
 
+  // Replace the top extraction block inside _buildChatTile in lib/screens/chat_list_screen.dart
+
   Widget _buildChatTile(Map<String, dynamic> chat, String myId, Map<String, bool> typingStatus, ChatNotifier notifier) {
     final other = _getOtherParticipant(chat, myId);
-    final String convId = chat['_id'];
+    final String convId = chat['_id']?.toString() ?? '';
     
-    // ✅ 1. Safely extract text and sender
     String lastMessageText = "Message";
     String? senderId;
     
-    // ✅ 2. Read the new accurate backend fields!
-    String status = chat['lastMessageStatus'] ?? 'sent'; 
+    String status = chat['lastMessageStatus']?.toString() ?? 'sent'; 
     bool isRead = chat['lastMessageIsRead'] == true || status == 'read';
 
     dynamic lastMsgObj = chat['lastMessage']; 
     if (lastMsgObj is Map) { 
-      lastMessageText = lastMsgObj['text'] ?? "Message";
+      lastMessageText = lastMsgObj['text'] ?? (lastMsgObj['fileUrl'] != null ? "Attachment" : "Message");
+      
       senderId = lastMsgObj['senderId']?.toString();
+      if (senderId == null && lastMsgObj['sender'] != null) {
+        senderId = lastMsgObj['sender'] is Map ? lastMsgObj['sender']['_id']?.toString() : lastMsgObj['sender']?.toString();
+      }
     } else if (lastMsgObj is String) {
       lastMessageText = lastMsgObj;
+    }
+
+    // ✅ Absolute fallback to ensure we never miss the sender ID
+    if (senderId == null && chat['lastMessageSender'] != null) {
       var rawSender = chat['lastMessageSender'];
-      if (rawSender is Map) {
-         senderId = rawSender['_id']?.toString();
-      } else {
-         senderId = rawSender?.toString();
-      }
+      senderId = rawSender is Map ? rawSender['_id']?.toString() : rawSender.toString();
     }
 
     final int unreadCount = chat['unreadCount'] ?? 0;
     final bool isOnline = other['isOnline'] == true;
     final bool isTyping = typingStatus[convId] ?? false;
     final String time = _formatTime(chat['lastMessageAt']);
+    
+    // ✅ Evaluate if we should draw ticks
     final bool isMe = (senderId != null && senderId == myId);
 
-    // ✅ 3. Determine exact icon and color based on status
-    IconData tickIcon = Icons.check; // Single Grey (Sent)
+    IconData tickIcon = Icons.check; 
     Color tickColor = Colors.grey;
 
     if (status == 'delivered') {
-       tickIcon = Icons.done_all; // Double Grey (Delivered)
+       tickIcon = Icons.done_all; 
        tickColor = Colors.grey;
     } else if (status == 'read' || isRead) {
-       tickIcon = Icons.done_all; // Double Blue (Read)
+       tickIcon = Icons.done_all; 
        tickColor = Colors.blue;
     }
 

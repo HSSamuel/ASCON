@@ -167,9 +167,7 @@ class NotificationService {
 
     RemoteMessage? initialMessage = await _firebaseMessaging.getInitialMessage();
     if (initialMessage != null) {
-      Future.delayed(const Duration(milliseconds: 3500), () {
-        handleNavigation(initialMessage.data);
-      });
+      handleNavigation(initialMessage.data);
     }
 
     _firebaseMessaging.onTokenRefresh.listen((newToken) {
@@ -180,6 +178,12 @@ class NotificationService {
   }
 
   Future<void> handleNavigation(Map<String, dynamic> data) async {
+    // ✅ FIX: Wait for Splash Screen to set the Home route before pushing deep links
+    int waitCount = 0;
+    while (appRouter.routerDelegate.currentConfiguration.uri.path == '/' && waitCount < 50) {
+      await Future.delayed(const Duration(milliseconds: 100)); // Checks every 100ms (Max 5 seconds)
+      waitCount++;
+    }
     final String? route = data['route'];
     final String? type = data['type'];
     final String? id = data['id'] ?? data['eventId'] ?? data['_id'];
@@ -311,7 +315,6 @@ class NotificationService {
         largeIcon = ByteArrayAndroidBitmap(imageBytes);
 
         if (message.data['type'] == 'chat_message') {
-          // ⬅️ Use MessagingStyle for native chat avatars
           final person = Person(
             name: originalTitle,
             icon: ByteArrayAndroidIcon(imageBytes),
@@ -333,7 +336,16 @@ class NotificationService {
       }
     }
 
-    // ✅ ADDED: Define actionable buttons for Chat messages
+    // ✅ ADD THIS FALLBACK BLOCK HERE
+    if (styleInfo == null && message.data['type'] == 'chat_message') {
+       final person = Person(name: originalTitle);
+       styleInfo = MessagingStyleInformation(
+         person, 
+         messages: [Message(body, DateTime.now(), person)]
+       );
+    }
+
+    // Keep your existing actions list below...
     List<AndroidNotificationAction> actions = [];
     if (message.data['type'] == 'chat_message') {
       actions = [

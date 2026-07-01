@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../router.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -40,27 +41,23 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   Future<void> _checkAuthState() async {
-    // 1. Give the animation time to play
     await Future.delayed(const Duration(milliseconds: 2000));
-    
     if (!mounted) return;
 
     final prefs = await SharedPreferences.getInstance();
-    
-    // 2. Check if they have ever seen the notification prompt
     final bool hasSeenPrompt = prefs.getBool('has_seen_notification_prompt') ?? false;
-
-    // 3. Check if they are already logged in
     final authService = AuthService();
     final bool isLoggedIn = await authService.isSessionValid();
 
     if (!mounted) return;
 
-    // 4. Routing Logic
+    // ✅ FIX: Check if a notification already routed us away from the Splash Screen
+    final currentPath = appRouter.routerDelegate.currentConfiguration.uri.path;
+    final bool isStillOnSplash = currentPath == '/';
+
     if (isLoggedIn) {
       context.go('/home');
     } else if (!hasSeenPrompt) {
-      // Send them to the permission screen, and tell it to go to /login next
       context.go('/notification_permission', extra: '/login');
     } else {
       context.go('/login');

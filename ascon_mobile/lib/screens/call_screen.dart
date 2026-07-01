@@ -19,6 +19,7 @@ class CallScreen extends StatefulWidget {
   final String channelName; 
   final String? remoteAvatar; 
   final bool isIncoming; 
+  final bool autoAccept;
   final String? currentUserName;   
   final String? currentUserAvatar; 
 
@@ -32,6 +33,7 @@ class CallScreen extends StatefulWidget {
     required this.channelName,
     this.remoteAvatar,
     this.isIncoming = false, 
+    this.autoAccept = false,
     this.currentUserName,     
     this.currentUserAvatar,   
   });
@@ -45,7 +47,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   final SocketService _socketService = SocketService();
   final AudioPlayer _audioPlayer = AudioPlayer(); 
   
-  late String _currentChannel; // ✅ ADDED: Mutable channel state for collision swaps
+  late String _currentChannel; 
 
   String _status = "Connecting...";
   bool _isMuted = false;
@@ -53,6 +55,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   String _selectedAudioRoute = 'Earpiece'; 
   bool _isConnected = false;
   bool _hasAccepted = false;
+  bool _isDisconnecting = false; 
   int _activeGroupUsers = 0; 
   bool _isDialing = false; 
 
@@ -69,7 +72,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     super.initState();
     WakelockPlus.enable();
     
-    _currentChannel = widget.channelName; // ✅ INITIALIZE mutable channel
+    _currentChannel = widget.channelName; 
     
     if (widget.isVideoCall) {
       _selectedAudioRoute = 'Speaker'; 
@@ -85,9 +88,14 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _listenToEvents();
 
     if (widget.isIncoming) {
-      _status = widget.isVideoCall ? "Incoming Video Call..." : "Incoming Call...";
-      _pulseController.repeat(reverse: true);
-      _playRingtone(); 
+      if (widget.autoAccept) {
+        _status = "Connecting...";
+        _acceptIncomingCall();
+      } else {
+        _status = widget.isVideoCall ? "Incoming Video Call..." : "Incoming Call...";
+        _pulseController.repeat(reverse: true);
+        _playRingtone(); 
+      }
     } else {
       _status = "Calling...";
       _startOutgoingCall();
@@ -126,14 +134,6 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     if (success) {
       if (!kIsWeb) {
         _callService.setAudioRoute(_selectedAudioRoute); 
-        
-        // ✅ ADDED: Register native call state
-        await FlutterCallkitIncoming.startCall(CallKitParams(
-          id: _currentChannel,
-          nameCaller: widget.remoteName,
-          handle: 'Ongoing Call',
-          type: widget.isVideoCall ? 1 : 0,
-        ));
       }
 
       Map<String, dynamic> callerPayload = {
@@ -156,8 +156,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     }
   }
 
-  // Update _acceptIncomingCall around line 105 in lib/screens/call_screen.dart
   void _acceptIncomingCall() async {
+    if (_hasAccepted || _isDisconnecting) return; 
     setState(() {
       _hasAccepted = true;
       _status = "Connecting...";
@@ -174,6 +174,30 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     if (!kIsWeb) {
       _callService.setAudioRoute(_selectedAudioRoute); 
     }
+  }
+
+  void _rejectCall() {
+    if (_isDisconnecting) return;
+    setState(() => _isDisconnecting = true);
+
+    if (widget.remoteId != null) {
+      _socketService.endCall(widget.remoteId!, _currentChannel);
+    }
+    _endCallUI("Declined");
+  }
+
+  void _endCall() {
+    if (_isDisconnecting) return;
+    setState(() => _isDisconnecting = true);
+
+    if (widget.isGroupCall && widget.targetIds != null && !widget.isIncoming) {
+      for(String target in widget.targetIds!) {
+        _socketService.endCall(target, _currentChannel);
+      }
+    } else if (widget.remoteId != null) {
+      _socketService.endCall(widget.remoteId!, _currentChannel);
+    }
+    _endCallUI("Call Ended");
   }
 
   void _listenToEvents() {
@@ -208,10 +232,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _socketListener = _socketService.callEvents.listen((event) {
       if (!mounted) return;
       
-      // ✅ UPDATE: Checking against mutable _currentChannel
       if (event['type'] == 'ended' && event['data']['channelName'] == _currentChannel) {
         
-        // ✅ ADDED: Collision Merge Interceptor
         if (event['data']['reason'] == "collision_merge") {
            String existingChannel = event['data']['existingChannel'];
            
@@ -261,13 +283,17 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _endCallUI(String message) async {
-    setState(() => _status = message);
+    if (!mounted) return;
+    setState(() {
+      _status = message;
+      _isDisconnecting = true; 
+    });
+    
     _stopAudio(); 
     _stopTimer();
     _pulseController.stop();
     _callService.leaveCall();
     
-    // ✅ ADDED: Clear OS Call Banner
     if (!kIsWeb) {
       await FlutterCallkitIncoming.endAllCalls();
     }
@@ -277,7 +303,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     });
   }
 
- void _startTimer() {
+  void _startTimer() {
     if (_callTimer != null && _callTimer!.isActive) return;
     _callTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
@@ -369,158 +395,329 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack( 
+      backgroundColor: widget.isGroupCall ? const Color(0xFF121B22) : Colors.black,
+      body: SafeArea(
+        child: (widget.isGroupCall && _isConnected) 
+            ? _buildWhatsAppGroupUI() 
+            : _buildStandardOneOnOneUI(), 
+      ),
+    );
+  }
+
+  // ==========================================
+  // WHATSAPP-STYLE GROUP CALL UI
+  // ==========================================
+
+  Widget _buildWhatsAppGroupUI() {
+    return Column(
+      children: [
+        _buildGroupTopBar(),
+        Expanded(
+          child: _buildGroupGrid(),
+        ),
+        _buildGroupBottomBar(),
+      ],
+    );
+  }
+
+  Widget _buildGroupTopBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          if (widget.isVideoCall && _isConnected)
-            _buildVideoGrid()
-          else
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                  colors: [Color(0xFF0F3621), Colors.black],
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(color: Color(0xFF1F2C34), shape: BoxShape.circle),
+            child: const Icon(Icons.close_fullscreen, color: Colors.white, size: 20),
+          ),
+          
+          Column(
+            children: [
+              Text(
+                widget.remoteName.toUpperCase(),
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _formattedDuration,
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(color: Color(0xFF1F2C34), shape: BoxShape.circle),
+            child: const Icon(Icons.person_add, color: Colors.white, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupGrid() {
+    List<int> allUsers = [0, ..._callService.remoteUids]; 
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.85, 
+      ),
+      itemCount: allUsers.length,
+      itemBuilder: (context, index) {
+        final uid = allUsers[index];
+        final isMe = uid == 0;
+        
+        final colors = [Colors.pinkAccent, Colors.blueAccent, Colors.purpleAccent, Colors.orangeAccent];
+        final cardColor = colors[index % colors.length];
+        
+        bool isSpeaking = false; 
+        bool isUserMuted = false;
+
+        return _buildParticipantCard(
+          name: isMe ? "You" : "User $uid", 
+          avatarUrl: isMe ? widget.currentUserAvatar : null, 
+          isMuted: isUserMuted,
+          isSpeaking: isSpeaking,
+          activeColor: cardColor,
+        );
+      },
+    );
+  }
+
+  Widget _buildParticipantCard({required String name, String? avatarUrl, required bool isMuted, required bool isSpeaking, required Color activeColor}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F2C34), 
+        borderRadius: BorderRadius.circular(16),
+        border: isSpeaking ? Border.all(color: activeColor, width: 3) : Border.all(color: Colors.transparent, width: 3),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 35,
+                backgroundColor: Colors.grey[800],
+                backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
+                child: (avatarUrl == null || avatarUrl.isEmpty) ? const Icon(Icons.person, color: Colors.white54, size: 35) : null,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                name,
+                style: TextStyle(
+                  color: isSpeaking ? activeColor : Colors.white, 
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+            ],
+          ),
+          
+          if (isMuted)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                child: const Icon(Icons.mic_off, color: Colors.white, size: 14),
+              ),
             ),
+        ],
+      ),
+    );
+  }
 
-          SafeArea(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (!widget.isVideoCall || !_isConnected) const Spacer(flex: 2),
-                
-                if (!widget.isVideoCall || !_isConnected)
-                  _buildPulsingAvatar(),
-                
-                const SizedBox(height: 30),
-                
-                if (!widget.isVideoCall || !_isConnected)
-                  if (widget.isGroupCall)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      margin: const EdgeInsets.only(bottom: 8.0),
-                      decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
-                      child: Text(widget.isVideoCall ? "GROUP VIDEO CALL" : "GROUP CALL", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                    ),
+  Widget _buildGroupBottomBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+      decoration: const BoxDecoration(
+        color: Color(0xFF121B22),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _buildWhatsAppBtn(Icons.more_horiz, Colors.white12, Colors.white, () {}),
+          _buildWhatsAppBtn(_isVideoOff ? Icons.videocam_off : Icons.videocam, Colors.white, Colors.black, () {
+            setState(() => _isVideoOff = !_isVideoOff);
+            _callService.toggleVideo(_isVideoOff);
+          }),
+          _buildWhatsAppBtn(_selectedAudioRoute == 'Speaker' ? Icons.volume_up : Icons.hearing, Colors.white, Colors.black, () {
+             if (kIsWeb || defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.linux || defaultTargetPlatform == TargetPlatform.macOS) {
+               _showDeviceSelectorDialog();
+             } else {
+               _callService.setAudioRoute(_selectedAudioRoute == 'Speaker' ? 'Earpiece' : 'Speaker');
+               setState(() => _selectedAudioRoute = _selectedAudioRoute == 'Speaker' ? 'Earpiece' : 'Speaker');
+             }
+          }),
+          _buildWhatsAppBtn(_isMuted ? Icons.mic_off : Icons.mic, Colors.white, Colors.black, () {
+             setState(() => _isMuted = !_isMuted);
+             _callService.toggleMute(_isMuted);
+          }),
+          _buildWhatsAppBtn(Icons.call_end, Colors.redAccent, Colors.white, _endCall),
+        ],
+      ),
+    );
+  }
 
-                if (!widget.isVideoCall || !_isConnected)
-                  Text(
-                    widget.remoteName,
-                    style: GoogleFonts.lato(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, shadows: [const Shadow(color: Colors.black, blurRadius: 10)]),
-                    textAlign: TextAlign.center,
-                  ),
-                
-                const SizedBox(height: 12),
-                
-                if (!widget.isVideoCall || !_isConnected || widget.isGroupCall)
-                  Text(
-                    _isConnected ? _formattedDuration : _status,
-                    style: GoogleFonts.lato(color: Colors.white70, fontSize: _isConnected ? 20 : 16, shadows: [const Shadow(color: Colors.black, blurRadius: 10)]),
-                  ),
+  Widget _buildWhatsAppBtn(IconData icon, Color bgColor, Color iconColor, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+        child: Icon(icon, color: iconColor, size: 26),
+      ),
+    );
+  }
 
-                const Spacer(flex: 3),
-                
-                // CONTROLS UI
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 30.0),
-                  child: widget.isIncoming && !_hasAccepted 
-                  ? Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildActionCircle(Icons.call_end, Colors.redAccent, () {
-                          if (widget.remoteId != null) _socketService.endCall(widget.remoteId!, _currentChannel);
-                          _endCallUI("Declined");
-                        }),
-                        _buildActionCircle(widget.isVideoCall ? Icons.videocam : Icons.call, Colors.green, _acceptIncomingCall),
-                      ],
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.isVideoCall) ...[
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildSmallBtn(Icons.flip_camera_ios, "Flip", () {
-                                if (kIsWeb) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text("Camera flip is managed by browser."),
-                                      duration: Duration(seconds: 2),
-                                    )
-                                  );
-                                  return;
-                                }
-                                _callService.switchCamera();
-                              }),
-                              const SizedBox(width: 40),
-                              _buildSmallBtn(_isVideoOff ? Icons.videocam_off : Icons.videocam, _isVideoOff ? "Video Off" : "Video On", () {
-                                setState(() => _isVideoOff = !_isVideoOff);
-                                _callService.toggleVideo(_isVideoOff);
-                              }, isActive: !_isVideoOff),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                        ],
+  // ==========================================
+  // STANDARD 1-ON-1 / FALLBACK UI
+  // ==========================================
 
-                        Row( 
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _buildControlButton(
-                              icon: _isMuted ? Icons.mic_off : Icons.mic,
-                              label: "Mute",
-                              isActive: _isMuted,
-                              onTap: () {
-                                setState(() => _isMuted = !_isMuted);
-                                _callService.toggleMute(_isMuted);
-                              },
-                            ),
-                            _buildActionCircle(Icons.call_end, Colors.redAccent, () {
-                              if (widget.isGroupCall && widget.targetIds != null && !widget.isIncoming) {
-                                 for(String target in widget.targetIds!) _socketService.endCall(target, _currentChannel);
-                              } else if (widget.remoteId != null) {
-                                 _socketService.endCall(widget.remoteId!, _currentChannel);
-                              }
-                              _endCallUI("Call Ended");
-                            }),
-                            
-                            // Audio Route UI
-                            _buildAudioRouteMenu(),
-                          ],
-                        ),
-                      ],
-                    ),
-                ),
-              ],
+  Widget _buildStandardOneOnOneUI() {
+    return Stack( 
+      children: [
+        if (widget.isVideoCall && _isConnected)
+          _buildVideoGrid()
+        else
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [Color(0xFF0F3621), Colors.black],
+              ),
             ),
           ),
 
-          if (widget.isVideoCall && _isConnected && !_isVideoOff)
-             Positioned(
-               right: 16,
-               top: MediaQuery.of(context).padding.top + 20,
-               child: Container(
-                 width: 110, height: 160,
-                 decoration: BoxDecoration(
-                   color: Colors.black,
-                   borderRadius: BorderRadius.circular(16),
-                   border: Border.all(color: Colors.white24, width: 2),
-                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10)]
-                 ),
-                 child: ClipRRect(
-                   borderRadius: BorderRadius.circular(14),
-                   child: AgoraVideoView(
-                     controller: VideoViewController(
-                       rtcEngine: _callService.engine,
-                       canvas: const VideoCanvas(uid: 0), 
-                     ),
+        Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (!widget.isVideoCall || !_isConnected) const Spacer(flex: 2),
+            
+            if (!widget.isVideoCall || !_isConnected)
+              _buildPulsingAvatar(),
+            
+            const SizedBox(height: 30),
+            
+            if (!widget.isVideoCall || !_isConnected)
+              if (widget.isGroupCall)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  margin: const EdgeInsets.only(bottom: 8.0),
+                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)),
+                  child: Text(widget.isVideoCall ? "GROUP VIDEO CALL" : "GROUP CALL", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                ),
+
+            if (!widget.isVideoCall || !_isConnected)
+              Text(
+                widget.remoteName,
+                style: GoogleFonts.lato(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, shadows: [const Shadow(color: Colors.black, blurRadius: 10)]),
+                textAlign: TextAlign.center,
+              ),
+            
+            const SizedBox(height: 12),
+            
+            if (!widget.isVideoCall || !_isConnected || widget.isGroupCall)
+              Text(
+                _isConnected ? _formattedDuration : _status,
+                style: GoogleFonts.lato(color: Colors.white70, fontSize: _isConnected ? 20 : 16, shadows: [const Shadow(color: Colors.black, blurRadius: 10)]),
+              ),
+
+            const Spacer(flex: 3),
+            
+            Padding(
+              padding: const EdgeInsets.only(bottom: 30.0),
+              child: widget.isIncoming && !_hasAccepted 
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildActionCircle(Icons.call_end, Colors.redAccent, _rejectCall),
+                    _buildActionCircle(widget.isVideoCall ? Icons.videocam : Icons.call, Colors.green, _acceptIncomingCall),
+                  ],
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.isVideoCall) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildSmallBtn(Icons.flip_camera_ios, "Flip", () {
+                            if (kIsWeb) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Camera flip is managed by browser."),
+                                  duration: Duration(seconds: 2),
+                                )
+                              );
+                              return;
+                            }
+                            _callService.switchCamera();
+                          }),
+                          const SizedBox(width: 40),
+                          _buildSmallBtn(_isVideoOff ? Icons.videocam_off : Icons.videocam, _isVideoOff ? "Video Off" : "Video On", () {
+                            setState(() => _isVideoOff = !_isVideoOff);
+                            _callService.toggleVideo(_isVideoOff);
+                          }, isActive: !_isVideoOff),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+
+                    Row( 
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildControlButton(
+                          icon: _isMuted ? Icons.mic_off : Icons.mic,
+                          label: "Mute",
+                          isActive: _isMuted,
+                          onTap: () {
+                            setState(() => _isMuted = !_isMuted);
+                            _callService.toggleMute(_isMuted);
+                          },
+                        ),
+                        _buildActionCircle(Icons.call_end, Colors.redAccent, _endCall),
+                        _buildAudioRouteMenu(),
+                      ],
+                    ),
+                  ],
+                ),
+            ),
+          ],
+        ),
+
+        if (widget.isVideoCall && _isConnected && !_isVideoOff)
+           Positioned(
+             right: 16,
+             top: 20,
+             child: Container(
+               width: 110, height: 160,
+               decoration: BoxDecoration(
+                 color: Colors.black,
+                 borderRadius: BorderRadius.circular(16),
+                 border: Border.all(color: Colors.white24, width: 2),
+                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10)]
+               ),
+               child: ClipRRect(
+                 borderRadius: BorderRadius.circular(14),
+                 child: AgoraVideoView(
+                   controller: VideoViewController(
+                     rtcEngine: _callService.engine,
+                     canvas: const VideoCanvas(uid: 0), 
                    ),
                  ),
                ),
-             )
-        ],
-      ),
+             ),
+           )
+      ],
     );
   }
 
@@ -622,7 +819,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     );
   }
 
- Widget _buildAudioRouteMenu() {
+  Widget _buildAudioRouteMenu() {
     bool isDesktopOrWeb = kIsWeb;
     if (!kIsWeb) {
       isDesktopOrWeb = defaultTargetPlatform == TargetPlatform.windows || 

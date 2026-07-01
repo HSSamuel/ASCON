@@ -115,22 +115,67 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
     
     const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('ic_notification');
-    await localNotifications.initialize(const InitializationSettings(android: androidSettings));
+    await localNotifications.initialize(
+      const InitializationSettings(android: androidSettings),
+      // ✅ CRITICAL: This tells Android what function to run when "Reply" is tapped in the background
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground, 
+    );
 
-    String title = "New Notification";
-    String body = "You have a new update";
-    
-    if (message.data.containsKey('title')) title = message.data['title'];
-    if (message.data.containsKey('body')) body = message.data['body'];
+    String title = message.data['title'] ?? "New Notification";
+    String body = message.data['body'] ?? "You have a new update";
+    String? imageUrl = message.data['image'] ?? message.data['profilePicture'];
+
+    ByteArrayAndroidBitmap? largeIcon;
+    StyleInformation? styleInfo;
+
+    // ✅ 1. Download Avatar Image
+    if (imageUrl != null && imageUrl.isNotEmpty && imageUrl.startsWith('http')) {
+      try {
+        final response = await http.get(Uri.parse(imageUrl)).timeout(const Duration(seconds: 5));
+        if (response.statusCode == 200) {
+          largeIcon = ByteArrayAndroidBitmap(response.bodyBytes);
+          
+          if (message.data['type'] == 'chat_message') {
+            final person = Person(name: title, icon: ByteArrayAndroidIcon(response.bodyBytes));
+            styleInfo = MessagingStyleInformation(person, messages: [Message(body, DateTime.now(), person)]);
+          } else {
+            styleInfo = BigPictureStyleInformation(largeIcon, largeIcon: largeIcon, contentTitle: title, summaryText: body, htmlFormatContentTitle: true, htmlFormatSummaryText: true);
+          }
+        }
+      } catch (e) {
+        debugPrint("Bg Image download failed: $e");
+      }
+    }
+
+    // ✅ 2. Fallback for Chat Messages if user has no Profile Picture
+    if (styleInfo == null && message.data['type'] == 'chat_message') {
+       final person = Person(name: title);
+       styleInfo = MessagingStyleInformation(person, messages: [Message(body, DateTime.now(), person)]);
+    }
+
+    // ✅ 3. Attach Quick Actions
+    List<AndroidNotificationAction> actions = [];
+    if (message.data['type'] == 'chat_message') {
+      actions = [
+        const AndroidNotificationAction(
+          'REPLY_ACTION', 'Reply', allowGeneratedReplies: true, showsUserInterface: false, 
+          inputs: [AndroidNotificationActionInput(label: 'Type a message...')]
+        ),
+        const AndroidNotificationAction('MARK_READ_ACTION', 'Mark as Read', showsUserInterface: false),
+      ];
+    }
 
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       AppConfig.notificationChannelId,
       AppConfig.notificationChannelName,
-      channelDescription: AppConfig.notificationChannelDesc, // ✅ FIX: Renamed from 'description' to 'channelDescription'
+      channelDescription: AppConfig.notificationChannelDesc,
       importance: Importance.max,
       priority: Priority.high,
       color: const Color(0xFF1B5E3A),
       icon: 'ic_notification',
+      largeIcon: largeIcon,
+      styleInformation: styleInfo,
+      actions: actions,
       enableVibration: true,
       playSound: true, 
     );
@@ -215,7 +260,10 @@ void main() async {
     
   }, (error, stack) {
     debugPrint("🔴 Uncaught Zone Error: $error\n$stack");
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    // ✅ FIX: Prevent Crashlytics from executing and crashing on Web
+    if (!kIsWeb) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    }
   });
 }
 
@@ -236,6 +284,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this); 
     _listenForIncomingCalls();
     _listenForCallKitEvents(); 
+    _setupInteractedMessage();
     _triggerColdStartSync();
   }
 
@@ -248,7 +297,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _triggerColdStartSync() async {
     if (await AuthService().isSessionValid()) {
-      NotificationService().init(); // ⬅️ Initialize to capture killed-app payloads
+      await NotificationService().init();
       AuthService().performGlobalSilentSync();
     }
   }
@@ -284,7 +333,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationClick);
   }
 
-  void _handleNotificationClick(RemoteMessage message) {
+  void _handleNotificationClick(RemoteMessage message) async {
+    // ✅ FIX: Wait for Splash Screen
+    int waitCount = 0;
+    while (appRouter.routerDelegate.currentConfiguration.uri.path == '/' && waitCount < 50) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      waitCount++;
+    }
     final data = message.data;
     
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
@@ -312,9 +367,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   void _listenForCallKitEvents() {
     if (kIsWeb) return;
-    FlutterCallkitIncoming.onEvent.listen((event) {
+    FlutterCallkitIncoming.onEvent.listen((event) async { // Make sure this is async
       switch (event!.event) {
         case Event.actionCallAccept:
+          // ✅ FIX: Wait for Splash Screen
+          int waitCount = 0;
+          while (appRouter.routerDelegate.currentConfiguration.uri.path == '/' && waitCount < 50) {
+            await Future.delayed(const Duration(milliseconds: 100));
+            waitCount++;
+          }
           if (_isNavigatingToCall) return; // ✅ Block double-push
           _isNavigatingToCall = true;
           Future.delayed(const Duration(seconds: 2), () => _isNavigatingToCall = false);
@@ -335,6 +396,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             'channelName': channelName,
             'remoteAvatar': callerAvatar, 
             'isIncoming': true,
+            'autoAccept': true,
           });
           break;
           
@@ -384,13 +446,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           };
 
           if (kIsWeb) {
-            // ✅ WEB FALLBACK: Show Custom Banner
             _showWebCallBanner(callArgs);
           } else {
-            // Mobile Native Behavior
+            // ✅ FIX: Add the debounce lock to the Socket Listener!
+            // This stops the Socket from pushing a 2nd screen if the Notification already did it.
+            if (_isNavigatingToCall) return; 
+            _isNavigatingToCall = true;
+            Future.delayed(const Duration(seconds: 3), () => _isNavigatingToCall = false);
+
             appRouter.push('/call', extra: callArgs);
           }
-        } 
+        }
       }
     });
   }

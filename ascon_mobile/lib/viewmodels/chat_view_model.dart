@@ -228,21 +228,32 @@ class ChatNotifier extends StateNotifier<ChatState> {
       _handleIncomingMessage(data);
     });
 
-    // ✅ Update the top-level keys when read
     socket.on('messages_read', (data) {
       if (!mounted) return;
-      final convId = data['conversationId'];
-      final readerId = data['readerId']; 
+      final convId = data['conversationId']?.toString();
+      final readerId = data['readerId']?.toString(); 
 
       final updated = List<dynamic>.from(state.conversations);
-      final index = updated.indexWhere((c) => c != null && c is Map && c['_id'] == convId);
+      // ✅ FIX: Force .toString() on both sides to guarantee a match
+      final index = updated.indexWhere((c) => c != null && c is Map && c['_id']?.toString() == convId);
       
       if (index != -1) {
         var chat = Map<String, dynamic>.from(updated[index]);
-        if (readerId == state.myId) chat['unreadCount'] = 0;
-
-        chat['lastMessageStatus'] = 'read';
-        chat['lastMessageIsRead'] = true;
+        
+        if (readerId == state.myId) {
+          chat['unreadCount'] = 0;
+        } else {
+          // The other person read our message!
+          chat['lastMessageStatus'] = 'read';
+          chat['lastMessageIsRead'] = true;
+          
+          if (chat['lastMessage'] is Map) {
+             var lastMsg = Map<String, dynamic>.from(chat['lastMessage']);
+             lastMsg['isRead'] = true;
+             lastMsg['status'] = 'read';
+             chat['lastMessage'] = lastMsg;
+          }
+        }
 
         updated[index] = chat;
         state = state.copyWith(conversations: updated, filteredConversations: updated);
@@ -250,20 +261,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
       }
     });
 
-    // ✅ Update the top-level keys when delivered
+    // ✅ Replace the message_status_update listener right below it
     socket.on('message_status_update', (data) {
       if (!mounted) return;
-      final convId = data['chatId']; 
+      final convId = data['chatId']?.toString(); 
       final status = data['status']; 
 
       final updated = List<dynamic>.from(state.conversations);
-      final index = updated.indexWhere((c) => c != null && c is Map && c['_id'] == convId);
+      // ✅ FIX: Force .toString() on both sides
+      final index = updated.indexWhere((c) => c != null && c is Map && c['_id']?.toString() == convId);
 
       if (index != -1) {
         var chat = Map<String, dynamic>.from(updated[index]);
         
         if (chat['lastMessageStatus'] != 'read' && chat['lastMessageIsRead'] != true) {
             chat['lastMessageStatus'] = status;
+        }
+        
+        if (chat['lastMessage'] is Map) {
+           var lastMsg = Map<String, dynamic>.from(chat['lastMessage']);
+           if (lastMsg['status'] != 'read' && lastMsg['isRead'] != true) {
+               lastMsg['status'] = status;
+               chat['lastMessage'] = lastMsg;
+           }
         }
         
         updated[index] = chat;

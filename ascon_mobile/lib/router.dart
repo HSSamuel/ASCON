@@ -162,6 +162,7 @@ final GoRouter appRouter = GoRouter(
           channelName: args['channelName'] ?? "call_${DateTime.now().millisecondsSinceEpoch}",
           remoteAvatar: args['remoteAvatar'],
           isIncoming: args['isIncoming'] ?? false,
+          autoAccept: args['autoAccept'] ?? false,
         );
       },
     ),

@@ -136,7 +136,7 @@ class _CreatePostSheetState extends ConsumerState<CreatePostSheet> {
           const SizedBox(height: 16),
           
           Container(
-            margin: const EdgeInsets.only(bottom: 8),
+            margin: const EdgeInsets.only(bottom: 30),
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             decoration: BoxDecoration(
               color: isDark ? Colors.grey[800] : Colors.grey[100],
