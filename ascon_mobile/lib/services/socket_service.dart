@@ -27,13 +27,9 @@ class SocketService with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
-  // =======================================================================
-  // 🚀 PRESENCE FIX: Strict Lifecycle Management
-  // =======================================================================
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // ✅ FIX: App came back to foreground -> Connect & Announce Presence
       _storage.read(key: "auth_token").then((token) {
         if (token != null) {
           if (socket == null) {
@@ -41,21 +37,17 @@ class SocketService with WidgetsBindingObserver {
           } else if (!socket!.connected) {
             socket!.connect();
           } else {
-            // If the OS kept the socket alive, explicitly announce we are back
-            // to overwrite any stale server-side timeouts.
             announcePresence();
           }
         }
       });
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // ✅ FIX: App went to background -> Disconnect immediately to trigger instant "Offline" on server
       if (socket != null && socket!.connected) {
          socket!.disconnect();
       }
     }
   }
 
-  // ✅ ADDED: Forcefully tells the server this user is online
   void announcePresence() {
     if (socket != null && socket!.connected && _currentUserId != null) {
       socket!.emit("user_connected", _currentUserId);
@@ -122,12 +114,10 @@ class SocketService with WidgetsBindingObserver {
       }
     });
 
-    // Handle generic broadcast updates
     socket!.on('user_status_update', (data) {
       if (data != null) _userStatusController.add(Map<String, dynamic>.from(data));
     });
 
-    // Handle direct target requests
     socket!.on('user_status_result', (data) {
       if (data != null) _userStatusController.add(Map<String, dynamic>.from(data));
     });
@@ -151,6 +141,13 @@ class SocketService with WidgetsBindingObserver {
 
     socket!.on('message_status_update', (data) {
        _messageStatusController.add({'type': 'status_update', 'data': data});
+    });
+
+    // ✅ FIX: Listen for participant metadata and forward it directly to call_screen
+    socket!.on('participant_info', (data) {
+       if (data != null) {
+          _callEventsController.add({'type': 'participant_info', 'data': data});
+       }
     });
 
     socket!.on('incoming_call', (data) {

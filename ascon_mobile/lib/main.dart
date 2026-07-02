@@ -37,6 +37,18 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   final type = message.data['type'];
 
+  // ✅ FIX 1: Drop silent system events (login sync, call ending) so they NEVER trigger phantom notifications
+  final silentSystemEvents = ['call_ended', 'call_rejected', 'silent_sync', 'login_sync', 'sync', 'heartbeat'];
+  if (silentSystemEvents.contains(type)) {
+    if (type == 'call_ended' || type == 'call_rejected') {
+      final String? uuid = message.data['channelName'] ?? message.data['id'];
+      if (uuid != null) {
+        await FlutterCallkitIncoming.endCall(uuid);
+      }
+    }
+    return; // <-- CRITICAL: Exits before flutter_local_notifications builds a "New Notification" card
+  }
+
   // SILENT BACKGROUND DELIVERY RECEIPT 
   if (type == 'chat_message') {
     final String? messageId = message.data['messageId'];
@@ -112,12 +124,17 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
   } 
   else if (message.notification == null && message.data.isNotEmpty) {
+    
+    // ✅ FIX 2: If there's no title, body, or valid chat data, it's a stray background sync. Abort!
+    if (message.data['title'] == null && message.data['body'] == null && type != 'chat_message') {
+      return; 
+    }
+
     final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
     
     const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('ic_notification');
     await localNotifications.initialize(
       const InitializationSettings(android: androidSettings),
-      // ✅ CRITICAL: This tells Android what function to run when "Reply" is tapped in the background
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground, 
     );
 
@@ -128,14 +145,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     ByteArrayAndroidBitmap? largeIcon;
     StyleInformation? styleInfo;
 
-    // ✅ 1. Download Avatar Image
     if (imageUrl != null && imageUrl.isNotEmpty && imageUrl.startsWith('http')) {
       try {
         final response = await http.get(Uri.parse(imageUrl)).timeout(const Duration(seconds: 5));
         if (response.statusCode == 200) {
           largeIcon = ByteArrayAndroidBitmap(response.bodyBytes);
           
-          if (message.data['type'] == 'chat_message') {
+          if (type == 'chat_message') {
             final person = Person(name: title, icon: ByteArrayAndroidIcon(response.bodyBytes));
             styleInfo = MessagingStyleInformation(person, messages: [Message(body, DateTime.now(), person)]);
           } else {
@@ -147,15 +163,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       }
     }
 
-    // ✅ 2. Fallback for Chat Messages if user has no Profile Picture
-    if (styleInfo == null && message.data['type'] == 'chat_message') {
+    if (styleInfo == null && type == 'chat_message') {
        final person = Person(name: title);
        styleInfo = MessagingStyleInformation(person, messages: [Message(body, DateTime.now(), person)]);
     }
 
-    // ✅ 3. Attach Quick Actions
     List<AndroidNotificationAction> actions = [];
-    if (message.data['type'] == 'chat_message') {
+    if (type == 'chat_message') {
       actions = [
         const AndroidNotificationAction(
           'REPLY_ACTION', 'Reply', allowGeneratedReplies: true, showsUserInterface: false, 
@@ -260,7 +274,6 @@ void main() async {
     
   }, (error, stack) {
     debugPrint("🔴 Uncaught Zone Error: $error\n$stack");
-    // ✅ FIX: Prevent Crashlytics from executing and crashing on Web
     if (!kIsWeb) {
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     }
@@ -334,7 +347,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   void _handleNotificationClick(RemoteMessage message) async {
-    // ✅ FIX: Wait for Splash Screen
     int waitCount = 0;
     while (appRouter.routerDelegate.currentConfiguration.uri.path == '/' && waitCount < 50) {
       await Future.delayed(const Duration(milliseconds: 100));
@@ -343,7 +355,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final data = message.data;
     
     if (data['type'] == 'incoming_call' || data['type'] == 'video_call') {
-      if (_isNavigatingToCall) return; // ✅ Block double-push
+      if (_isNavigatingToCall) return; 
       _isNavigatingToCall = true;
       Future.delayed(const Duration(seconds: 2), () => _isNavigatingToCall = false);
 
@@ -367,16 +379,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   void _listenForCallKitEvents() {
     if (kIsWeb) return;
-    FlutterCallkitIncoming.onEvent.listen((event) async { // Make sure this is async
+    FlutterCallkitIncoming.onEvent.listen((event) async { 
       switch (event!.event) {
         case Event.actionCallAccept:
-          // ✅ FIX: Wait for Splash Screen
           int waitCount = 0;
           while (appRouter.routerDelegate.currentConfiguration.uri.path == '/' && waitCount < 50) {
             await Future.delayed(const Duration(milliseconds: 100));
             waitCount++;
           }
-          if (_isNavigatingToCall) return; // ✅ Block double-push
+          if (_isNavigatingToCall) return; 
           _isNavigatingToCall = true;
           Future.delayed(const Duration(seconds: 2), () => _isNavigatingToCall = false);
 
@@ -448,8 +459,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           if (kIsWeb) {
             _showWebCallBanner(callArgs);
           } else {
-            // ✅ FIX: Add the debounce lock to the Socket Listener!
-            // This stops the Socket from pushing a 2nd screen if the Notification already did it.
             if (_isNavigatingToCall) return; 
             _isNavigatingToCall = true;
             Future.delayed(const Duration(seconds: 3), () => _isNavigatingToCall = false);
@@ -461,7 +470,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     });
   }
 
-  // ✅ NEW METHOD: Display a sliding banner for incoming web calls
   void _showWebCallBanner(Map<String, dynamic> callArgs) {
     final context = navigatorKey.currentContext;
     if (context == null) return;
@@ -480,7 +488,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               child: Container(
                 margin: const EdgeInsets.only(top: 16, left: 16, right: 16),
                 padding: const EdgeInsets.all(16),
-                constraints: const BoxConstraints(maxWidth: 500), // Keep it centered on wide screens
+                constraints: const BoxConstraints(maxWidth: 500),
                 decoration: BoxDecoration(
                   color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(20),
@@ -523,7 +531,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Decline Button
                     GestureDetector(
                       onTap: () {
                         Navigator.pop(context);
@@ -539,11 +546,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Accept Button
                     GestureDetector(
                       onTap: () {
                         Navigator.pop(context);
-                        // ✅ User interacted! Audio autoplay is now unlocked.
                         appRouter.push('/call', extra: callArgs);
                       },
                       child: Container(
@@ -560,7 +565,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         );
       },
       transitionBuilder: (context, anim1, anim2, child) {
-        // Slide down from top effect
         return SlideTransition(
           position: Tween<Offset>(
             begin: const Offset(0, -1), 

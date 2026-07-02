@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   agora_rtc_engine
   audioplayers_windows
+  auto_start_flutter
   connectivity_plus
   file_selector_windows
   firebase_core

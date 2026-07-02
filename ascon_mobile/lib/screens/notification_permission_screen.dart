@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart'; 
 import 'package:flutter/foundation.dart';
+import 'package:auto_start_flutter/auto_start_flutter.dart'; // ✅ Added AutoStart package
 import 'dart:ui'; 
 import '../services/notification_service.dart';
 
@@ -42,20 +43,80 @@ class _NotificationPermissionScreenState extends State<NotificationPermissionScr
     await prefs.setBool('has_seen_notification_prompt', true);
 
     if (granted) {
-      // ✅ FIX: Explicitly trigger the native OS permission popup FIRST
+      // 1. Explicitly trigger the native OS notification permission popup
       if (!kIsWeb) {
         await Permission.notification.request();
       }
 
-      // Then initialize Firebase's internal permission state
+      // 2. Initialize Firebase's internal permission state
       await NotificationService().requestPermission();
       
-      // Web-Safe Check: Request System Alert for CallKit if Android
+      // 3. Android-Specific Background Call Permissions
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-         final status = await Permission.systemAlertWindow.status;
-         if (!status.isGranted) {
-            await Permission.systemAlertWindow.request();
-         }
+        
+        // A. Request System Alert for CallKit (Full Screen Intents)
+        final status = await Permission.systemAlertWindow.status;
+        if (!status.isGranted) {
+           await Permission.systemAlertWindow.request();
+        }
+
+        // B. Request Battery Optimization Bypass (Prevents background socket death)
+        bool isRestricted = await Permission.ignoreBatteryOptimizations.isDenied;
+        if (isRestricted && mounted) {
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF1F2C34),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Keep Calls Connected', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              content: const Text(
+                'To ensure you receive incoming Alumni calls even when the app is closed, please set battery optimization to "Unrestricted" in the next screen.',
+                style: TextStyle(color: Colors.white70, height: 1.4),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await Permission.ignoreBatteryOptimizations.request();
+                  },
+                  child: const Text('Allow', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // C. Request AutoStart Bypass (Prevents Task Killers on Xiaomi/Oppo/Vivo)
+        try {
+          var isAutoStartAvail = await isAutoStartAvailable;
+          if (isAutoStartAvail == true && mounted) {
+            await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                backgroundColor: const Color(0xFF1F2C34),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Text('Enable AutoStart', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                content: const Text(
+                  'Your device requires AutoStart to ring for background calls. Please toggle it ON for ASCON Connect in the next screen.',
+                  style: TextStyle(color: Colors.white70, height: 1.4),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      await getAutoStartPermission();
+                    },
+                    child: const Text('Enable', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('AutoStart error: $e');
+        }
       }
     }
 
