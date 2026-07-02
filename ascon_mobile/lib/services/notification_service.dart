@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http; 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // ✅ NEW: Required for background isolation
 import 'dart:typed_data'; 
 
 import '../config.dart';
@@ -15,13 +15,15 @@ import '../services/socket_service.dart';
 
 // ============================================================================
 // ✅ BACKGROUND HANDLER FOR INLINE REPLIES AND ACTIONS
-// Must be a top-level function to run isolated in the background.
 // ============================================================================
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) async {
   if (response.payload == null) return;
   
   try {
+    // ✅ CRITICAL FIX: The background isolate must load the env file independently
+    await dotenv.load(fileName: "env.txt");
+    
     final data = jsonDecode(response.payload!);
     
     // Handle Inline Reply
@@ -53,6 +55,11 @@ void notificationTapBackground(NotificationResponse response) async {
               'message': replyText,
             }),
           );
+          
+          // ✅ CRITICAL FIX: Tell the OS to clear the notification, stopping the spinner
+          if (response.id != null) {
+             await FlutterLocalNotificationsPlugin().cancel(response.id!);
+          }
         }
       }
     } 
@@ -67,6 +74,11 @@ void notificationTapBackground(NotificationResponse response) async {
             Uri.parse('${AppConfig.baseUrl}/api/chat/read/$conversationId'),
             headers: {'auth-token': token},
           );
+          
+          // ✅ Clear notification
+          if (response.id != null) {
+             await FlutterLocalNotificationsPlugin().cancel(response.id!);
+          }
         }
       }
     }
@@ -116,7 +128,6 @@ class NotificationService {
             }
           }
         },
-        // ✅ Register the background handler for our new Action Buttons
         onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
       );
 
@@ -146,8 +157,6 @@ class NotificationService {
     }
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      // debugPrint("🔔 Foreground Message: ${message.data}");
-
       if (message.data['type'] == 'call_offer' || 
           message.data['type'] == 'video_call' || 
           message.data['type'] == 'incoming_call') {
@@ -178,10 +187,9 @@ class NotificationService {
   }
 
   Future<void> handleNavigation(Map<String, dynamic> data) async {
-    // ✅ FIX: Wait for Splash Screen to set the Home route before pushing deep links
     int waitCount = 0;
     while (appRouter.routerDelegate.currentConfiguration.uri.path == '/' && waitCount < 50) {
-      await Future.delayed(const Duration(milliseconds: 100)); // Checks every 100ms (Max 5 seconds)
+      await Future.delayed(const Duration(milliseconds: 100)); 
       waitCount++;
     }
     final String? route = data['route'];
@@ -336,7 +344,6 @@ class NotificationService {
       }
     }
 
-    // ✅ ADD THIS FALLBACK BLOCK HERE
     if (styleInfo == null && message.data['type'] == 'chat_message') {
        final person = Person(name: originalTitle);
        styleInfo = MessagingStyleInformation(
@@ -345,7 +352,6 @@ class NotificationService {
        );
     }
 
-    // Keep your existing actions list below...
     List<AndroidNotificationAction> actions = [];
     if (message.data['type'] == 'chat_message') {
       actions = [
@@ -353,7 +359,7 @@ class NotificationService {
           'REPLY_ACTION',
           'Reply',
           allowGeneratedReplies: true,
-          showsUserInterface: false, // Ensures app stays in background
+          showsUserInterface: false, 
           inputs: [
             AndroidNotificationActionInput(
               label: 'Type a message...',

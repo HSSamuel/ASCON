@@ -260,6 +260,11 @@ const initializeSocket = async (server) => {
       }
     });
 
+    // ✅ NEW: Specifically receives UID names from Flutter and broadcasts them to everyone in the channel
+    socket.on("call_participant_info", (data) => {
+      socket.to(data.channelName).emit("participant_info", data);
+    });
+
     socket.on(
       "initiate_call",
       async ({ targetUserId, channelName, callerData }) => {
@@ -380,7 +385,6 @@ const initializeSocket = async (server) => {
           );
           activeCallTimers.delete(callKey);
 
-          // ✅ WAKE UP BACKGROUND APP TO DISMISS CALLKIT ON TIMEOUT
           sendPersonalNotification(targetUserId, "", "", {
             type: "call_ended",
             channelName: channelName,
@@ -507,7 +511,6 @@ const initializeSocket = async (server) => {
 
       socket.to(targetUserId).emit("call_ended", { channelName });
 
-      // ✅ WAKE UP BACKGROUND APP TO DISMISS CALLKIT IF CALL IS CANCELLED
       sendPersonalNotification(targetUserId, "", "", {
         type: "call_ended",
         channelName: channelName,
@@ -533,7 +536,6 @@ const initializeSocket = async (server) => {
                 { status: "declined", endTime: new Date() },
               );
 
-              // ✅ WAKE UP CALLER'S APP IF THEY ARE IN THE BACKGROUND
               sendPersonalNotification(targetUserId, "", "", {
                 type: "call_rejected",
                 channelName: data.channelName,

@@ -8,7 +8,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:ascon_mobile/services/api_client.dart';
 import 'package:audio_session/audio_session.dart';
 
-enum CallEvent { ringing, connected, callEnded, error, userJoined, userOffline }
+// ✅ Added volumeChanged to trigger instant UI rebuilds for neon borders
+enum CallEvent { ringing, connected, callEnded, error, userJoined, userOffline, volumeChanged }
 
 class CallService with WidgetsBindingObserver {
   static final CallService _instance = CallService._internal();
@@ -21,6 +22,7 @@ class CallService with WidgetsBindingObserver {
   bool _isVideo = false; 
   
   Set<int> remoteUids = {}; 
+  Set<int> activeSpeakers = {}; 
 
   final _callEventController = StreamController<CallEvent>.broadcast();
   Stream<CallEvent> get callEvents => _callEventController.stream;
@@ -31,7 +33,6 @@ class CallService with WidgetsBindingObserver {
     if (_isInitialized) return;
 
     if (!kIsWeb) {
-      // ✅ ADDED: SystemAlertWindow and IgnoreBatteryOptimizations for offline Doze routing
       await [
         Permission.microphone, 
         Permission.camera,
@@ -76,10 +77,26 @@ class CallService with WidgetsBindingObserver {
           debugPrint("❌ Agora Error: $err - $msg");
           _callEventController.add(CallEvent.error);
         },
+        // ✅ Tracks who is speaking to light up their neon border
+        onAudioVolumeIndication: (RtcConnection connection, List<AudioVolumeInfo> speakers, int speakerNumber, int totalVolume) {
+          Set<int> currentSpeakers = {};
+          for (var speaker in speakers) {
+            // Lowered threshold to 3 to catch subtle speaking accurately
+            if (speaker.volume != null && speaker.volume! > 3) {
+              currentSpeakers.add(speaker.uid ?? 0);
+            }
+          }
+          activeSpeakers = currentSpeakers;
+          _callEventController.add(CallEvent.volumeChanged); 
+        },
       ),
     );
 
     await _engine.enableAudio();
+    
+    // ✅ Tells Agora to report volume levels every 200ms
+    await _engine.enableAudioVolumeIndication(interval: 200, smooth: 3, reportVad: true);
+    
     _isInitialized = true;
 
     WidgetsBinding.instance.addObserver(this);
@@ -100,12 +117,12 @@ class CallService with WidgetsBindingObserver {
     }
   }
 
-  Future<bool> joinCall({required String channelName, bool isVideo = false}) async {
+  Future<bool> joinCall({required String channelName, bool isVideo = false, int uid = 0}) async {
     if (!_isInitialized) await init();
     _isVideo = isVideo; 
 
     try {
-      final response = await ApiClient().post('/api/agora/token', {'channelName': channelName});
+      final response = await ApiClient().post('/api/agora/token', {'channelName': channelName, 'uid': uid});
       final responseData = response['data'] ?? response;
 
       if (responseData['token'] != null) {
@@ -121,7 +138,7 @@ class CallService with WidgetsBindingObserver {
         await _engine.joinChannel(
           token: token,
           channelId: channelName,
-          uid: 0,
+          uid: uid, 
           options: ChannelMediaOptions(
             clientRoleType: ClientRoleType.clientRoleBroadcaster,
             channelProfile: ChannelProfileType.channelProfileCommunication,
@@ -145,6 +162,7 @@ class CallService with WidgetsBindingObserver {
       } catch (_) {}
       await _engine.leaveChannel();
       remoteUids.clear(); 
+      activeSpeakers.clear(); 
       isJoined = false;
       _isVideo = false;
     }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; 
 import 'package:flutter/foundation.dart'; 
 import 'package:google_fonts/google_fonts.dart';
 import 'package:audioplayers/audioplayers.dart'; 
@@ -48,6 +49,10 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   final AudioPlayer _audioPlayer = AudioPlayer(); 
   
   late String _currentChannel; 
+  
+  // ✅ Maps to hold real-time participant data
+  Map<int, String> _participantNames = {}; 
+  Map<int, String> _participantAvatars = {};
 
   String _status = "Connecting...";
   bool _isMuted = false;
@@ -127,7 +132,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   void _startOutgoingCall() async {
-    bool success = await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall); 
+    int myUid = (widget.currentUserName ?? "Unknown User").hashCode.abs(); 
+    bool success = await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall, uid: myUid); 
     
     if (!mounted) return; 
 
@@ -135,6 +141,17 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       if (!kIsWeb) {
         _callService.setAudioRoute(_selectedAudioRoute); 
       }
+
+      // ✅ Make sure we join the specific socket room for this call channel
+      _socketService.socket?.emit('join_room', _currentChannel);
+
+      // ✅ Broadcast our Avatar and Name to everyone in the channel
+      _socketService.socket?.emit('call_participant_info', {
+        'channelName': _currentChannel,
+        'uid': myUid,
+        'name': widget.currentUserName ?? "Unknown User",
+        'avatar': widget.currentUserAvatar ?? ""
+      });
 
       Map<String, dynamic> callerPayload = {
         'callerName': widget.currentUserName ?? "Unknown User", 
@@ -169,8 +186,20 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
       _socketService.answerCall(widget.remoteId!, _currentChannel);
     }
     
-    await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall);
+    int myUid = (widget.currentUserName ?? "Unknown User").hashCode.abs(); 
+    await _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall, uid: myUid);
     
+    // ✅ Make sure we join the specific socket room for this call channel
+    _socketService.socket?.emit('join_room', _currentChannel);
+
+    // ✅ Broadcast our Avatar and Name to everyone in the channel
+    _socketService.socket?.emit('call_participant_info', {
+      'channelName': _currentChannel,
+      'uid': myUid,
+      'name': widget.currentUserName ?? "Unknown User",
+      'avatar': widget.currentUserAvatar ?? ""
+    });
+
     if (!kIsWeb) {
       _callService.setAudioRoute(_selectedAudioRoute); 
     }
@@ -204,7 +233,19 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _listener = _callService.callEvents.listen((event) {
       if (!mounted) return;
       setState(() {
-        if (event == CallEvent.connected || event == CallEvent.userJoined || event == CallEvent.userOffline) {
+        if (event == CallEvent.connected || event == CallEvent.userJoined || event == CallEvent.userOffline || event == CallEvent.volumeChanged) {
+          
+          // ✅ If a new user joins, rebroadcast our own info so they see us!
+          if (event == CallEvent.userJoined) {
+             int myUid = (widget.currentUserName ?? "Unknown User").hashCode.abs();
+             _socketService.socket?.emit('call_participant_info', {
+               'channelName': _currentChannel,
+               'uid': myUid,
+               'name': widget.currentUserName ?? "Unknown User",
+               'avatar': widget.currentUserAvatar ?? ""
+             });
+          }
+
           if (widget.isGroupCall) {
             _activeGroupUsers = _callService.remoteUids.length;
             _status = "Connected ($_activeGroupUsers joined)";
@@ -232,8 +273,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     _socketListener = _socketService.callEvents.listen((event) {
       if (!mounted) return;
       
+      // ✅ Map the Names and Avatars coming in over the socket
+      if (event['type'] == 'participant_info' && event['data']['channelName'] == _currentChannel) {
+        setState(() {
+          _participantNames[event['data']['uid']] = event['data']['name'];
+          _participantAvatars[event['data']['uid']] = event['data']['avatar'];
+        });
+      }
+
       if (event['type'] == 'ended' && event['data']['channelName'] == _currentChannel) {
-        
         if (event['data']['reason'] == "collision_merge") {
            String existingChannel = event['data']['existingChannel'];
            
@@ -246,7 +294,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
            });
            
            _socketService.answerCall(widget.remoteId!, _currentChannel);
-           _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall);
+           int myUid = (widget.currentUserName ?? "Unknown").hashCode.abs();
+           _callService.joinCall(channelName: _currentChannel, isVideo: widget.isVideoCall, uid: myUid);
            return; 
         }
 
@@ -446,10 +495,20 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             ],
           ),
 
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(color: Color(0xFF1F2C34), shape: BoxShape.circle),
-            child: const Icon(Icons.person_add, color: Colors.white, size: 20),
+          // ✅ Copy Link Functionality
+          GestureDetector(
+            onTap: () {
+              final link = "https://asconalumni.org/join-call?channel=${widget.channelName}";
+              Clipboard.setData(ClipboardData(text: link));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Call link copied to clipboard!"), backgroundColor: Colors.green)
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(color: Color(0xFF1F2C34), shape: BoxShape.circle),
+              child: const Icon(Icons.person_add, color: Colors.white, size: 20),
+            ),
           ),
         ],
       ),
@@ -475,12 +534,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
         final colors = [Colors.pinkAccent, Colors.blueAccent, Colors.purpleAccent, Colors.orangeAccent];
         final cardColor = colors[index % colors.length];
         
-        bool isSpeaking = false; 
+        // ✅ Name and Avatar Lookup with graceful fallback
+        final displayName = isMe ? "You" : (_participantNames[uid] ?? "Connected");
+        final displayAvatar = isMe ? widget.currentUserAvatar : _participantAvatars[uid];
+        final isSpeaking = _callService.activeSpeakers.contains(uid); 
         bool isUserMuted = false;
 
         return _buildParticipantCard(
-          name: isMe ? "You" : "User $uid", 
-          avatarUrl: isMe ? widget.currentUserAvatar : null, 
+          name: displayName, 
+          avatarUrl: displayAvatar, 
           isMuted: isUserMuted,
           isSpeaking: isSpeaking,
           activeColor: cardColor,
@@ -490,11 +552,20 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildParticipantCard({required String name, String? avatarUrl, required bool isMuted, required bool isSpeaking, required Color activeColor}) {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
         color: const Color(0xFF1F2C34), 
         borderRadius: BorderRadius.circular(16),
         border: isSpeaking ? Border.all(color: activeColor, width: 3) : Border.all(color: Colors.transparent, width: 3),
+        boxShadow: [
+          if (isSpeaking) // ✅ Dynamic Neon Glow when speaking
+            BoxShadow(
+              color: activeColor.withOpacity(0.6),
+              blurRadius: 15,
+              spreadRadius: 2,
+            )
+        ]
       ),
       child: Stack(
         alignment: Alignment.center,
@@ -502,11 +573,12 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // ✅ Safely display the remote user's avatar
               CircleAvatar(
                 radius: 35,
                 backgroundColor: Colors.grey[800],
-                backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
-                child: (avatarUrl == null || avatarUrl.isEmpty) ? const Icon(Icons.person, color: Colors.white54, size: 35) : null,
+                backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty && !avatarUrl.contains('profile/picture')) ? NetworkImage(avatarUrl) : null,
+                child: (avatarUrl == null || avatarUrl.isEmpty || avatarUrl.contains('profile/picture')) ? const Icon(Icons.person, color: Colors.white54, size: 35) : null,
               ),
               const SizedBox(height: 12),
               Text(
